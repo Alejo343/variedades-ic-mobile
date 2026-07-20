@@ -171,6 +171,24 @@ En construcción (sesión 2026-07-19). Diseño de alcance en "Roadmap — Fases
 - **Nota de tooling para sesiones futuras**: `npx expo start` con `run_in_background: true` debe lanzarse *directo* (sin envolver en `nohup ... &` dentro de un subshell) — envolverlo mata el proceso en cuanto el comando wrapper retorna. Además, el tipado de rutas de Expo Router (`.expo/types/router.d.ts`) puede quedar inconsistente (rutas nuevas aparecen solo como `/carpeta/index` en vez de `/carpeta`) si el archivo se generó de forma incremental mientras Metro seguía corriendo desde antes de que existieran esas rutas — un `expo start --clear` completo (cache limpio) más un reload de la app lo corrige; no es necesario para que la app funcione en tiempo de ejecución (la navegación real nunca falló), solo para que `npx tsc --noEmit` quede en verde.
 - Verificado en vivo en el emulador Android: registrar un gasto manual "Pago de arriendo" $20.000 → saldo pasó de $0 a -$20.000 y apareció en el historial; venta en local de "Audifonos Bluetooth" (precio precargado $55.000, cantidad 1) → aparece en el listado de ventas como "Venta #1 · 1 producto · $55.000", el stock del producto bajó de 10 a 9 (confirmado en `/products`), y el saldo de caja subió a $35.000 (-$20.000 + $55.000) con el ingreso automático "Venta en local #1" en el historial — confirma `direct-sales-repo.ts` descontando stock y generando el ingreso en caja en la misma transacción, de punta a punta.
 
+## Alcance — Fase 3: Vendedores
+
+En construcción (sesión 2026-07-19). Diseño de alcance en "Roadmap — Fases
+2-9" más abajo; troceo en sub-pasos aquí, mismo criterio que las Fases 1 y 2.
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Schema SQLite (`sellers`: `name`, `phone`, `city`, `commissionType`, `commissionValue`, `active`, `notes`) + migración drizzle-kit | ⬜ pendiente |
+| 2 | Dominio: portar `lib/domain/commission.ts#calculateCommission` + test desde el repo web | ⬜ pendiente |
+| 3 | Validaciones Zod (`sellerSchema`) | ⬜ pendiente |
+| 4 | `lib/data/sellers-repo.ts` (interfaz) + `lib/data/local/sellers-repo.ts` (CRUD, mismo patrón que `categories-repo.ts`) + wiring en `lib/data/index.ts` | ⬜ pendiente |
+| 5 | Pantallas: tab nuevo "Vendedores" — listado, crear, editar (mismo patrón que categorías de la Fase 1) | ⬜ pendiente |
+| 6 | Verificación end-to-end manual en el emulador (crear/editar/desactivar vendedor, comisión guardada correctamente) | ⬜ pendiente |
+
+No se consume todavía en esta fase (las Fases 4-7 lo consumen) — solo
+establece el catálogo de vendedores y su configuración de comisión, igual
+que en el repo web.
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,
