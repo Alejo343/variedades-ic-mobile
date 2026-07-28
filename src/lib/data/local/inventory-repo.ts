@@ -36,6 +36,42 @@ export async function recordProductMovement(
   return { newStock: result.newBalance };
 }
 
+// Same role as recordProductMovement but for a seller's consigned inventory
+// (ownerType: "seller") — never touches products.stock. The balance it
+// validates against is the SUM of that seller's own ledger rows, not
+// products.stock. Reused by seller-deliveries-repo (positive deltas, always
+// succeed) and seller-sales-repo (negative deltas, fail-fast if insufficient).
+export async function recordSellerMovement(
+  tx: Tx,
+  input: { sellerId: number; productId: number; quantityDelta: number; type: MovementType; sourceType?: string | null },
+): Promise<{ newSellerStock: number }> {
+  const [row] = await tx
+    .select({ total: sql<number>`COALESCE(SUM(${inventoryMovements.quantityDelta}), 0)` })
+    .from(inventoryMovements)
+    .where(
+      and(
+        eq(inventoryMovements.ownerType, "seller"),
+        eq(inventoryMovements.sellerId, input.sellerId),
+        eq(inventoryMovements.productId, input.productId),
+      ),
+    );
+  const current = row?.total ?? 0;
+
+  const result = applyMovement(current, input.quantityDelta);
+  if (!result.ok) throw new Error(result.reason);
+
+  await tx.insert(inventoryMovements).values({
+    productId: input.productId,
+    type: input.type,
+    quantityDelta: input.quantityDelta,
+    sourceType: input.sourceType ?? null,
+    ownerType: "seller",
+    sellerId: input.sellerId,
+  });
+
+  return { newSellerStock: result.newBalance };
+}
+
 function toProduct(row: typeof products.$inferSelect): Product {
   return {
     id: row.id,

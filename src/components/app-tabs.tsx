@@ -12,30 +12,27 @@ export default function AppTabs() {
       backgroundColor={colors.background}
       indicatorColor={colors.backgroundElement}
       labelStyle={{ selected: { color: colors.text } }}>
-      <NativeTabs.Trigger name="products">
-        <NativeTabs.Trigger.Label>Productos</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="home">
+        <NativeTabs.Trigger.Label>Inicio</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/home.png')}
           renderingMode="template"
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="inventory">
-        <NativeTabs.Trigger.Label>Inventario</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
-          renderingMode="template"
-        />
+      <NativeTabs.Trigger name="search">
+        <NativeTabs.Trigger.Label>Buscar</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon md="search" />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="cash">
-        <NativeTabs.Trigger.Label>Caja</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon md="payments" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="direct-sales">
-        <NativeTabs.Trigger.Label>Ventas</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="sell">
+        <NativeTabs.Trigger.Label>Vender</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon md="point_of_sale" />
+      </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="more">
+        <NativeTabs.Trigger.Label>Más</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon md="more_horiz" />
       </NativeTabs.Trigger>
     </NativeTabs>
   );

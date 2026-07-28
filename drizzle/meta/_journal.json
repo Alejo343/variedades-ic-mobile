@@ -15,6 +15,48 @@
       "when": 1784433980675,
       "tag": "0001_yielding_tigra",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784586743603,
+      "tag": "0002_careful_vampiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784589288940,
+      "tag": "0003_tiresome_silverclaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784591754974,
+      "tag": "0004_fat_paladin",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784593942583,
+      "tag": "0005_wakeful_husk",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784597022696,
+      "tag": "0006_omniscient_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784599439910,
+      "tag": "0007_curved_lionheart",
+      "breakpoints": true
     }
   ]
 }

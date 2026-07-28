@@ -119,7 +119,7 @@ mínima → `npm run test` en verde antes de seguir):
 | 9 | Pantalla de Respaldo (exportar/importar el archivo SQLite vía `expo-file-system`/`expo-sharing`) | ✅ listo |
 | 10 | Verificación end-to-end manual, **en modo avión** (confirmar que de verdad no depende de red) | ✅ listo |
 
-**Fase 1 completa (10/10 sub-pasos).** Fase 2 (Caja y Ventas en local) también completa — ver "Alcance — Fase 2" más abajo. Próximo: Fase 3 (Vendedores) u otra fase del roadmap, o sincronización remota — ver "Roadmap — Fases 2-9" para el diseño de alcance de cada una.
+**Fase 1 completa (10/10 sub-pasos).** Fases 2 (Caja y Ventas en local), 3 (Vendedores), 4 (Entregas a vendedores), 5 (Inventario por vendedor + Ventas de vendedor), 6 (Devoluciones y pérdidas de vendedor), 7 (Liquidaciones) y 8 (Compras a distribuidores + cuentas por pagar) también completas — ver sus respectivas secciones "Alcance — Fase N" más abajo. Fase 9 (Reportes consolidados) — la única fase de negocio que quedaba del roadmap — en construcción, ver su sección más abajo. Después de esa, solo queda sincronización remota.
 
 **Notas de implementación (sub-pasos 1-6, completados):**
 
@@ -173,21 +173,402 @@ En construcción (sesión 2026-07-19). Diseño de alcance en "Roadmap — Fases
 
 ## Alcance — Fase 3: Vendedores
 
-En construcción (sesión 2026-07-19). Diseño de alcance en "Roadmap — Fases
+Completada (sesión 2026-07-20). Diseño de alcance en "Roadmap — Fases
 2-9" más abajo; troceo en sub-pasos aquí, mismo criterio que las Fases 1 y 2.
 
 | # | Sub-paso | Estado |
 |---|----------|--------|
-| 1 | Schema SQLite (`sellers`: `name`, `phone`, `city`, `commissionType`, `commissionValue`, `active`, `notes`) + migración drizzle-kit | ⬜ pendiente |
-| 2 | Dominio: portar `lib/domain/commission.ts#calculateCommission` + test desde el repo web | ⬜ pendiente |
-| 3 | Validaciones Zod (`sellerSchema`) | ⬜ pendiente |
-| 4 | `lib/data/sellers-repo.ts` (interfaz) + `lib/data/local/sellers-repo.ts` (CRUD, mismo patrón que `categories-repo.ts`) + wiring en `lib/data/index.ts` | ⬜ pendiente |
-| 5 | Pantallas: tab nuevo "Vendedores" — listado, crear, editar (mismo patrón que categorías de la Fase 1) | ⬜ pendiente |
-| 6 | Verificación end-to-end manual en el emulador (crear/editar/desactivar vendedor, comisión guardada correctamente) | ⬜ pendiente |
+| 1 | Schema SQLite (`sellers`: `name`, `phone`, `city`, `commissionType`, `commissionValue`, `active`, `notes`) + migración drizzle-kit | ✅ listo |
+| 2 | Dominio: portar `lib/domain/commission.ts#calculateCommission` + test desde el repo web | ✅ listo |
+| 3 | Validaciones Zod (`sellerSchema`) | ✅ listo |
+| 4 | `lib/data/sellers-repo.ts` (interfaz) + `lib/data/local/sellers-repo.ts` (CRUD, mismo patrón que `categories-repo.ts`) + wiring en `lib/data/index.ts` | ✅ listo |
+| 5 | Pantallas: tab nuevo "Vendedores" — listado, crear, editar (mismo patrón que categorías de la Fase 1) | ✅ listo |
+| 6 | Verificación end-to-end manual en el emulador (crear/editar/desactivar vendedor, comisión guardada correctamente) | ✅ listo |
+
+**Fase 3 completa (6/6 sub-pasos).** Verificado con `npm run test` (31/31) + `npx tsc --noEmit` en verde (el error de `npm run lint` es preexistente en `use-color-scheme.web.ts`, del commit inicial, no relacionado con esta fase), más flujo manual en el emulador Android.
 
 No se consume todavía en esta fase (las Fases 4-7 lo consumen) — solo
 establece el catálogo de vendedores y su configuración de comisión, igual
 que en el repo web.
+
+**Notas de implementación:**
+
+- Mismo patrón exacto que `categories-repo.ts`/`categories/*` de la Fase 1: interfaz `SellersRepo` en `lib/data/sellers-repo.ts`, implementación en `lib/data/local/sellers-repo.ts`, pantallas `app/sellers/{index,new,[id]}.tsx` con el mismo look (picker de tipo con dos botones, igual que el picker ingreso/gasto de `cash/new.tsx`).
+- `commissionValue` para `commissionType: 'percentage'` se guarda en puntos base (ej. `1500` = 15%), igual que `commission.ts#calculateCommission` del repo web (divide entre `10000`). Las pantallas lo dejan explícito con un texto de ayuda ("ej. 1000 = 10%") y el listado lo muestra ya convertido (`commissionValue / 100`, con dos decimales).
+- Tab nuevo "Vendedores" en `app-tabs.tsx` usa `<NativeTabs.Trigger.Icon md="groups" />` (Material Symbol), mismo criterio que los tabs de Caja/Ventas de la Fase 2 — sin ícono PNG propio.
+- **Nota de tooling reconfirmada**: igual que en la Fase 2, agregar rutas nuevas (`app/sellers/*`) sin que Metro estuviera corriendo dejó `.expo/types/router.d.ts` desactualizado (`npx tsc --noEmit` fallaba con rutas `/sellers/*` no reconocidas por `expo-router`'s tipado). Se resolvió lanzando `npx expo start --clear` en segundo plano el tiempo suficiente para que regenerara el archivo de tipos, sin necesidad de abrir la app — confirma que el fix documentado en la Fase 2 es reproducible y no requiere tocar código.
+- Verificado en vivo en el emulador Android (AVD "CelularBanco", boot en frío tomó ~13 minutos esta sesión — mucho más lento que en sesiones anteriores, sin causa aparente en el log del emulador más allá de warnings de OpenGL no fatales): crear vendedor "Maria Gomez" (teléfono, ciudad "Bogota", comisión `% por venta` con valor `1500`) → aparece en la lista como `15.00% por venta · Bogota`; editar → todos los campos precargados correctamente, cambiar ciudad a "Medellin" → el listado refleja el cambio; crear un segundo vendedor con `Fija por unidad` y valor `2000` → aparece como `$2000 por unidad`; desactivar "Maria Gomez" → aparece `· inactivo` en el listado. Confirma el CRUD completo contra SQLite local funcionando de punta a punta.
+- **Cambio de flujo para pruebas manuales, a partir de esta sesión**: en vez de operar los taps en el emulador vía `adb shell input`/`uiautomator dump` directamente, el criterio ahora es darle al usuario una lista de pasos concretos (qué tocar, qué escribir, qué verificar) y que él la ejecute y reporte el resultado — decisión explícita del usuario tras que el driving por ADB mostrara fricción real (coordenadas que se corrían con el teclado abierto, aterrizando taps en el tab bar en vez del campo esperado). Sigue siendo válido usar ADB para pasos no interactivos (arrancar el emulador, esperar el boot, abrir Expo Go vía intent).
+
+## Alcance — Fase 4: Entregas a vendedores
+
+Completada (sesión 2026-07-20). Diseño de alcance en "Roadmap — Fases
+2-9" más abajo; troceo en sub-pasos aquí, mismo criterio que las Fases 1-3.
+Los datos actuales en la base local son de prueba (confirmado por el
+usuario), así que esta sesión no exportó respaldo antes de la migración de
+`inventory_movements` — a diferencia de lo que sugiere el roadmap para un
+escenario con datos reales.
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Schema: `inventory_movements` gana `ownerType`/`sellerId`; tablas nuevas `seller_deliveries`/`seller_delivery_items` + migración drizzle-kit | ✅ listo |
+| 2 | Validaciones Zod (`sellerDeliveryItemSchema`, `sellerDeliverySchema`) | ✅ listo |
+| 3 | `lib/data/seller-deliveries-repo.ts` (interfaz) + `lib/data/local/seller-deliveries-repo.ts` (transacción fail-fast: descuenta principal + inserta fila `ownerType: 'seller'`) + wiring en `lib/data/index.ts` | ✅ listo |
+| 4 | Pantallas: `sellers/deliveries/index` (listado) + `sellers/deliveries/new` (selector de vendedor + filas de producto/cantidad/costo, autocompletado con `purchasePrice`), anidadas en el stack de `sellers/_layout.tsx` | ✅ listo |
+| 5 | Verificación end-to-end manual en el emulador (entrega descuenta el inventario principal y no toca `product.stock` del lado del vendedor — se confirma solo por el ledger, `getSellerInventory` llega en la Fase 5) | ✅ listo |
+
+**Fase 4 completa (5/5 sub-pasos).** Verificado con `npm run test` (31/31) + `npx tsc --noEmit` en verde (mismo error preexistente de `npm run lint` en `use-color-scheme.web.ts`, no relacionado), más flujo manual en el emulador Android.
+
+`MovementType` (`entrega_vendedor`) y `OwnerType` (`principal`/`seller`) del
+dominio (`lib/domain/inventory-movement.ts`) ya existían desde la Fase 1 —
+no requieren cambios en esta fase.
+
+**Notas de implementación:**
+
+- La tabla `sellers` se reordenó en `schema.ts` para quedar antes de `inventoryMovements` (ya que ahora la referencia vía `sellerId`), mismo criterio de "el referenciado va primero en el archivo" que ya seguían `categories`→`products`.
+- `recordProductMovement` (helper de la Fase 2, en `local/inventory-repo.ts`) se reutilizó tal cual para el lado principal del movimiento — no necesitó cambios porque el default de `ownerType` en el schema (`'principal'`) y `sellerId` nulo ya son el comportamiento correcto para ese lado. El lado del vendedor (`ownerType: 'seller'`, `sellerId`, cantidad positiva, sin tocar `products.stock`) se inserta con un segundo `tx.insert(inventoryMovements)` directo dentro de `local/seller-deliveries-repo.ts#create` — mismo patrón de "dos filas en el mismo ledger dentro de una transacción" que describe el roadmap.
+- Sin pantalla de inventario por vendedor todavía (`getSellerInventory` es Fase 5) — la única forma de confirmar la entrega en esta fase es ver el descuento del lado principal (`/products/[id]`, `/inventory`) y el registro en `/sellers/deliveries`.
+- Rutas nuevas (`sellers/deliveries/index`, `sellers/deliveries/new`) anidadas en el stack existente de `sellers/_layout.tsx` en vez de un tab nuevo — evita saturar la tab bar (ya tiene 5 tabs) y sigue el mismo patrón que `products/categories/*` de la Fase 1.
+- **Bug real encontrado y corregido durante la verificación manual**: `products/[id].tsx`, `products/categories/[id].tsx` y `sellers/[id].tsx` cargaban sus datos con `useEffect(..., [id])` — solo se ejecuta al montar. Como los tabs nativos mantienen cada stack vivo en segundo plano, si el usuario dejaba una de estas pantallas abierta, cambiaba de tab, modificaba ese mismo registro por otro camino (ej. una entrega a vendedor descontando el stock de un producto cuyo detalle seguía montado) y volvía, la pantalla seguía mostrando los valores con los que se había montado — no los actuales en SQLite. Las tres se cambiaron a `useFocusEffect` (con bandera `cancelled` para evitar `setState` tras desmontar), mismo patrón que ya usaban las pantallas de listado (`products/index.tsx`, `sellers/index.tsx`, etc.), así que ahora recargan cada vez que la pantalla vuelve a tener foco. Confirmado en vivo: reproducido el bug (detalle de producto abierto, entrega descontando su stock desde otra pantalla, stock mostrado seguía igual) y confirmado el fix (mismo flujo, stock ya actualizado al volver).
+- Verificado en vivo en el emulador Android: entrega a "Maria Gomez" de 3 unidades de "Audifonos Bluetooth" (costo unitario autocompletado con `purchasePrice`) → aparece en `/sellers/deliveries` como "Maria Gomez · 3 unidades · [costo total] · [fecha]"; el stock del producto bajó exactamente en 3 (confirmado en `/products/[id]`) y quedó un movimiento `-3 · entrega_vendedor` en `/inventory`; segunda entrega con cantidad mayor al stock restante → error en pantalla, sin crear la entrega ni descontar nada (fail-fast confirmado). Confirma la transacción de dos filas en el mismo ledger funcionando de punta a punta.
+
+## Alcance — Fase 5: Inventario por vendedor + Ventas de vendedor
+
+Completada (sesión 2026-07-20). Diseño de alcance en "Roadmap — Fases
+2-9" más abajo; troceo en sub-pasos aquí, mismo criterio que las Fases 1-4.
+
+Una decisión de diseño no explícita en el roadmap original: `seller_sales`
+**no** genera un movimiento en `cash_movements` (a diferencia de
+`direct_sales` en la Fase 2) — el dinero de una venta de vendedor lo retiene
+el vendedor hasta que liquide, y ese ingreso a caja ocurre recién en la
+Fase 7 ("Al liquidar: genera un ingreso en `cash_movements`"). Tampoco se
+agrega la columna `settlementId` a `seller_sales` todavía — `settlements`
+no existe hasta la Fase 7, así que esa columna se agrega ahí vía migración
+(mismo patrón que `ownerType`/`sellerId` se agregaron a
+`inventory_movements` en la Fase 4, cuando `sellers` ya existía).
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Schema: `seller_sales`/`seller_sale_items` (sin `settlementId` todavía) + migración drizzle-kit | ✅ listo |
+| 2 | Validaciones Zod (`sellerSaleItemSchema`, `sellerSaleSchema`) | ✅ listo |
+| 3 | `local/inventory-repo.ts`: nuevo helper `recordSellerMovement` (ledger del vendedor, sin tocar `products.stock`) — reutilizado también para refactorizar el insert del lado del vendedor de la Fase 4; `SellersRepo#getInventory` (agregación derivada del ledger, sin tabla nueva) | ✅ listo |
+| 4 | `lib/data/seller-sales-repo.ts` (interfaz) + `lib/data/local/seller-sales-repo.ts` (transacción fail-fast: valida y descuenta SOLO el inventario del vendedor, calcula comisión con `commission.ts#calculateCommission`) + wiring en `lib/data/index.ts` | ✅ listo |
+| 5 | Pantallas: `sellers/[id].tsx` gana sección "Inventario actual" + botón "Registrar venta"; `sellers/sales/index` (listado) + `sellers/sales/new` (recibe `sellerId`, producto limitado al inventario del vendedor, muestra comisión estimada) | ✅ listo |
+| 6 | Verificación end-to-end manual en el emulador (venta de vendedor descuenta solo su inventario, nunca el principal; comisión calculada correctamente; sin ingreso automático en caja) | ✅ listo |
+
+**Fase 5 completa (6/6 sub-pasos).** Verificado con `npm run test` (31/31) + `npx tsc --noEmit` en verde (mismo error preexistente de `npm run lint` en `use-color-scheme.web.ts`, no relacionado), más flujo manual en el emulador Android.
+
+**Notas de implementación:**
+
+- `recordSellerMovement` (nuevo, en `local/inventory-repo.ts`) es el equivalente de `recordProductMovement` pero para el ledger del vendedor: valida contra `SUM(quantityDelta)` de sus propias filas (`ownerType='seller' AND sellerId=X AND productId=Y`) en vez de `products.stock`, usando el mismo `applyMovement` del dominio para el fail-fast ("Stock insuficiente"). Se aprovechó para refactorizar el insert directo que la Fase 4 hacía a mano en `seller-deliveries-repo.ts` — mismo comportamiento (un delta positivo con `applyMovement` siempre tiene éxito), código compartido.
+- `SellersRepo#getInventory(sellerId)` agrega el ledger con `GROUP BY productId` + `SUM(quantityDelta)`, filtrando a cantidades `> 0` — sin tabla nueva, tal como especifica el roadmap ("derivar, no duplicar").
+- `seller-sales-repo.ts#create` calcula la comisión con `commission.ts#calculateCommission` usando la cantidad total de unidades de la venta completa (no por línea) — coincide con la firma `(config, saleTotal, quantity)` del dominio, donde `quantity` solo importa para el tipo `fixed_per_unit`.
+- A diferencia de `direct-sales-repo.ts` (Fase 2), **no** se inserta un movimiento en `cash_movements` — decisión de diseño documentada arriba: el dinero de una venta de vendedor se liquida en la Fase 7, no al momento de la venta.
+- La pantalla `sellers/sales/new.tsx` restringe el buscador de productos al inventario propio del vendedor (`sellersRepo.getInventory` + join en memoria con `productsRepo.list()`, igual patrón que `inventory/index.tsx` resolviendo nombres) — no al catálogo completo como sí hace `sellers/deliveries/new.tsx`, ya que una venta de vendedor solo puede ser de lo que ese vendedor ya tiene consigo.
+- `sellers/index.tsx` reorganizó su fila de acciones: `[Entregas] [Ventas]` como fila secundaria arriba de `[+ Nuevo vendedor]` (antes solo tenía `[Entregas] [+ Nuevo vendedor]` en una sola fila) — sin botón "+ Nueva venta" directo en `sellers/sales/index.tsx`, porque toda venta nace desde el detalle de un vendedor específico (`sellers/[id].tsx` → "Registrar venta", visible solo si tiene inventario).
+- Verificado en vivo en el emulador Android: detalle de "Maria Gomez" mostró su inventario actual (el producto entregado en la Fase 4); "Registrar venta" limitó el buscador a ese inventario y mostró "disponible: N"; al registrar la venta, "Comisión estimada" se calculó correctamente antes de guardar y la venta apareció en `/sellers/sales`; confirmado que el stock principal (`/products/[id]`) y el saldo de caja (`/cash`) no cambiaron; el inventario del vendedor bajó exactamente en lo vendido; una segunda venta con cantidad mayor a lo disponible falló sin crear nada (fail-fast confirmado).
+
+## Alcance — Fase 6: Devoluciones y pérdidas de vendedor
+
+Completada (sesión 2026-07-20). Diseño de alcance en "Roadmap — Fases
+2-9" más abajo; troceo en sub-pasos aquí, mismo criterio que las Fases 1-5.
+
+`type` en `seller_losses` (`perdida`/`dano`/`robo`) va a nivel de cabecera
+(todo el reporte de pérdida comparte un solo tipo), no por línea — mismo
+criterio que `direct_sales`/`seller_deliveries`/`seller_sales`, donde los
+atributos de la transacción viven en la cabecera y los items solo llevan
+producto/cantidad. Los tres valores ya existen como `MovementType` del
+dominio desde la Fase 1, igual que `devolucion`.
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Schema: `seller_returns`/`seller_return_items` (sin precio) + `seller_losses`/`seller_loss_items` (`type` en la cabecera, `unitCost` NOT NULL en los items) + migración drizzle-kit | ✅ listo |
+| 2 | Validaciones Zod (`sellerReturnItemSchema`, `sellerReturnSchema`, `sellerLossItemSchema`, `sellerLossSchema`) | ✅ listo |
+| 3 | `lib/data/seller-returns-repo.ts` (interfaz) + `lib/data/local/seller-returns-repo.ts` (transacción: descuenta del vendedor con `recordSellerMovement` + regresa al principal con `recordProductMovement`, dos filas del mismo ledger) + wiring | ✅ listo |
+| 4 | `lib/data/seller-losses-repo.ts` (interfaz) + `lib/data/local/seller-losses-repo.ts` (transacción: descuenta SOLO del vendedor con `recordSellerMovement`, nunca el principal) + wiring | ✅ listo |
+| 5 | Pantallas: `sellers/[id].tsx` gana botones "Registrar devolución"/"Registrar pérdida" (visibles solo con inventario); `sellers/returns/{index,new}` + `sellers/losses/{index,new}`, reutilizando el selector de producto limitado al inventario del vendedor de la Fase 5 | ✅ listo |
+| 6 | Verificación end-to-end manual en el emulador (devolución descuenta al vendedor y regresa al principal; pérdida descuenta solo al vendedor y nunca toca el principal) | ✅ listo |
+
+**Fase 6 completa (6/6 sub-pasos).** Verificado con `npm run test` (31/31) + `npx tsc --noEmit` en verde (mismo error preexistente de `npm run lint` en `use-color-scheme.web.ts`, no relacionado), más flujo manual en el emulador Android.
+
+**Notas de implementación:**
+
+- `seller-returns-repo.ts#create` combina los dos helpers existentes en la misma transacción: `recordSellerMovement` (descuenta al vendedor, `type: 'devolucion'`) + `recordProductMovement` (regresa al principal, mismo `type`) — sin helper nuevo, reutiliza tal cual lo construido en las Fases 4-5.
+- `seller-losses-repo.ts#create` usa solo `recordSellerMovement` con `type: data.type` (`perdida`/`dano`/`robo`, ya existentes en `MovementType` del dominio desde la Fase 1) — nunca toca `products.stock`, el costo lo asume el vendedor.
+- `sellers/returns/new.tsx` es igual a `sellers/sales/new.tsx` pero sin campo de precio (las filas del carrito solo llevan cantidad) — coincide con que `seller_return_items` no tiene columna de precio/costo.
+- `sellers/losses/new.tsx` agrega un selector de tipo de tres botones (Pérdida/Daño/Robo) arriba del carrito, mismo patrón visual que el picker de tipo de comisión (Fase 3) y el de ingreso/gasto (Fase 2); el costo unitario se autocompleta con `purchasePrice`, igual que `sellers/deliveries/new.tsx`.
+- `sellers/[id].tsx` ahora tiene tres acciones condicionadas a tener inventario: "Registrar venta" (fila completa) y, debajo, "Registrar devolución"/"Registrar pérdida" en una fila de dos columnas — se mantuvo "Registrar venta" como la acción principal (con más uso esperado) y las otras dos como secundarias.
+- Verificado en vivo en el emulador Android: devolución de 1 unidad del inventario de "Maria Gomez" → aparece en `/sellers/returns`, su inventario bajó en 1 y el stock del producto en `/products/[id]` **subió** en 1 (confirma el regreso al principal); pérdida por "Daño" de otra unidad → aparece en `/sellers/losses` con el tipo y costo total, su inventario bajó en 1 y el stock principal **no cambió**; intentos de devolución/pérdida con cantidad mayor a lo disponible fallaron sin crear ni descontar nada (fail-fast confirmado en ambos flujos).
+
+## Alcance — Fase 7: Liquidaciones
+
+Completada (sesión 2026-07-20). Diseño de alcance en "Roadmap — Fases
+2-9" más abajo; troceo en sub-pasos aquí, mismo criterio que las Fases 1-6.
+`periodDate` se guarda como texto `'YYYY-MM-DD'` (sin hora) — SQLite no
+tiene tipo `date` nativo como Postgres, y las comparaciones contra
+`saleDate`/`lossDate` (que sí son timestamps completos) usan `DATE(...)`
+para extraer solo la parte de fecha, igual que en el repo web.
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Schema: `settlements` (`UNIQUE(sellerId, periodDate)`) + agrega `settlementId` a `seller_sales` (ahora que `settlements` existe — columna diferida desde la Fase 5) + migración drizzle-kit | ✅ listo |
+| 2 | Dominio: portar `settlement.ts#calculateSettlement` + `settlement-status.ts#canTransitionSettlement` + tests desde el repo web | ✅ listo |
+| 3 | Validaciones Zod (`settlementSchema`: `sellerId` + `periodDate`) | ✅ listo |
+| 4 | `lib/data/settlements-repo.ts` (interfaz: `list`, `preview`, `create`, `markSettled`) + `lib/data/local/settlements-repo.ts` (agrega ventas/comisión/pérdidas del período, crea la liquidación, marca las `seller_sales` incluidas con `settlementId`; al liquidar, transición vía `canTransitionSettlement` + ingreso en `cash_movements` si `amountDue > 0`, reutilizando `recordCashMovementTx` de la Fase 2) + wiring | ✅ listo |
+| 5 | Pantallas: `sellers/[id].tsx` gana botón "Liquidar"; `sellers/settlements/{index,new,[id]}` (preview de totales antes de crear, marcar como liquidada desde el detalle) | ✅ listo |
+| 6 | Verificación end-to-end manual en el emulador (liquidación agrega los totales correctos del período, genera el ingreso en caja al liquidar, y una segunda liquidación del mismo vendedor/período falla por el `UNIQUE`) | ✅ listo |
+
+**Fase 7 completa (6/6 sub-pasos).** Verificado con `npm run test` (37/37) + `npx tsc --noEmit` en verde (mismo error preexistente de `npm run lint` en `use-color-scheme.web.ts`, no relacionado), más flujo manual en el emulador Android.
+
+**Notas de implementación:**
+
+- `settlements-repo.ts#aggregatePeriod` acepta `db` o `Tx` (mismo criterio que el repo web) para poder llamarse tanto desde `preview` (fuera de transacción, solo lectura) como desde `create` (dentro de la transacción que también inserta la liquidación) sin duplicar la consulta.
+- La agregación de ventas usa `isNull(sellerSales.settlementId)` para no contar dos veces una venta ya incluida en una liquidación anterior — así una liquidación posterior del mismo vendedor en otra fecha no vuelve a sumar ventas ya liquidadas, aunque su `saleDate` cayera en el rango por error de captura.
+- `create` valida explícitamente que no exista ya una liquidación para `(sellerId, periodDate)` antes de insertar (mensaje de error legible), en vez de depender solo de que el `UNIQUE` de SQLite lance una excepción críptica — mismo criterio que el repo web.
+- `markSettled` es el único lugar de todo el proyecto que genera un `cash_movements` fuera de una venta directa (Fase 2) — cierra el arco que la Fase 5 dejó abierto a propósito (las ventas de vendedor no tocan caja al momento de venderse).
+- Se corrigió un lint error real introducido en esta fase (no preexistente): `sellers/settlements/new.tsx` inicialmente llamaba `setPreview(null)` de forma síncrona dentro de un `useEffect` cuando la fecha no tenía el formato válido — el linter de React (`react-hooks/set-state-in-effect`) lo marca porque ese valor se puede derivar en el render sin necesidad de estado ni efecto. Se resolvió calculando `isValidPeriodDate` como variable derivada en el cuerpo del componente y condicionando el render y el efecto (que sí hace una consulta async legítima) en base a ella, en vez de sincronizar ese caso con `setState`.
+- Verificado en vivo en el emulador Android: al abrir "Liquidar" para un vendedor con una venta y una pérdida registradas el mismo día, el preview mostró automáticamente los totales correctos (Ventas/Comisión/Pérdidas/A entregar); al crear la liquidación y marcarla como liquidada, el saldo de caja subió exactamente en el monto "A entregar" con un nuevo ingreso "Liquidación vendedor #N — [fecha]"; un segundo intento de liquidación para el mismo vendedor y fecha falló con el mensaje esperado sin crear nada.
+
+## Alcance — Fase 8: Compras a distribuidores + cuentas por pagar
+
+Completada (sesión 2026-07-20). Diseño de alcance en "Roadmap — Fases
+2-9" más abajo; troceo en sub-pasos aquí, mismo criterio que las Fases 1-7.
+Es la fase más grande del roadmap — se trocea más fino que las anteriores,
+como ya anticipaba esa sección.
+
+Cuatro decisiones que se apartan a propósito del schema/flujo exacto del
+repo web (adaptando al mismo criterio ya usado en el resto del móvil, no
+un port literal):
+
+- `totalCost` de `purchase_orders` se calcula sumando los items al crear
+  el pedido (un solo formulario tipo carrito, como `direct_sales`), no un
+  campo que el usuario escribe a mano y luego agrega items por separado
+  como hace la web.
+- Sin columna `stockUpdated`: la transición de estado ya es suficiente
+  guardia contra recibir un pedido dos veces (`recibido` es terminal en
+  `canTransitionPurchaseOrder`, así que un segundo intento falla solo con
+  eso) — una columna menos que sincronizar.
+- `unitCost` vive solo en `purchase_order_items`, no se duplica en
+  `inventory_movements` (que en el móvil no tiene columna `unitCost`, a
+  diferencia de la web) — mismo criterio que `seller_delivery_items`/
+  `seller_loss_items`, que ya guardan el costo a nivel de item.
+- De `order-status.ts` del repo web solo se porta `PurchaseOrderStatus`/
+  `canTransitionPurchaseOrder` — `SalesOrderStatus`/`canTransitionSalesOrder`
+  se queda afuera porque el móvil no tiene `salesOrders` (pedidos por
+  WhatsApp), decisión ya tomada en el pivote original (ver "Fase 9" más
+  abajo).
+
+`getAccountsPayableSummary` (agregación de saldo por distribuidor) se
+difiere a la Fase 9 (Reportes consolidados) — esta fase solo necesita el
+saldo derivado por pedido individual.
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Schema: `distributors` + `purchase_orders`/`purchase_order_items` + `purchase_payments` + migración drizzle-kit | ✅ listo |
+| 2 | Dominio: portar `order-status.ts` (solo `PurchaseOrderStatus`/`canTransitionPurchaseOrder`) + test desde el repo web | ✅ listo |
+| 3 | Validaciones Zod (`distributorSchema`, `purchaseOrderSchema` + items combinados para creación, `purchasePaymentSchema`) | ✅ listo |
+| 4 | `lib/data/distributors-repo.ts` (interfaz + local, CRUD simple mismo patrón que `sellers-repo.ts`) + wiring | ✅ listo |
+| 5 | `lib/data/purchase-orders-repo.ts` (interfaz: `list`, `getById`, `create`, `markInTransit`, `markReceived`, `cancel`) + `lib/data/local/purchase-orders-repo.ts` (creación transaccional con total calculado de los items; recepción transaccional que suma stock vía `recordProductMovement` con `type: 'compra'`, solo si `canTransitionPurchaseOrder` lo permite) + wiring | ✅ listo |
+| 6 | `lib/data/purchase-payments-repo.ts` (interfaz: `listForOrder`, `getBalance`, `create`) + `lib/data/local/purchase-payments-repo.ts` (saldo derivado `totalCost - SUM(pagos)`, valida `purchaseType === 'credito'` y estado distinto de cancelado, fail-fast si el pago excede el saldo pendiente) + wiring | ✅ listo |
+| 7 | Pantallas: tab nuevo "Compras" — `purchases/index` (listado + acceso a distribuidores), `purchases/distributors/{index,new,[id]}` (CRUD), `purchases/new` (selector de distribuidor + carrito de productos + tipo contado/crédito), `purchases/[id]` (detalle: items, estado, acciones de transición, saldo y pagos si es a crédito), `purchases/payments/new` | ✅ listo |
+| 8 | Verificación end-to-end manual en el emulador (crear pedido → marcar en camino → recibir sube el stock; pedido a crédito con pagos parciales baja el saldo correctamente; pago mayor al saldo falla; cancelar un pedido pendiente) | ✅ listo |
+
+**Fase 8 completa (8/8 sub-pasos).** Verificado con `npm run test` (44/44) + `npx tsc --noEmit` en verde (mismo error preexistente de `npm run lint` en `use-color-scheme.web.ts`, no relacionado), más flujo manual en el emulador Android.
+
+**Notas de implementación:**
+
+- Nuevo 6º tab "Compras" (`md="local_shipping"`) en `app-tabs.tsx` — a diferencia de Liquidaciones (que quedó anidado dentro de Vendedores), Compras es un flujo de uso frecuente y recurrente, no una acción ocasional por vendedor, así que ameritaba su propio tab.
+- `purchase-orders-repo.ts#create` sigue el mismo patrón transaccional que `direct-sales-repo.ts`/`seller-deliveries-repo.ts`: inserta la cabecera, recorre los items sumando `totalCost`, y actualiza la cabecera al final con el total ya calculado.
+- `markReceived` es el único lugar de la Fase 8 que toca `products.stock` (vía `recordProductMovement` con `type: 'compra'`, ya existente desde la Fase 1) — `markInTransit` y `cancel` solo cambian `status`, ambos protegidos por la misma función `requireTransition` (envuelve `canTransitionPurchaseOrder` con un error legible) para no duplicar la validación en cada método.
+- Se confirmó en la práctica la decisión de omitir `stockUpdated`: como `recibido` es un estado terminal en `canTransitionPurchaseOrder`, un segundo intento de `markReceived` sobre un pedido ya recibido falla en `requireTransition` antes de tocar el inventario — no hubo necesidad de la columna extra que sí tiene la web.
+- `purchase-payments-repo.ts#create` valida `purchaseType === 'credito'`, `status !== 'cancelado'` y `amount <= pending` con un `throw` directo (mensaje propio "Saldo insuficiente: hay X pendiente...") en vez de reutilizar `deductStock` del dominio como hace la web — `deductStock` es para inventario y su mensaje de error ("Stock insuficiente") no encajaba para un saldo monetario.
+- **Bug de tooling reconfirmado (mismo de la Fase 2)**: agregar de una sola vez todas las rutas nuevas de `app/purchases/**` con Metro corriendo desde hacía rato dejó `.expo/types/router.d.ts` en un estado corrupto — no solo desactualizado, sino con entradas sin sentido (rutas apuntando a archivos de `lib/data/*.ts` que no son pantallas). `npx tsc --noEmit` fallaba con errores de tipos de ruta ininteligibles. Se resolvió igual que antes: matar el proceso de Metro y relanzar con `npx expo start --clear`, esperar a que regenerara el archivo desde cero, y recargar la app — confirma que el fix ya documentado sigue siendo válido incluso cuando la corrupción es más severa que un simple desfase.
+- Verificado en vivo en el emulador Android: pedido de contado a un distribuidor de prueba → "Marcar en camino" → "Marcar recibido" subió el stock del producto exactamente en la cantidad pedida; pedido a crédito de $100.000 → pago parcial de $40.000 dejó "Pendiente: $60.000"; intento de pago de $200.000 (mayor al pendiente) falló con el mensaje de saldo insuficiente sin registrar nada; un tercer pedido cancelado desde "pendiente" pasó a "cancelado" sin más acciones disponibles.
+
+## Alcance — Fase 9: Reportes consolidados
+
+En construcción (sesión 2026-07-20). Diseño de alcance en "Roadmap — Fases
+2-9" más abajo; troceo en sub-pasos aquí, mismo criterio que las Fases 1-8.
+Sin tabla nueva — todo se deriva por agregación sobre lo ya construido,
+mismo criterio "derivar, no duplicar" de siempre. A diferencia del repo web
+(que tiene `salesOrders` de WhatsApp como tercer canal), el móvil solo une
+`direct_sales` + `seller_sales` para "Ventas"/"Utilidad".
+
+Antes de trocear se le preguntó al usuario dónde ubicar la pantalla nueva
+en la navegación (7º tab dedicado vs. anidado sin tab propio, dado que la
+tab bar ya tenía 6 iconos tras la Fase 8) — eligió el 7º tab. **Esa
+decisión resultó inviable por una restricción real de la plataforma, no
+de diseño**: `BottomNavigationView` de Android (lo que usa `NativeTabs` por
+debajo) soporta un máximo de 6 ítems — un 7º tab crashea la app en el
+momento de montar (`[RNScreens] Attempt to insert TabsScreen at index 6;
+BottomNavigationView supports at most 6 items`), no es negociable con
+config. Se le devolvió la pregunta al usuario con esa limitación explicada
+y eligió anidar Reportes dentro del stack de Caja (`/cash/reports`,
+accesible con un botón "Ver reportes" junto a "+ Registrar movimiento") —
+Caja ya es la pantalla más parecida a un panel financiero.
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Extender repos existentes con agregaciones de solo lectura: `sellersRepo.getAllInventory`, `sellerSalesRepo.getSummaryBySeller`, `sellerReturnsRepo.getReturnedProductsSummary`, `purchasePaymentsRepo.getAccountsPayableSummary` | ✅ listo |
+| 2 | `lib/data/reports-repo.ts` (interfaz) + `lib/data/local/reports-repo.ts` (`getInventorySummary`, `getPurchasesReport`, `getSalesReport`, `getProfitReport`) + wiring en `lib/data/index.ts` | ✅ listo |
+| 3 | Pantalla: `cash/reports.tsx` (anidada en el stack de Caja, no un tab propio — ver nota de la limitación de 6 tabs arriba), filtro de fecha opcional (`from`/`to`, texto `YYYY-MM-DD`) + una tarjeta por reporte; botón "Ver reportes" en `cash/index.tsx` | ✅ listo |
+| 4 | Verificación end-to-end manual en el emulador (los totales de cada reporte coinciden con los datos ya acumulados en fases anteriores; el filtro de fecha solo afecta Compras/Ventas/Utilidad/Caja del período, el resto de reportes se mantiene igual) | ⏳ pendiente |
+
+**Notas de implementación (sub-pasos 1-3):**
+
+- **Decisión de negocio heredada del repo web sin volver a preguntarla**: la
+  fórmula de "Utilidad" usa el mismo criterio de **utilidad bruta** que el
+  repo web adoptó en su propia Fase 9 (`ventas − cantidad × products.purchasePrice`,
+  sumado sobre las dos fuentes de venta) — no resta comisión de vendedor ni
+  gastos de caja sueltos. Ya era una decisión de negocio explícita y
+  documentada con su razonamiento en el `CLAUDE.md` del repo hermano, así
+  que se replica tal cual en vez de volver a interrumpir al usuario por
+  algo ya resuelto. Misma limitación conocida heredada: el costo usado es
+  el `purchasePrice` *actual* del producto, no un snapshot histórico al
+  momento de cada venta (ese snapshot no existe en `direct_sale_items`/
+  `seller_sale_items`, solo `purchase_order_items` guarda `unitCost`).
+- **Distinción "estado" vs "flujo"**, mismo criterio que el repo web: el
+  filtro de fecha solo afecta a los reportes de flujo (Compras, Ventas,
+  Utilidad, Caja del período). Los de estado (Inventario actual, Stock
+  mínimo, Agotados, Cuentas por pagar, saldo de Caja, Inventario por
+  vendedor) siempre muestran el momento actual. Ventas por vendedor y
+  Productos devueltos quedaron sin filtro de fecha (histórico completo) por
+  la misma razón que en la web: no amerita la complejidad de conectar
+  `seller_sales`/`seller_return_items` al rango en la primera versión.
+- Las nuevas funciones de agregación se repartieron entre extender los
+  repos de dominio ya existentes (`sellersRepo`, `sellerSalesRepo`,
+  `sellerReturnsRepo`, `purchasePaymentsRepo` ganan un método de resumen
+  cada uno) y un `reports-repo.ts` nuevo solo para lo que cruza varias
+  tablas sin dueño natural (inventario general, compras, ventas, utilidad)
+  — mismo criterio "un archivo por dominio de query" que el repo web usó en
+  su propia Fase 9.
+  `sellersRepo.getAllInventory()` agrupa el ledger completo (`ownerType='seller'`)
+  por `sellerId`+`productId` en una sola consulta en vez de N llamadas a
+  `getInventory` (una por vendedor) — mismo motivo N+1 que ya evitaba
+  `getAllSellersInventory` en el repo web.
+- `reports-repo.ts#getProfitReport` reutiliza `localReportsRepo.getSalesReport`
+  desde dentro del mismo objeto literal (auto-referencia diferida a tiempo
+  de ejecución, no de inicialización) en vez de duplicar el cálculo de
+  ingresos — funciona porque la llamada ocurre dentro del cuerpo de una
+  función async, no en el momento en que se construye el objeto.
+- `getInventorySummary` se escribió con un `WHERE active = 1` normal en vez
+  de `COUNT(*) FILTER (WHERE ...)` (que sí usa el repo web sobre Postgres)
+  — más simple y sin depender de que el SQLite embebido en `expo-sqlite`
+  soporte la cláusula `FILTER` en agregados.
+- Los nombres de producto/vendedor/distribuidor se resuelven en memoria en
+  la pantalla (`productsRepo.list()`/`sellersRepo.list()`/`distributorsRepo.list()`
+  cargados una vez y unidos con los reportes vía `Record<number, string>`)
+  — mismo patrón ya usado en `inventory/index.tsx`, `purchases/index.tsx`,
+  etc., en vez de que cada repo de reporte devuelva el nombre ya unido.
+- Caja es el único reporte que combina "estado" (`cashRepo.getBalance()`,
+  siempre el saldo actual) con "flujo" (ingresos/gastos del período,
+  filtrados en memoria sobre `cashRepo.list()` ya traída) — mismo criterio
+  que el repo web ("volumen bajo, no amerita una query nueva").
+- Sin test nuevo en `lib/domain/*` — Fase 9 no agrega lógica de dominio
+  pura, solo agregaciones SQL de solo lectura en `lib/data/*`, igual que el
+  repo web tampoco tiene tests para su propio `reports.ts`.
+
+**Pendiente para continuar la próxima sesión (o al retomar esta)**: sub-paso
+4, verificación manual en el emulador — dar al usuario el checklist de
+pasos concretos (mismo criterio ya vigente desde la Fase 3, ver feedback
+guardado en memoria) y esperar su confirmación antes de marcar la fase
+completa.
+
+## Rediseño de navegación: de 6 tabs planos a 4 tabs (Inicio / Buscar / Vender / Más)
+
+Completado (sesión 2026-07-27). No es una fase de negocio nueva —
+reorganiza la navegación ya construida por las Fases 1-9, sin agregar
+lógica de dominio ni tocar `lib/domain`/`lib/data` (salvo lectura vía
+`.list()` ya existente). Motivo: la barra de tabs nativos ya había llegado
+al límite real de `BottomNavigationView` en Android (máx. 6 ítems,
+confirmado por el crash documentado en la Fase 9 al intentar un 7º tab), y
+la organización por módulo de datos (Productos/Inventario/Caja/Ventas/
+Vendedores/Compras) no reflejaba la frecuencia de uso real del negocio.
+
+Diseño acordado con el usuario: **Inicio** (accesos rápidos, contenido del
+dashboard diferido a una sesión futura), **Buscar** (búsqueda universal:
+productos, vendedores, distribuidores, ventas y compras desde un solo
+lugar), **Vender** (abre el POS de venta en local directo, sin pantallas
+intermedias — la acción más frecuente del negocio; las ventas de
+consignación siguen registrándose desde el detalle del vendedor, flujo sin
+cambios) y **Más**, que el usuario pidió explícitamente tratar como un
+pequeño módulo contenedor (no un menú plano) con su propia jerarquía
+interna: Reportes, Caja, Compras, Vendedores, Inventario, Categorías,
+Respaldo y Configuración (placeholder nuevo, "Próximamente").
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Mover `products/inventory/cash/sellers/purchases` bajo `src/app/more/` (sin tocar su lógica interna) y anteponer `/more` a sus `~25` `<Link href>` internos | ✅ listo |
+| 2 | Extraer `cash/reports.tsx` → `more/reports.tsx` y `inventory/backup.tsx` → `more/backup.tsx` como archivos de primer nivel dentro de `more/` (no anidados en `cash`/`inventory`) | ✅ listo |
+| 3 | Renombrar `direct-sales/` → `sell/`, intercambiando roles: el POS (antes `new.tsx`) pasa a ser `index.tsx` (raíz del tab); el listado (antes `index.tsx`) pasa a ser `history.tsx` | ✅ listo |
+| 4 | Nuevo tab "Inicio" (`src/app/home/`) — acceso rápido a Productos | ✅ listo |
+| 5 | Nuevo tab "Buscar" (`src/app/search/`) — búsqueda universal en memoria sobre 6 repos | ✅ listo |
+| 6 | Nuevo `more/_layout.tsx` + `more/index.tsx` (menú de 8 accesos) + `more/settings.tsx` (placeholder) | ✅ listo |
+| 7 | Actualizar `app-tabs.tsx`/`app-tabs.web.tsx` a los 4 tabs nuevos (la versión web ya estaba desactualizada — le faltaban Vendedores/Compras — se corrigió a la vez) | ✅ listo |
+| 8 | Verificación end-to-end manual en el emulador (Inicio, Buscar contra las 6 categorías, Vender sin pantalla intermedia, Más con sus 8 accesos) | ✅ listo |
+
+**Fase completa (8/8 sub-pasos).** Verificado con `npm run test` (44/44) +
+`npx tsc --noEmit` en verde + `npm run lint` (mismo error preexistente de
+`use-color-scheme.web.ts`, no relacionado), más flujo manual en el
+emulador Android.
+
+**Notas de implementación:**
+
+- Investigación técnica previa al troceo (leyendo
+  `node_modules/expo-router/build/native-tabs/types.d.ts`): `NativeTabs`
+  no soporta "tab oculto pero navegable" — la prop `hidden` de
+  `NativeTabs.Trigger` dice explícitamente *"cannot be navigated to in any
+  way"*. La única forma de sacar una sección de la tab bar sin perder la
+  capacidad de navegar a ella es que deje de ser una carpeta de primer
+  nivel bajo `src/app/` y pase a vivir anidada dentro de la carpeta de
+  otro tab — mismo patrón que ya usaba este proyecto para Reportes
+  (anidado dentro de `cash/`, Fase 9), aplicado ahora a escala completa.
+- Todos los imports del proyecto usan el alias `@/...` (nunca rutas
+  relativas profundas), así que mover/renombrar carpetas no rompió ningún
+  import — sólo las rutas de navegación (`<Link href="...">`), todas
+  actualizadas a mano archivo por archivo tras un inventario exhaustivo
+  (sin `router.push`/`router.replace`/`useSegments`/`usePathname` en todo
+  el proyecto, sólo `<Link href>` y `router.back()`, este último ajeno al
+  prefijo por ser navegación relativa).
+- `more/_layout.tsx` anida un `Stack` dentro de otro: cada carpeta movida
+  (`products`, `inventory`, `cash`, `sellers`, `purchases`) conserva su
+  propio `_layout.tsx` sin cambios de contenido, y `more/_layout.tsx` sólo
+  declara esas cinco entradas con `headerShown: false` (el header real lo
+  pone el `_layout.tsx` interno de cada una) más `reports`/`backup`/
+  `settings` como pantallas únicas con su propio título.
+- `sell/index.tsx` (antes `direct-sales/new.tsx`) cambió un comportamiento
+  real, no sólo de ubicación: al ser ahora la raíz del stack del tab, ya
+  no hay a dónde volver con `router.back()` tras guardar la venta — se
+  reemplazó por limpiar el estado local (`cart`, `notes`, `search`),
+  dejando el POS listo para la siguiente venta sin salir de la pantalla.
+  Gana además un enlace "Ver historial de ventas" hacia `/sell/history`
+  para no perder el acceso al listado de ventas pasadas (que perdió su
+  botón "+ Nueva venta", ya innecesario).
+- `search/index.tsx` no agrega ningún método `search()` nuevo a los repos
+  (ninguno existe hoy — todos sólo tienen `list()`); reutiliza el mismo
+  patrón ya usado en `inventory/index.tsx`/`purchases/index.tsx` de cargar
+  listas completas (`productsRepo`, `sellersRepo`, `distributorsRepo`,
+  `directSalesRepo`, `sellerSalesRepo`, `purchaseOrdersRepo`, las seis en
+  paralelo) y filtrar/resolver en memoria — razonable a esta escala
+  (comercio pequeño). Ventas en local y de vendedor no tienen pantalla de
+  detalle propia hoy, así que sus resultados navegan al listado
+  correspondiente (`/sell/history`, `/more/sellers/sales`) en vez de a un
+  registro específico; compras sí tiene detalle propio (`purchases/[id]`)
+  y navega directo a él.
+- **Bug real encontrado y corregido durante la verificación manual (de
+  entorno, no de lógica)**: tras mover/renombrar tantos archivos, Fast
+  Refresh dejó una instancia vieja de la pantalla de Vender con el estado
+  de productos vacío (el buscador de productos del POS no mostraba
+  resultados) — un recargo completo de la app (no Fast Refresh) lo
+  resolvió; el código en sí no tenía ningún cambio de lógica en esa parte
+  respecto al `direct-sales/new.tsx` ya verificado en la Fase 2.
+- Verificado en vivo en el emulador Android: los 4 tabs aparecen
+  correctamente; Inicio navega a Productos; Buscar encuentra coincidencias
+  en las seis categorías y cada una navega a donde corresponde; Vender
+  abre el POS directo (no una lista), cobrar una venta limpia el carrito
+  sin sacar de la pantalla, y "Ver historial de ventas" muestra las ventas
+  pasadas incluida la recién creada; Más navega correctamente a sus 8
+  secciones y cada una conserva su funcionalidad previa.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
