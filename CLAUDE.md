@@ -667,10 +667,15 @@ preocuparse por preservar cada valor exacto de texto libre.
   (incluyendo la regeneración de `.expo/types/router.d.ts` para las rutas
   nuevas de `more/cash/accounts/*`, mismo fix de tooling ya documentado en
   fases anteriores) + `npm run lint` (mismo error preexistente de
-  `use-color-scheme.web.ts`, no relacionado). **Pendiente**: verificación
-  manual en el emulador — crear/editar cuentas, una venta y un movimiento
-  de caja por cuenta, un pago a distribuidor confirmando que sí descuenta
-  la cuenta, una liquidación eligiendo cuenta, y el desglose en Reportes.
+  `use-color-scheme.web.ts`, no relacionado). **Verificado en vivo en el
+  celular del usuario** (no en el emulador esta vez): CRUD de cuentas
+  (crear, editar, desactivar) funcionando; venta en local y movimiento
+  manual de caja cada uno reflejando la cuenta elegida en su listado; pago
+  a distribuidor descontando correctamente el saldo de la cuenta elegida
+  (confirma la corrección del hueco de `purchase_payments`); liquidación
+  de vendedor pidiendo cuenta y subiendo su saldo en el monto "A entregar";
+  Reportes mostrando el desglose por cuenta en las tarjetas "Ventas",
+  "Cuentas" y "Caja". Todo confirmado sin fallos por el usuario.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
