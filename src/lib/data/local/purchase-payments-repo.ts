@@ -1,6 +1,7 @@
 import { and, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
 import type { PurchasePaymentInput } from "../../validations";
 import type { AccountsPayableLine, PurchaseOrderBalance, PurchasePayment, PurchasePaymentsRepo } from "../purchase-payments-repo";
+import { recordCashMovementTx } from "./cash-repo";
 import { db } from "./db";
 import type { Tx } from "./db";
 import { purchaseOrders, purchasePayments } from "./schema";
@@ -11,7 +12,7 @@ function toPayment(row: typeof purchasePayments.$inferSelect): PurchasePayment {
     purchaseOrderId: row.purchaseOrderId,
     amount: row.amount,
     paidAt: row.paidAt,
-    method: row.method,
+    accountId: row.accountId,
     notes: row.notes,
     createdAt: row.createdAt,
   };
@@ -58,8 +59,21 @@ export const localPurchasePaymentsRepo: PurchasePaymentsRepo = {
 
       const [row] = await tx
         .insert(purchasePayments)
-        .values({ purchaseOrderId, amount: data.amount, method: data.method ?? null, notes: data.notes ?? null })
+        .values({ purchaseOrderId, amount: data.amount, accountId: data.accountId, notes: data.notes ?? null })
         .returning();
+
+      // Fixes a real gap found while designing the accounts model: paying a
+      // distributor used to not touch cash_movements at all, so an
+      // account's balance would silently omit money paid out here.
+      await recordCashMovementTx(tx, {
+        type: "gasto",
+        amount: data.amount,
+        concept: `Pago pedido de compra #${purchaseOrderId}`,
+        sourceType: "purchase_payment",
+        sourceId: row.id,
+        accountId: data.accountId,
+      });
+
       return toPayment(row);
     });
   },

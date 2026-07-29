@@ -13,6 +13,7 @@ export type DirectSale = {
   id: number;
   saleDate: string;
   totalAmount: number;
+  accountId: number;
   notes: string | null;
   createdAt: string;
   items: DirectSaleItem[];

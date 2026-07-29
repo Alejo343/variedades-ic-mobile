@@ -8,6 +8,7 @@ export type CashMovement = {
   movementDate: string;
   sourceType: string | null;
   sourceId: number | null;
+  accountId: number;
   notes: string | null;
   createdAt: string;
 };

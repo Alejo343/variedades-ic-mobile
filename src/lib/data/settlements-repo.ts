@@ -26,5 +26,5 @@ export interface SettlementsRepo {
   getById(id: number): Promise<Settlement | null>;
   preview(sellerId: number, periodDate: string): Promise<SettlementPreview>;
   create(data: SettlementInput): Promise<Settlement>;
-  markSettled(id: number): Promise<Settlement>;
+  markSettled(id: number, accountId: number): Promise<Settlement>;
 }

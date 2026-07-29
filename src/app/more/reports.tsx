@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import {
+  cashAccountsRepo,
   cashRepo,
   distributorsRepo,
   inventoryRepo,
@@ -17,6 +18,7 @@ import {
   sellersRepo,
   sellerSalesRepo,
   sellerReturnsRepo,
+  type CashAccountWithBalance,
   type InventorySummary,
   type ProfitReport,
   type PurchasesReport,
@@ -28,6 +30,7 @@ type NameMaps = {
   products: Record<number, string>;
   sellers: Record<number, string>;
   distributors: Record<number, string>;
+  accounts: Record<number, string>;
 };
 
 type ReportsData = {
@@ -37,8 +40,10 @@ type ReportsData = {
   purchases: PurchasesReport;
   sales: SalesReport;
   profit: ProfitReport;
+  accountBalances: CashAccountWithBalance[];
   cashBalance: number;
   cashPeriod: { income: number; expense: number };
+  cashPeriodByAccount: { accountId: number; income: number; expense: number }[];
   accountsPayable: { distributorId: number; pending: number }[];
   sellerInventory: { sellerId: number; productId: number; quantity: number }[];
   sellerSales: { sellerId: number; count: number; totalAmount: number; totalCommission: number }[];
@@ -96,6 +101,7 @@ export default function ReportsScreen() {
         reportsRepo.getProfitReport(validFrom, validTo),
         cashRepo.getBalance(),
         cashRepo.list(),
+        cashAccountsRepo.listWithBalances(),
         purchasePaymentsRepo.getAccountsPayableSummary(),
         sellersRepo.getAllInventory(),
         sellerSalesRepo.getSummaryBySeller(),
@@ -113,6 +119,7 @@ export default function ReportsScreen() {
           profit,
           cashBalance,
           cashMovements,
+          accountBalances,
           accountsPayable,
           sellerInventory,
           sellerSalesSummary,
@@ -133,6 +140,14 @@ export default function ReportsScreen() {
             income: cashInRange.filter((m) => m.type === 'ingreso').reduce((s, m) => s + m.amount, 0),
             expense: cashInRange.filter((m) => m.type === 'gasto').reduce((s, m) => s + m.amount, 0),
           };
+          const byAccount = new Map<number, { income: number; expense: number }>();
+          for (const m of cashInRange) {
+            const bucket = byAccount.get(m.accountId) ?? { income: 0, expense: 0 };
+            if (m.type === 'ingreso') bucket.income += m.amount;
+            else bucket.expense += m.amount;
+            byAccount.set(m.accountId, bucket);
+          }
+          const cashPeriodByAccount = Array.from(byAccount.entries()).map(([accountId, totals]) => ({ accountId, ...totals }));
 
           setData({
             inventory,
@@ -141,8 +156,10 @@ export default function ReportsScreen() {
             purchases,
             sales,
             profit,
+            accountBalances,
             cashBalance,
             cashPeriod,
+            cashPeriodByAccount,
             accountsPayable,
             sellerInventory,
             sellerSales: sellerSalesSummary,
@@ -151,6 +168,7 @@ export default function ReportsScreen() {
               products: Object.fromEntries(products.map((p) => [p.id, p.name])),
               sellers: Object.fromEntries(sellers.map((s) => [s.id, s.name])),
               distributors: Object.fromEntries(distributors.map((d) => [d.id, d.name])),
+              accounts: Object.fromEntries(accountBalances.map((a) => [a.id, a.name])),
             },
           });
           setLoading(false);
@@ -224,6 +242,13 @@ export default function ReportsScreen() {
             <Row label="Total" value={`${data.sales.totalCount} · ${formatCOP(data.sales.totalAmount)}`} />
             <Row label="En local" value={`${data.sales.byChannel.local.count} · ${formatCOP(data.sales.byChannel.local.total)}`} />
             <Row label="Vendedores" value={`${data.sales.byChannel.seller.count} · ${formatCOP(data.sales.byChannel.seller.total)}`} />
+            {data.sales.localByAccount.map((line) => (
+              <Row
+                key={line.accountId}
+                label={`  · ${data.names.accounts[line.accountId] ?? `Cuenta #${line.accountId}`} (en local)`}
+                value={`${line.count} · ${formatCOP(line.total)}`}
+              />
+            ))}
           </Card>
 
           <Card title="Utilidad (bruta)">
@@ -232,10 +257,23 @@ export default function ReportsScreen() {
             <Row label="Utilidad" value={formatCOP(data.profit.profit)} />
           </Card>
 
+          <Card title="Cuentas">
+            {data.accountBalances.map((account) => (
+              <Row key={account.id} label={account.name + (!account.active ? ' · inactiva' : '')} value={formatCOP(account.balance)} />
+            ))}
+          </Card>
+
           <Card title="Caja">
             <Row label="Saldo actual" value={formatCOP(data.cashBalance)} />
             <Row label="Ingresos del período" value={formatCOP(data.cashPeriod.income)} />
             <Row label="Gastos del período" value={formatCOP(data.cashPeriod.expense)} />
+            {data.cashPeriodByAccount.map((line) => (
+              <Row
+                key={line.accountId}
+                label={`  · ${data.names.accounts[line.accountId] ?? `Cuenta #${line.accountId}`}`}
+                value={`+${formatCOP(line.income)} / -${formatCOP(line.expense)}`}
+              />
+            ))}
           </Card>
 
           <Card title="Cuentas por pagar">

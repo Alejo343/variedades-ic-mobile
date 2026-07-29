@@ -14,17 +14,26 @@ function toCashMovement(row: typeof cashMovements.$inferSelect): CashMovement {
     movementDate: row.movementDate,
     sourceType: row.sourceType,
     sourceId: row.sourceId,
+    accountId: row.accountId,
     notes: row.notes,
     createdAt: row.createdAt,
   };
 }
 
-// Reused by other local/* repos (e.g. direct-sales-repo) that need to record
-// an automatic cash entry inside their own transaction — same role as
-// recordCashMovement in the web repo's lib/db/queries/cash.ts.
+// Reused by other local/* repos (e.g. direct-sales-repo, purchase-payments-repo)
+// that need to record an automatic cash entry inside their own transaction —
+// same role as recordCashMovement in the web repo's lib/db/queries/cash.ts.
 export async function recordCashMovementTx(
   tx: Tx,
-  input: { type: "ingreso" | "gasto"; amount: number; concept: string; sourceType?: string | null; sourceId?: number | null; notes?: string | null },
+  input: {
+    type: "ingreso" | "gasto";
+    amount: number;
+    concept: string;
+    accountId: number;
+    sourceType?: string | null;
+    sourceId?: number | null;
+    notes?: string | null;
+  },
 ): Promise<CashMovement> {
   const [row] = await tx
     .insert(cashMovements)
@@ -34,6 +43,7 @@ export async function recordCashMovementTx(
       concept: input.concept,
       sourceType: input.sourceType ?? null,
       sourceId: input.sourceId ?? null,
+      accountId: input.accountId,
       notes: input.notes ?? null,
     })
     .returning();
@@ -62,6 +72,7 @@ export const localCashRepo: CashRepo = {
         amount: input.amount,
         concept: input.concept,
         sourceType: "manual",
+        accountId: input.accountId,
         notes: input.notes,
       }),
     );

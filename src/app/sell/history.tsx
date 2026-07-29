@@ -6,20 +6,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { directSalesRepo, type DirectSale } from '@/lib/data';
+import { cashAccountsRepo, directSalesRepo, type DirectSale } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 
 export default function SalesHistoryScreen() {
   const [sales, setSales] = useState<DirectSale[]>([]);
+  const [accountNames, setAccountNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
-      directSalesRepo.list().then((rows) => {
+      Promise.all([directSalesRepo.list(), cashAccountsRepo.list()]).then(([rows, accounts]) => {
         if (!cancelled) {
           setSales(rows);
+          setAccountNames(Object.fromEntries(accounts.map((a) => [a.id, a.name])));
           setLoading(false);
         }
       });
@@ -49,7 +51,7 @@ export default function SalesHistoryScreen() {
                 Venta #{item.id} · {item.items.length} {item.items.length === 1 ? 'producto' : 'productos'}
               </ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                {formatCOP(item.totalAmount)} · {item.saleDate}
+                {formatCOP(item.totalAmount)} · {item.saleDate} · {accountNames[item.accountId] ?? `Cuenta #${item.accountId}`}
               </ThemedText>
             </ThemedView>
           )}

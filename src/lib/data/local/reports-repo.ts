@@ -58,7 +58,7 @@ export const localReportsRepo: ReportsRepo = {
     const localCond = dateRangeCondition(directSales.saleDate, from, to);
     const sellerCond = dateRangeCondition(sellerSales.saleDate, from, to);
 
-    const [[local], [seller]] = await Promise.all([
+    const [[local], [seller], localByAccount] = await Promise.all([
       db
         .select({ count: sql<number>`COUNT(*)`, total: sql<number>`COALESCE(SUM(${directSales.totalAmount}), 0)` })
         .from(directSales)
@@ -67,6 +67,15 @@ export const localReportsRepo: ReportsRepo = {
         .select({ count: sql<number>`COUNT(*)`, total: sql<number>`COALESCE(SUM(${sellerSales.totalAmount}), 0)` })
         .from(sellerSales)
         .where(sellerCond),
+      db
+        .select({
+          accountId: directSales.accountId,
+          count: sql<number>`COUNT(*)`,
+          total: sql<number>`COALESCE(SUM(${directSales.totalAmount}), 0)`,
+        })
+        .from(directSales)
+        .where(localCond)
+        .groupBy(directSales.accountId),
     ]);
 
     const byChannel = {
@@ -78,6 +87,7 @@ export const localReportsRepo: ReportsRepo = {
       totalCount: byChannel.local.count + byChannel.seller.count,
       totalAmount: byChannel.local.total + byChannel.seller.total,
       byChannel,
+      localByAccount,
     };
   },
 

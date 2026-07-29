@@ -27,10 +27,18 @@ export const inventoryAdjustmentSchema = z.object({
   reason: z.string().min(1, "El motivo es requerido"),
 });
 
+export const cashAccountSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido"),
+  type: z.enum(["efectivo", "banco"]),
+  active: z.boolean().optional().default(true),
+  notes: z.string().optional(),
+});
+
 export const cashMovementSchema = z.object({
   type: z.enum(["ingreso", "gasto"]),
   amount: z.number().int().min(1, "El monto debe ser mayor a 0"),
   concept: z.string().min(1, "El concepto es requerido"),
+  accountId: z.number().int(),
   notes: z.string().optional(),
 });
 
@@ -42,6 +50,7 @@ export const directSaleItemSchema = z.object({
 
 export const directSaleSchema = z.object({
   items: z.array(directSaleItemSchema).min(1, "Debe incluir al menos un producto"),
+  accountId: z.number().int(),
   notes: z.string().optional(),
 });
 
@@ -132,13 +141,14 @@ export const purchaseOrderSchema = z.object({
 
 export const purchasePaymentSchema = z.object({
   amount: z.number().int().min(1, "El monto debe ser mayor a 0"),
-  method: z.string().optional(),
+  accountId: z.number().int(),
   notes: z.string().optional(),
 });
 
 export type CategoryInput = z.infer<typeof categorySchema>;
 export type ProductInput = z.infer<typeof productSchema>;
 export type InventoryAdjustmentInput = z.infer<typeof inventoryAdjustmentSchema>;
+export type CashAccountInput = z.infer<typeof cashAccountSchema>;
 export type CashMovementInput = z.infer<typeof cashMovementSchema>;
 export type DirectSaleItemInput = z.infer<typeof directSaleItemSchema>;
 export type DirectSaleInput = z.infer<typeof directSaleSchema>;

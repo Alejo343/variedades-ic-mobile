@@ -106,7 +106,7 @@ export const localSettlementsRepo: SettlementsRepo = {
     });
   },
 
-  async markSettled(id: number) {
+  async markSettled(id: number, accountId: number) {
     return db.transaction(async (tx) => {
       const existing = await tx.query.settlements.findFirst({ where: eq(settlements.id, id) });
       if (!existing) throw new Error("Liquidación no encontrada");
@@ -128,6 +128,7 @@ export const localSettlementsRepo: SettlementsRepo = {
           concept: `Liquidación vendedor #${row.sellerId} — ${row.periodDate}`,
           sourceType: "settlement",
           sourceId: row.id,
+          accountId,
         });
       }
 

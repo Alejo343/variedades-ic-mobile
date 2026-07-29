@@ -27,6 +27,7 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         id: sale.id,
         saleDate: sale.saleDate,
         totalAmount: sale.totalAmount,
+        accountId: sale.accountId,
         notes: sale.notes,
         createdAt: sale.createdAt,
         items: items.map(toItem),
@@ -37,7 +38,10 @@ export const localDirectSalesRepo: DirectSalesRepo = {
 
   async create(data: DirectSaleInput) {
     return db.transaction(async (tx) => {
-      const [sale] = await tx.insert(directSales).values({ totalAmount: 0, notes: data.notes ?? null }).returning();
+      const [sale] = await tx
+        .insert(directSales)
+        .values({ totalAmount: 0, accountId: data.accountId, notes: data.notes ?? null })
+        .returning();
 
       let totalAmount = 0;
       const items: DirectSaleItem[] = [];
@@ -71,6 +75,7 @@ export const localDirectSalesRepo: DirectSalesRepo = {
           concept: `Venta en local #${sale.id}`,
           sourceType: "direct_sale",
           sourceId: sale.id,
+          accountId: data.accountId,
         });
       }
 
@@ -78,6 +83,7 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         id: updated.id,
         saleDate: updated.saleDate,
         totalAmount: updated.totalAmount,
+        accountId: updated.accountId,
         notes: updated.notes,
         createdAt: updated.createdAt,
         items,

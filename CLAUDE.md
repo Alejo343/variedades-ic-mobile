@@ -570,6 +570,108 @@ emulador Android.
   pasadas incluida la recién creada; Más navega correctamente a sus 8
   secciones y cada una conserva su funcionalidad previa.
 
+## Métodos de pago (`paymentMethod`) — superseded, ver "Cuentas de caja"
+
+Construida en la primera mitad de la sesión 2026-07-28: un campo
+`paymentMethod` (`efectivo`/`transferencia`, texto libre sin cuenta real
+detrás) en `direct_sales` y `cash_movements`. **Duró poco** — al preguntarle
+al usuario cómo quería seguir usándolo, pidió llevarlo a un modelo de
+cuentas reales con saldo propio en la misma sesión. La columna
+`payment_method` ya no existe (se eliminó en la migración
+`drizzle/0011_conscious_magik.sql`); todo lo que decía este apartado sobre
+`paymentMethodSchema`/`PaymentMethod`/`localByPaymentMethod`/
+`cashPeriodByMethod` fue reemplazado por lo descrito en "Cuentas de caja"
+justo abajo. Se deja esta nota corta en vez de borrar la sección completa,
+como registro de que se pasó por ahí antes de llegar al diseño final.
+
+## Cuentas de caja (`cash_accounts`)
+
+Completada (sesión 2026-07-28, segunda mitad — reemplaza "Métodos de pago"
+de arriba). El usuario pidió explícitamente comparar contra este modelo:
+
+```
+Cuenta { id, nombre, tipo, saldo (calculado) }
+Movimiento { cuenta_id, tipo, monto, fecha, origen }
+```
+
+y decidir si se podía mejorar antes de construirlo. Se detectó un hueco
+real durante el diseño (no de esta sesión, preexistente desde la Fase 8):
+`purchase_payments` (pagos a distribuidores) **nunca generaba un
+`cash_movements`** — pagarle a un distribuidor no descontaba ningún saldo.
+Se le presentó al usuario como parte del alcance a decidir, junto con si
+las cuentas son un catálogo fijo o editable, si liquidar a un vendedor
+pide elegir cuenta, y si se agregaba ya transferencias entre cuentas.
+Decisiones tomadas: **corregir el hueco de `purchase_payments` ahora**,
+**catálogo de cuentas editable** (CRUD, no fijo), **el usuario elige la
+cuenta al liquidar**, y **transferencias entre cuentas diferidas** (no
+construidas esta sesión — pendiente si se necesitan más adelante). Los
+datos existentes en el dispositivo eran de prueba (confirmado con el
+usuario), así que el backfill de la migración usa un mapeo simple sin
+preocuparse por preservar cada valor exacto de texto libre.
+
+- Schema: tabla nueva `cash_accounts` (`name`, `type`: `efectivo`|`banco`,
+  `active`, `notes` — mismas columnas reservadas `updatedAt`/`syncStatus`
+  que el resto del proyecto). `cash_movements.account_id`,
+  `direct_sales.account_id` y `purchase_payments.account_id` — los tres
+  `NOT NULL REFERENCES cash_accounts(id)`, porque las cuatro fuentes que
+  escriben en ellas (movimiento manual, venta en local, pago a
+  distribuidor, liquidación de vendedor) ahora siempre exigen elegir una
+  cuenta — a diferencia del `paymentMethod` anterior, que era nullable en
+  `cash_movements` porque algunas fuentes no tenían uno.
+- **Migración en tres pasos** (`drizzle/0009_bizarre_randall_flagg.sql` →
+  `0010_early_hawkeye.sql` → `0011_conscious_magik.sql`), deliberadamente
+  separada así para que `drizzle-kit generate` nunca viera "una columna
+  agregada + una quitada" en la misma tabla en la misma corrida — esa
+  combinación dispara un prompt interactivo de "¿es un rename?" que no
+  tiene forma de responderse en un entorno no interactivo (sin TTY). Orden:
+  (1) crear `cash_accounts` + sembrar a mano las dos cuentas iniciales
+  (`id=1` "Efectivo", `id=2` "Transferencia", INSERT agregado a mano al
+  archivo generado); (2) agregar `account_id` nullable a las tres tablas +
+  backfill a mano agregado al final del mismo archivo (mapea
+  `payment_method`/`method` existentes a `account_id`, todo lo demás —
+  incluyendo cualquier texto libre en `purchase_payments.method` que no
+  fuera exactamente "transferencia" — cae a la cuenta 1 "Efectivo"); (3)
+  quitar `payment_method`/`method` y marcar `account_id` `NOT NULL` (SQLite
+  reconstruye la tabla internamente para esto, generado limpio por
+  `drizzle-kit` sin edición a mano). Este patrón de tres pasos queda como
+  referencia para la próxima vez que una migración necesite dropear una
+  columna y agregar otra en la misma tabla.
+- `lib/data/cash-accounts-repo.ts` (interfaz) + `local/cash-accounts-repo.ts`
+  — CRUD igual que `sellers-repo.ts`/`distributors-repo.ts`, más
+  `listWithBalances()` (agregación derivada sobre `cash_movements` agrupada
+  por `accountId`, mismo criterio "derivar, no duplicar" que el resto del
+  proyecto — el saldo nunca se guarda).
+- **Corrección del hueco de `purchase_payments`**:
+  `local/purchase-payments-repo.ts#create` ahora llama a
+  `recordCashMovementTx` (reutilizado de `cash-repo.ts`, Fase 2) dentro de
+  la misma transacción, generando un `gasto` en la cuenta elegida — antes
+  de esta sesión, pagar a un distribuidor no dejaba ningún rastro en
+  `cash_movements`.
+- `settlements-repo.ts#markSettled` cambia de firma: ahora recibe
+  `(id, accountId)` — la pantalla `sellers/settlements/[id].tsx` agrega un
+  picker de cuenta (mismo patrón visual de dos/tres botones) antes de
+  habilitar "Marcar como liquidada".
+- Pantallas CRUD nuevas: `more/cash/accounts/{index,new,[id]}.tsx`
+  (mismo patrón que vendedores/distribuidores), accesibles desde un botón
+  "Gestionar cuentas" en `more/cash/index.tsx`. El picker fijo de dos
+  botones "Efectivo"/"Transferencia" en `sell/index.tsx`,
+  `more/cash/new.tsx` y `more/purchases/payments/new.tsx` se reemplazó por
+  un mapeo dinámico sobre las cuentas activas (`cashAccountsRepo.list()`),
+  ya no hay una lista fija de dos en el código.
+- Reportes (`more/reports.tsx`): la tarjeta "Ventas" desglosa por cuenta
+  (dinámico, vía `reportsRepo.getSalesReport().localByAccount`, solo ventas
+  en local); la tarjeta "Caja" desglosa ingresos/gastos del período por
+  cuenta (calculado en memoria, igual que antes); tarjeta nueva "Cuentas"
+  muestra el saldo actual de cada una (`cashAccountsRepo.listWithBalances()`).
+- Verificado con `npm run test` (44/44) + `npx tsc --noEmit` en verde
+  (incluyendo la regeneración de `.expo/types/router.d.ts` para las rutas
+  nuevas de `more/cash/accounts/*`, mismo fix de tooling ya documentado en
+  fases anteriores) + `npm run lint` (mismo error preexistente de
+  `use-color-scheme.web.ts`, no relacionado). **Pendiente**: verificación
+  manual en el emulador — crear/editar cuentas, una venta y un movimiento
+  de caja por cuenta, un pago a distribuidor confirmando que sí descuenta
+  la cuenta, una liquidación eligiendo cuenta, y el desglose en Reportes.
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,

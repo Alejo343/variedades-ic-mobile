@@ -7,7 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { directSalesRepo, productsRepo, type Product } from '@/lib/data';
+import { cashAccountsRepo, directSalesRepo, productsRepo, type CashAccount, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 import { directSaleSchema } from '@/lib/validations';
 
@@ -16,14 +16,21 @@ type CartItem = { productId: number; name: string; sku: string; quantity: string
 export default function SellScreen() {
   const theme = useTheme();
   const [products, setProducts] = useState<Product[]>([]);
+  const [accounts, setAccounts] = useState<CashAccount[]>([]);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     productsRepo.list().then((rows) => setProducts(rows.filter((p) => p.active)));
+    cashAccountsRepo.list().then((rows) => {
+      const active = rows.filter((a) => a.active);
+      setAccounts(active);
+      setAccountId((current) => current ?? active[0]?.id ?? null);
+    });
   }, []);
 
   const filtered = useMemo(() => {
@@ -60,6 +67,7 @@ export default function SellScreen() {
         quantity: Number(item.quantity),
         unitPrice: Number(item.unitPrice),
       })),
+      accountId,
       notes: notes || undefined,
     });
     if (!parsed.success) {
@@ -167,6 +175,19 @@ export default function SellScreen() {
           )}
 
           <ThemedText type="small" style={styles.label}>
+            Cuenta
+          </ThemedText>
+          <ThemedView style={styles.typeRow}>
+            {accounts.map((account) => (
+              <Pressable key={account.id} style={styles.typeFlex} onPress={() => setAccountId(account.id)}>
+                <ThemedView type={accountId === account.id ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
+                  <ThemedText type={accountId === account.id ? 'linkPrimary' : undefined}>{account.name}</ThemedText>
+                </ThemedView>
+              </Pressable>
+            ))}
+          </ThemedView>
+
+          <ThemedText type="small" style={styles.label}>
             Notas (opcional)
           </ThemedText>
           <TextInput value={notes} onChangeText={setNotes} style={inputStyle} multiline />
@@ -203,6 +224,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   label: { marginTop: Spacing.two },
+  typeRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
+  typeFlex: { flex: 1 },
+  typeButton: {
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+    alignItems: 'center',
+  },
   productList: { maxHeight: 200, marginBottom: Spacing.two },
   productRow: {
     padding: Spacing.three,

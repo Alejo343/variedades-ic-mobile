@@ -34,6 +34,20 @@ export const products = sqliteTable("products", {
   syncStatus: text("sync_status").notNull().default("local"),
 });
 
+// Real money accounts (e.g. "Efectivo", "Transferencia") — cash_movements,
+// direct_sales and purchase_payments all reference one, so each account's
+// balance (SUM of its own movements) reflects real money, not just a tag.
+export const cashAccounts = sqliteTable("cash_accounts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("efectivo"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+  updatedAt: text("updated_at").notNull().default(sql`(current_timestamp)`),
+  syncStatus: text("sync_status").notNull().default("local"),
+});
+
 export const sellers = sqliteTable("sellers", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
@@ -70,6 +84,9 @@ export const inventoryMovements = sqliteTable(
   (table) => [check("quantity_delta_not_zero", sql`${table.quantityDelta} <> 0`)],
 );
 
+// Every cash movement now always names the real account it moved money in
+// or out of — accountId is NOT NULL because all sources (manual entries,
+// direct sales, settlement payouts, purchase payments) require picking one.
 export const cashMovements = sqliteTable(
   "cash_movements",
   {
@@ -80,6 +97,9 @@ export const cashMovements = sqliteTable(
     movementDate: text("movement_date").notNull().default(sql`(current_timestamp)`),
     sourceType: text("source_type"),
     sourceId: integer("source_id"),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => cashAccounts.id),
     notes: text("notes"),
     createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
     syncStatus: text("sync_status").notNull().default("local"),
@@ -91,6 +111,9 @@ export const directSales = sqliteTable("direct_sales", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   saleDate: text("sale_date").notNull().default(sql`(current_timestamp)`),
   totalAmount: integer("total_amount").notNull().default(0),
+  accountId: integer("account_id")
+    .notNull()
+    .references(() => cashAccounts.id),
   notes: text("notes"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   syncStatus: text("sync_status").notNull().default("local"),
@@ -170,7 +193,9 @@ export const purchasePayments = sqliteTable(
       .references(() => purchaseOrders.id),
     amount: integer("amount").notNull(),
     paidAt: text("paid_at").notNull().default(sql`(current_timestamp)`),
-    method: text("method"),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => cashAccounts.id),
     notes: text("notes"),
     createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
     syncStatus: text("sync_status").notNull().default("local"),

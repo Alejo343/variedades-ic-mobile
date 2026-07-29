@@ -1,3 +1,4 @@
+import { localCashAccountsRepo } from "./local/cash-accounts-repo";
 import { localCashRepo } from "./local/cash-repo";
 import { localCategoriesRepo } from "./local/categories-repo";
 import { localDirectSalesRepo } from "./local/direct-sales-repo";
@@ -13,6 +14,7 @@ import { localSellerReturnsRepo } from "./local/seller-returns-repo";
 import { localSellersRepo } from "./local/sellers-repo";
 import { localSellerSalesRepo } from "./local/seller-sales-repo";
 import { localSettlementsRepo } from "./local/settlements-repo";
+import type { CashAccountsRepo } from "./cash-accounts-repo";
 import type { CashRepo } from "./cash-repo";
 import type { CategoriesRepo } from "./categories-repo";
 import type { DirectSalesRepo } from "./direct-sales-repo";
@@ -36,6 +38,7 @@ export const productsRepo: ProductsRepo = localProductsRepo;
 export const inventoryRepo: InventoryRepo = localInventoryRepo;
 export const categoriesRepo: CategoriesRepo = localCategoriesRepo;
 export const cashRepo: CashRepo = localCashRepo;
+export const cashAccountsRepo: CashAccountsRepo = localCashAccountsRepo;
 export const directSalesRepo: DirectSalesRepo = localDirectSalesRepo;
 export const sellersRepo: SellersRepo = localSellersRepo;
 export const sellerDeliveriesRepo: SellerDeliveriesRepo = localSellerDeliveriesRepo;
@@ -52,6 +55,7 @@ export type { Product, CreateProductInput, UpdateProductInput } from "./products
 export type { InventoryMovement } from "./inventory-repo";
 export type { Category, CreateCategoryInput, UpdateCategoryInput } from "./categories-repo";
 export type { CashMovement } from "./cash-repo";
+export type { CashAccount, CreateCashAccountInput, UpdateCashAccountInput, CashAccountWithBalance } from "./cash-accounts-repo";
 export type { DirectSale, DirectSaleItem } from "./direct-sales-repo";
 export type { Seller, CreateSellerInput, UpdateSellerInput, SellerInventoryLine, SellerInventoryLineWithSeller } from "./sellers-repo";
 export type { SellerDelivery, SellerDeliveryItem } from "./seller-deliveries-repo";

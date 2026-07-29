@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { sellersRepo, settlementsRepo, type Seller, type Settlement } from '@/lib/data';
+import { cashAccountsRepo, sellersRepo, settlementsRepo, type CashAccount, type Seller, type Settlement } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 
 export default function SettlementDetailScreen() {
@@ -15,6 +15,8 @@ export default function SettlementDetailScreen() {
 
   const [settlement, setSettlement] = useState<Settlement | null>(null);
   const [seller, setSeller] = useState<Seller | null>(null);
+  const [accounts, setAccounts] = useState<CashAccount[]>([]);
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -23,9 +25,12 @@ export default function SettlementDetailScreen() {
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
-      settlementsRepo.getById(settlementId).then((found) => {
+      Promise.all([settlementsRepo.getById(settlementId), cashAccountsRepo.list()]).then(([found, accountRows]) => {
         if (cancelled) return;
         setSettlement(found);
+        const active = accountRows.filter((a) => a.active);
+        setAccounts(active);
+        setAccountId((current) => current ?? active[0]?.id ?? null);
         if (found) {
           sellersRepo.getById(found.sellerId).then((s) => {
             if (!cancelled) setSeller(s);
@@ -40,9 +45,10 @@ export default function SettlementDetailScreen() {
   );
 
   async function handleMarkSettled() {
+    if (accountId === null) return;
     setSaving(true);
     try {
-      const updated = await settlementsRepo.markSettled(settlementId);
+      const updated = await settlementsRepo.markSettled(settlementId, accountId);
       setSettlement(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo liquidar');
@@ -106,11 +112,26 @@ export default function SettlementDetailScreen() {
         {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
 
         {settlement.status === 'pendiente' ? (
-          <Pressable onPress={handleMarkSettled} disabled={saving}>
-            <ThemedView type="backgroundSelected" style={styles.submitButton}>
-              <ThemedText type="linkPrimary">{saving ? 'Liquidando…' : 'Marcar como liquidada'}</ThemedText>
+          <>
+            <ThemedText type="small" style={styles.status}>
+              Cuenta que recibe el pago
+            </ThemedText>
+            <ThemedView style={styles.typeRow}>
+              {accounts.map((account) => (
+                <Pressable key={account.id} style={styles.typeFlex} onPress={() => setAccountId(account.id)}>
+                  <ThemedView type={accountId === account.id ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
+                    <ThemedText type={accountId === account.id ? 'linkPrimary' : undefined}>{account.name}</ThemedText>
+                  </ThemedView>
+                </Pressable>
+              ))}
             </ThemedView>
-          </Pressable>
+
+            <Pressable onPress={handleMarkSettled} disabled={saving || accountId === null}>
+              <ThemedView type="backgroundSelected" style={styles.submitButton}>
+                <ThemedText type="linkPrimary">{saving ? 'Liquidando…' : 'Marcar como liquidada'}</ThemedText>
+              </ThemedView>
+            </Pressable>
+          </>
         ) : null}
       </SafeAreaView>
     </ThemedView>
@@ -129,6 +150,13 @@ const styles = StyleSheet.create({
   },
   totalsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   status: { marginTop: Spacing.two },
+  typeRow: { flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.one, marginBottom: Spacing.two },
+  typeFlex: { flex: 1 },
+  typeButton: {
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+    alignItems: 'center',
+  },
   error: { color: '#d9534f' },
   submitButton: {
     marginTop: Spacing.three,

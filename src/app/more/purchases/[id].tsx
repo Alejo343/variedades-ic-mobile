@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import {
+  cashAccountsRepo,
   distributorsRepo,
   productsRepo,
   purchaseOrdersRepo,
@@ -35,6 +36,7 @@ export default function PurchaseOrderDetailScreen() {
   const [productById, setProductById] = useState<Record<number, Product>>({});
   const [balance, setBalance] = useState<PurchaseOrderBalance | null>(null);
   const [payments, setPayments] = useState<PurchasePayment[]>([]);
+  const [accountNames, setAccountNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -43,10 +45,11 @@ export default function PurchaseOrderDetailScreen() {
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
-      Promise.all([purchaseOrdersRepo.getById(orderId), productsRepo.list()]).then(([found, products]) => {
+      Promise.all([purchaseOrdersRepo.getById(orderId), productsRepo.list(), cashAccountsRepo.list()]).then(([found, products, accounts]) => {
         if (cancelled) return;
         setOrder(found);
         setProductById(Object.fromEntries(products.map((p) => [p.id, p])));
+        setAccountNames(Object.fromEntries(accounts.map((a) => [a.id, a.name])));
         if (found?.distributorId) {
           distributorsRepo.getById(found.distributorId).then((d) => {
             if (!cancelled) setDistributor(d);
@@ -201,7 +204,7 @@ export default function PurchaseOrderDetailScreen() {
                 <ThemedView key={payment.id} type="backgroundElement" style={styles.itemRow}>
                   <ThemedText type="small">{formatCOP(payment.amount)}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
-                    {payment.method ?? 'sin método'} · {payment.paidAt}
+                    {accountNames[payment.accountId] ?? `Cuenta #${payment.accountId}`} · {payment.paidAt}
                   </ThemedText>
                 </ThemedView>
               ))}

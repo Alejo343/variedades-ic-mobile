@@ -5,7 +5,7 @@ export type PurchasePayment = {
   purchaseOrderId: number;
   amount: number;
   paidAt: string;
-  method: string | null;
+  accountId: number;
   notes: string | null;
   createdAt: string;
 };

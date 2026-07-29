@@ -57,6 +57,34 @@
       "when": 1784599439910,
       "tag": "0007_curved_lionheart",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785269279532,
+      "tag": "0008_marvelous_callisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785278998922,
+      "tag": "0009_bizarre_randall_flagg",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785279034355,
+      "tag": "0010_early_hawkeye",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785279081300,
+      "tag": "0011_conscious_magik",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,7 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { cashRepo } from '@/lib/data';
+import { cashAccountsRepo, cashRepo, type CashAccount } from '@/lib/data';
 import { cashMovementSchema } from '@/lib/validations';
 
 export default function NewCashMovementScreen() {
@@ -15,15 +15,26 @@ export default function NewCashMovementScreen() {
   const [type, setType] = useState<'ingreso' | 'gasto'>('gasto');
   const [amount, setAmount] = useState('');
   const [concept, setConcept] = useState('');
+  const [accounts, setAccounts] = useState<CashAccount[]>([]);
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    cashAccountsRepo.list().then((rows) => {
+      const active = rows.filter((a) => a.active);
+      setAccounts(active);
+      setAccountId((current) => current ?? active[0]?.id ?? null);
+    });
+  }, []);
 
   async function handleSubmit() {
     const parsed = cashMovementSchema.safeParse({
       type,
       amount: Number(amount),
       concept,
+      accountId,
       notes: notes || undefined,
     });
     if (!parsed.success) {
@@ -73,6 +84,17 @@ export default function NewCashMovementScreen() {
             placeholderTextColor={theme.textSecondary}
             style={inputStyle}
           />
+
+          <ThemedText type="small">Cuenta</ThemedText>
+          <ThemedView style={styles.typeRow}>
+            {accounts.map((account) => (
+              <Pressable key={account.id} style={styles.typeFlex} onPress={() => setAccountId(account.id)}>
+                <ThemedView type={accountId === account.id ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
+                  <ThemedText type={accountId === account.id ? 'linkPrimary' : undefined}>{account.name}</ThemedText>
+                </ThemedView>
+              </Pressable>
+            ))}
+          </ThemedView>
 
           <ThemedText type="small">Notas (opcional)</ThemedText>
           <TextInput value={notes} onChangeText={setNotes} style={inputStyle} multiline />

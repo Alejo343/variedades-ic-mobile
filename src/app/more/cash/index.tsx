@@ -6,22 +6,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { cashRepo, type CashMovement } from '@/lib/data';
+import { cashAccountsRepo, cashRepo, type CashMovement } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 
 export default function CashScreen() {
   const [balance, setBalance] = useState(0);
   const [movements, setMovements] = useState<CashMovement[]>([]);
+  const [accountNames, setAccountNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
-      Promise.all([cashRepo.getBalance(), cashRepo.list()]).then(([currentBalance, rows]) => {
+      Promise.all([cashRepo.getBalance(), cashRepo.list(), cashAccountsRepo.list()]).then(([currentBalance, rows, accounts]) => {
         if (cancelled) return;
         setBalance(currentBalance);
         setMovements(rows);
+        setAccountNames(Object.fromEntries(accounts.map((a) => [a.id, a.name])));
         setLoading(false);
       });
       return () => {
@@ -59,7 +61,7 @@ export default function CashScreen() {
               <ThemedText type="small">{item.concept}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
                 {item.type === 'ingreso' ? '+' : '-'}
-                {formatCOP(item.amount)} · {item.movementDate}
+                {formatCOP(item.amount)} · {item.movementDate} · {accountNames[item.accountId] ?? `Cuenta #${item.accountId}`}
               </ThemedText>
             </ThemedView>
           )}
@@ -73,6 +75,15 @@ export default function CashScreen() {
               </ThemedView>
             </Pressable>
           </Link>
+          <Link href="/more/cash/accounts" asChild>
+            <Pressable style={styles.actionFlex}>
+              <ThemedView type="backgroundElement" style={styles.addButton}>
+                <ThemedText type="link">Gestionar cuentas</ThemedText>
+              </ThemedView>
+            </Pressable>
+          </Link>
+        </ThemedView>
+        <ThemedView style={styles.actions}>
           <Link href="/more/cash/new" asChild>
             <Pressable style={styles.actionFlex}>
               <ThemedView type="backgroundSelected" style={styles.addButton}>

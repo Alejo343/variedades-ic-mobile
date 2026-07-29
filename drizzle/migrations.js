@@ -9,6 +9,10 @@ import m0004 from './0004_fat_paladin.sql';
 import m0005 from './0005_wakeful_husk.sql';
 import m0006 from './0006_omniscient_devos.sql';
 import m0007 from './0007_curved_lionheart.sql';
+import m0008 from './0008_marvelous_callisto.sql';
+import m0009 from './0009_bizarre_randall_flagg.sql';
+import m0010 from './0010_early_hawkeye.sql';
+import m0011 from './0011_conscious_magik.sql';
 
   export default {
     journal,
@@ -20,7 +24,11 @@ m0003,
 m0004,
 m0005,
 m0006,
-m0007
+m0007,
+m0008,
+m0009,
+m0010,
+m0011
     }
   }
   
