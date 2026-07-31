@@ -11,6 +11,7 @@ const MENU_ITEMS = [
   { label: 'Caja', href: '/more/cash' },
   { label: 'Compras', href: '/more/purchases' },
   { label: 'Vendedores', href: '/more/sellers' },
+  { label: 'Productos', href: '/more/products' },
   { label: 'Inventario', href: '/more/inventory' },
   { label: 'Categorías', href: '/more/products/categories' },
   { label: 'Respaldo', href: '/more/backup' },

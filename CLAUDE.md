@@ -677,6 +677,201 @@ preocuparse por preservar cada valor exacto de texto libre.
   Reportes mostrando el desglose por cuenta en las tarjetas "Ventas",
   "Cuentas" y "Caja". Todo confirmado sin fallos por el usuario.
 
+## Preferencia de tema (claro/oscuro/sistema)
+
+Completada (sesión 2026-07-30). Antes de esta sesión la app seguía siempre
+el modo claro/oscuro del sistema operativo (`useColorScheme` de React
+Native, sin override posible) — el usuario pidió poder fijar el tema desde
+la app, con **claro como predeterminado** aunque el teléfono esté en modo
+oscuro.
+
+- `lib/theme-preference.ts`: store módulo (`getSnapshot`/`subscribe`/
+  `setPreference`, patrón para `useSyncExternalStore`) que persiste la
+  preferencia (`'light'|'dark'|'system'`) vía `expo-sqlite/kv-store`
+  (`Storage.getItemSync`/`setItemSync` — un key-value store SQLite
+  aparte, no la base de datos de Drizzle) — sobrevive a reinicios sin
+  tabla ni migración nueva. Default `'light'` si no hay nada guardado.
+- `hooks/use-app-color-scheme.ts`: `useAppColorScheme()` (resuelve
+  `'light'|'dark'` combinando la preferencia con `useColorScheme()` del
+  sistema solo cuando la preferencia es `'system'`) + `useThemePreference()`
+  (para la pantalla de ajustes). `use-theme.ts`, `app-tabs.tsx` y
+  `app/_layout.tsx` (el `ThemeProvider` de `expo-router` y el color de los
+  tabs nativos) se migraron de `useColorScheme` crudo a este hook — es el
+  único punto de verdad de qué tema se está mostrando.
+- `more/settings.tsx` (antes placeholder "Próximamente"): picker de tres
+  botones Claro/Oscuro/Sistema, mismo patrón visual que el resto de la app.
+- Verificado con `npm run test` (44/44) + `npx tsc --noEmit` en verde +
+  `npm run lint` (mismo error preexistente de `use-color-scheme.web.ts`).
+
+## Identidad visual — fundaciones + panel de Inicio
+
+En construcción (sesión 2026-07-30, continúa la misma sesión que la
+preferencia de tema de arriba). El usuario definió una identidad visual
+completa desde cero ("el tablero del negocio": rapidez, confianza,
+claridad, cercanía — ver la conversación de esa sesión para el brief
+completo con paleta, tipografía, grid, radios, sombras y mockups ASCII de
+cada componente) y pidió construirla. Dado el tamaño real del brief
+(paleta + tipografía + grid + iconografía + rediseño de Inicio con seis
+secciones nuevas), esta sesión trocea así: **fundaciones del design
+system + la pantalla de Inicio como implementación de referencia**, dejando
+el rollout al resto de pantallas (Productos, Inventario, Caja, Vendedores,
+Compras, Reportes) como trabajo pendiente explícito, no asumido.
+
+- `constants/theme.ts`: paleta reconstruida sobre los mismos 5 tokens que
+  ya consumía toda la app (`text`, `background`, `backgroundElement`,
+  `backgroundSelected`, `textSecondary`) — se les cambió el valor, no el
+  nombre, así que las ~40 pantallas existentes heredan la nueva paleta
+  sin tocarlas. Se agregaron tokens nuevos (`primary`, `primaryHover`,
+  `primaryLight`, `border`, `error`, `warning`, `info`, `success`,
+  `purple`) para las pantallas nuevas. `withAlpha(hex, alpha)` (helper
+  nuevo) genera los fondos suaves de alerta (8% de opacidad) pedidos en
+  el brief sin tener que mantener variantes hex separadas por tema. Modo
+  oscuro: paleta derivada a mano (el brief solo daba colores claros) —
+  fondos/superficies en escala slate, y el verde primario pasa a `#22C55E`
+  (más claro que el `#16A34A` del modo claro) por legibilidad sobre fondo
+  oscuro; queda documentado aquí como decisión propia, no pedida
+  explícitamente.
+- Grid de 8px ya lo seguía `Spacing` desde la Fase 1; se agregaron
+  `Layout` (`screenPadding: 20`, `cardGap: 16` — los dos valores que el
+  grid de 8px no cubre exacto) y `Radii` (`card: 16`, `button: 18`,
+  `buttonPrimary: 24`, `chip: 999`) y `Shadow.subtle` tal cual el spec.
+- Tipografía: **Inter** (`@expo-google-fonts/inter`, pesos Regular/Medium/
+  SemiBold/Bold) cargada con `useFonts` en `app/_layout.tsx`, gateado
+  junto con las migraciones de la base de datos antes de ocultar el splash
+  (si la carga de fuentes falla, se sigue con la fuente del sistema en vez
+  de bloquear la app para siempre). `components/themed-text.tsx` mapea
+  cada `type` a un `fontFamily` de Inter en vez de `fontWeight` (las
+  fuentes de Google Fonts vienen como archivos discretos por peso, no
+  variables — RN/Android no sintetiza negrita de forma confiable sobre una
+  fuente custom vía `fontWeight` solo) — esto retina automáticamente las
+  ~40 pantallas existentes a Inter sin tocarlas. Se agregaron los tipos
+  nuevos de la escala del brief (`greeting` 30/SemiBold, `sectionTitle`
+  20/Bold, `bigNumber` 42/Bold con `tabular-nums`, `cardTitle` 18/SemiBold,
+  `secondary` 14/Regular, `caption` 12/Medium) sin tocar los tipos
+  existentes (`default`/`small`/`link`/etc.), para no arriesgar el layout
+  de pantallas no revisadas esta sesión.
+- **Limitación real de plataforma encontrada** (mismo tipo de hallazgo que
+  el límite de 6 tabs de Android en la Fase 9): el brief pide iconografía
+  Lucide en toda la app, incluida la barra inferior. `NativeTabs` (Android/
+  iOS nativos) solo acepta iconos de fuente de sistema (`md=`/`sf=`) o,
+  para librerías de iconos vectoriales, componentes de `@expo/vector-icons`
+  con un método estático `getImageSource()` que las rasteriza a imagen —
+  Lucide son componentes SVG puros (`react-native-svg`) sin ese método, así
+  que no se pueden usar directo ahí. Decisión (sin bloquear para
+  preguntarle al usuario, mismo criterio que el límite de tabs): **Lucide
+  en toda la interfaz normal** (tarjetas, botones, alertas, timeline) y **se
+  mantienen los Material Symbols nativos solo en la barra de tabs**,
+  retinados con los colores nuevos (`iconColor`/`tintColor`/`labelStyle` =
+  verde primario activo, gris secundario inactivo, `disableIndicator` para
+  quitar el "pill" de fondo detrás del ícono seleccionado — el "sin fondos,
+  solo el activo en verde" del brief).
+- Nuevas dependencias: `@expo-google-fonts/inter`, `lucide-react-native`,
+  `react-native-svg` (peer de Lucide).
+- **Pantalla de Inicio** (`app/home/index.tsx`, antes un stub con un solo
+  link a Productos) es la primera implementación completa del sistema:
+  saludo (según hora del día) + tarjeta de ingresos de hoy (`bigNumber`,
+  filtra `cash_movements` tipo ingreso por fecha **local** del dispositivo,
+  no UTC — ver `lib/format.ts#todayLocalDateString`, SQLite guarda
+  `CURRENT_TIMESTAMP` en UTC sin marca de zona) + botón "VENTA RÁPIDA"
+  (`components/primary-action-button.tsx`, ~90px, verde sólido, pulso
+  sutil una sola vez al montar vía Reanimated, no en loop) + grid de 4
+  acciones rápidas + alertas en bloques suaves (agotados/stock bajo/por
+  pagar a distribuidores, ocultas si no hay ninguna) + timeline de
+  actividad reciente (une ventas en local, ventas de vendedor, compras
+  recibidas, ajustes de inventario y liquidaciones — las cinco fuentes que
+  ya existían, sin repo nuevo, solo unidas y ordenadas en memoria) +
+  "Productos favoritos" (sin tracking de favoritos real: proxy derivado de
+  las unidades más vendidas en todo el historial de `direct_sales` +
+  `seller_sales`, documentado como simplificación consciente igual que
+  otras de este proyecto).
+- `lib/format.ts` ganó `formatRelativeTime` ("Hace 4 min", con el mismo
+  ajuste de zona horaria de arriba) y `todayLocalDateString`.
+- Verificado con `npm run test` (44/44) + `npx tsc --noEmit` en verde +
+  `npm run lint` (mismo error preexistente). **No verificado todavía en
+  el celular del usuario** — pendiente antes de dar la pantalla de Inicio
+  por terminada, especialmente por ser la primera pantalla en usar
+  `expo-sqlite/kv-store`, Inter y Lucide/`react-native-svg` juntos en
+  tiempo de ejecución real (typecheck/lint no lo garantizan).
+- **Pendiente, explícitamente fuera de esta sesión**: aplicar el mismo
+  lenguaje visual (tarjetas con `Radii`/`Shadow`, botones primarios verdes
+  en vez del `backgroundSelected` gris genérico, iconos Lucide) al resto
+  de pantallas — Productos, Inventario, Caja, Vendedores, Compras,
+  Reportes, formularios en general. Se decidió no tocarlas de una sola vez
+  para no romper ~40 archivos sin poder verificarlos todos en la misma
+  sesión — queda como la siguiente sesión de esta misma fase.
+
+### Rollout — pantalla de Vender (catálogo con búsqueda + categorías + grid)
+
+Segundo incremento del rollout (misma sesión). El usuario pidió
+específicamente rediseñar la parte de "agregar producto" de `sell/index.tsx`
+(antes un buscador de texto que solo mostraba una lista cuando se escribía)
+como un catálogo siempre visible: barra de búsqueda con ícono (`Search` de
+Lucide) y placeholder "Buscar productos", cápsulas de categoría en
+horizontal (`categoriesRepo.list()`, "Todos" primero y seleccionada por
+defecto, cápsula activa en verde sólido — `Radii.chip`), y grid de 3
+columnas (ancho de tarjeta calculado con `useWindowDimensions` en vez de
+`%` fijo, para que los 3 huecos de `Layout.cardGap` encajen exacto) con 6
+productos visibles (`PAGE_SIZE`) + botón "Ver más productos" que suma 6 más.
+
+- Cambio de comportamiento real, no solo visual: **tocar una tarjeta ahora
+  es un toggle** (agrega al carrito si no estaba, lo quita si ya estaba —
+  `toggleProduct`, reemplaza el `addProduct` que antes solo acumulaba
+  cantidad) — así el fondo "seleccionado" (`backgroundSelected`, el verde
+  claro del tema) refleja de verdad si el producto está en la venta. Pedir
+  más de 1 unidad del mismo producto se sigue haciendo desde la fila del
+  carrito más abajo (sin cambios, `updateItem`), no repitiendo el toque.
+  Buscador y categoría filtran el mismo catálogo en conjunto (AND, no
+  reemplazo uno del otro).
+- El resto de la pantalla (carrito, selector de cuenta, notas, total,
+  botón Cobrar) no se tocó esta vuelta — sigue con los mismos componentes
+  de antes, ya retintados automáticamente por la paleta global de la
+  sección de arriba.
+- Verificado con `npm run test` (44/44) + `npx tsc --noEmit` + `npm run
+  lint` en verde (mismo error preexistente). **No verificado todavía en
+  el celular del usuario.**
+
+Tercer incremento, misma sesión: se quitó el link "Ver historial de
+ventas" de arriba de la pantalla (la ruta `/sell/history` sigue
+existiendo, solo ya no tiene acceso directo desde el POS) y se rediseñó
+el carrito. "Productos en la venta" pasó a llamarse **"Carrito"**, y cada
+fila ahora es horizontal: miniatura (`item.imageUri`, con el mismo
+ícono `Package` de respaldo que las tarjetas del catálogo) + nombre +
+selector de cantidad (`-`/`+` con `Minus`/`Plus` de Lucide, en vez del
+`TextInput` numérico anterior) + precio total de la línea + botón `X`
+para quitarla. `CartItem` ganó el campo `imageUri`; `toggleProduct`
+(antes `addProduct`) ya lo guarda al agregar el producto desde el grid.
+El campo "Precio unitario" editable por línea **se quitó** — el precio
+de línea ahora es fijo al `product.price` del momento en que se agregó,
+solo la cantidad es ajustable desde el carrito (con la cápsula +/-, no
+repitiendo el toque sobre la tarjeta). Verificado con `npm run test`
+(44/44) + `npx tsc --noEmit` + `npm run lint` en verde. **No verificado
+todavía en el celular del usuario.**
+
+Cuarto incremento, misma sesión: varias rondas de pulido visual del
+carrito y de la tarjeta de cobro (tarjeta única con separador tenue entre
+filas en vez de cajas sueltas, "Cuenta" renombrado a "Método de pago" y
+envuelto en su propia tarjeta, "Total" + botón "Cobrar" unificados en una
+sola tarjeta) — sin cambios de lógica, solo estilo. Luego se agregó
+**descuento en la venta**: botón "Descuento" (ícono `Tag`, contorno verde,
+misma forma alargada que "Cobrar" pero sin relleno — menos protagonismo)
+arriba de "Total"; al tocarlo aparecen filas de "Subtotal" y "Descuento"
+(esta última con un `TextInput` numérico) antes del "Total" final.
+
+- El selector de cantidad del carrito ahora respeta el stock: `CartItem`
+  guarda `stock` (capturado al agregar el producto) y `changeQuantity`
+  hace `Math.min(item.stock, ...)` — el botón `+` se deshabilita y atenúa
+  al llegar al máximo, con un texto "Stock máximo alcanzado".
+- `direct_sale_items` no tiene columna de descuento — en vez de agregar
+  una (migración nueva solo para esto), `applyDiscount` (función pura,
+  arriba del componente) reparte el descuento proporcionalmente entre las
+  líneas del carrito ajustando cada `unitPrice` (`ratio = grandTotal /
+  subtotal`), con el remanente de redondeo absorbido por la línea de
+  mayor subtotal para que ningún precio quede negativo. Así el monto que
+  de verdad queda en `cash_movements` coincide con lo cobrado en pantalla
+  — el descuento nunca es solo cosmético.
+- Verificado con `npm run test` (44/44) + `npx tsc --noEmit` + `npm run
+  lint` en verde. **No verificado todavía en el celular del usuario.**
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,

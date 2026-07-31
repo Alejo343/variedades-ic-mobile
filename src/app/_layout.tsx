@@ -1,16 +1,24 @@
+import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, useFonts } from '@expo-google-fonts/inter';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { Text, View, useColorScheme } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { useAppColorScheme } from '@/hooks/use-app-color-scheme';
 import { useDatabaseMigrations } from '@/lib/data/local/use-migrations';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const { success, error } = useDatabaseMigrations();
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
 
   if (error) {
     return (
@@ -20,7 +28,8 @@ export default function TabLayout() {
     );
   }
 
-  if (!success) {
+  // Font load failure falls through to the system font rather than blocking forever.
+  if (!success || !(fontsLoaded || fontError)) {
     return null;
   }
 
