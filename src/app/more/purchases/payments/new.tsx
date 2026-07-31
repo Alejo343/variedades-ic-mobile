@@ -56,7 +56,7 @@ export default function NewPurchasePaymentScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ThemedText type="small">Monto</ThemedText>
         <TextInput value={amount} onChangeText={setAmount} keyboardType="numeric" style={inputStyle} />
 

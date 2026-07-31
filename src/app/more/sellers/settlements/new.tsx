@@ -65,7 +65,7 @@ export default function NewSettlementScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ThemedText type="small">Vendedor</ThemedText>
         <ThemedText type="default" style={styles.sellerName}>
           {seller?.name ?? `Vendedor #${sellerId}`}

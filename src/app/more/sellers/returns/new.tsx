@@ -92,7 +92,7 @@ export default function NewSellerReturnScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <ThemedText type="small">Vendedor</ThemedText>
           <ThemedText type="default" style={styles.sellerName}>

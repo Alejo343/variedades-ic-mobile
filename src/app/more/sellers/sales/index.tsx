@@ -32,7 +32,7 @@ export default function SellerSalesScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <FlatList
           data={sales}
           keyExtractor={(item) => String(item.id)}

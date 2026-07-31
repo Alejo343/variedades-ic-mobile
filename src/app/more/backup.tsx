@@ -83,7 +83,7 @@ export default function BackupScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ThemedText themeColor="textSecondary" type="small">
           Todos los datos viven solo en este teléfono. Exporta un respaldo de vez en cuando (a
           Drive, correo, etc.) para no perderlo si el teléfono se daña o se pierde.

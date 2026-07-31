@@ -32,7 +32,7 @@ export default function SettlementsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <FlatList
           data={settlements}
           keyExtractor={(item) => String(item.id)}

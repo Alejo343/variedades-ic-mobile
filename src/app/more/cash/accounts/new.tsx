@@ -44,7 +44,7 @@ export default function NewCashAccountScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <ThemedText type="small">Nombre</ThemedText>
           <TextInput

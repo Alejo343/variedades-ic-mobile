@@ -1,9 +1,10 @@
 import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
 import { Minus, Package, Plus, Search, Tag, Trash2 } from 'lucide-react-native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutLeft, LinearTransition, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -11,6 +12,7 @@ import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { cashAccountsRepo, categoriesRepo, directSalesRepo, productsRepo, type CashAccount, type Category, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { triggerSaleSuccessOverlay } from '@/lib/success-overlay';
 import { directSaleSchema } from '@/lib/validations';
 
 type CartItem = {
@@ -52,6 +54,156 @@ function applyDiscount(cart: CartItem[], subtotal: number, grandTotal: number) {
   return adjusted;
 }
 
+type ProductCardProps = {
+  product: Product;
+  selected: boolean;
+  cardWidth: number;
+  onPress: () => void;
+};
+
+// Quick scale bounce on tap gives immediate tactile feedback before the
+// slower `backgroundSelected` color swap lands.
+function ProductCard({ product, selected, cardWidth, onPress }: ProductCardProps) {
+  const theme = useTheme();
+  const scale = useSharedValue(1);
+  const [pressCount, setPressCount] = useState(0);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  useEffect(() => {
+    if (pressCount === 0) return;
+    // react-hooks/immutability false-positives on shared-value mutation here (same
+    // pattern as AnimatedTotal below passes lint fine without the extra local state).
+    // eslint-disable-next-line react-hooks/immutability
+    scale.value = withSequence(withTiming(0.92, { duration: 80 }), withTiming(1, { duration: 120 }));
+  }, [pressCount, scale]);
+
+  function handlePress() {
+    setPressCount((c) => c + 1);
+    onPress();
+  }
+
+  return (
+    <Pressable onPress={handlePress} style={{ width: cardWidth }}>
+      <Animated.View style={animatedStyle}>
+        <ThemedView type={selected ? 'backgroundSelected' : 'backgroundElement'} style={[styles.productCard, Shadow.subtle]}>
+          {product.imageUri ? (
+            <Image source={{ uri: product.imageUri }} style={styles.productImage} />
+          ) : (
+            <View style={[styles.productImage, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
+              <Package color={theme.primary} size={22} />
+            </View>
+          )}
+          <ThemedText type="small" numberOfLines={2} style={styles.productName}>
+            {product.name}
+          </ThemedText>
+          <ThemedText type="smallBold">{formatCOP(product.price)}</ThemedText>
+          <ThemedText type="caption" themeColor="textSecondary">
+            Stock: {product.stock}
+          </ThemedText>
+        </ThemedView>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+type CartRowProps = {
+  item: CartItem;
+  onIncrement: () => void;
+  onDecrement: () => void;
+  onRemove: () => void;
+};
+
+// Quantity punches on change so +/- taps register visually, not just numerically.
+function CartRow({ item, onIncrement, onDecrement, onRemove }: CartRowProps) {
+  const theme = useTheme();
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    // eslint-disable-next-line react-hooks/immutability -- see ProductCard note above
+    scale.value = withSequence(withTiming(1.25, { duration: 90 }), withTiming(1, { duration: 120 }));
+  }, [item.quantity, scale]);
+
+  return (
+    <View style={styles.cartRow}>
+      {item.imageUri ? (
+        <Image source={{ uri: item.imageUri }} style={styles.cartThumb} />
+      ) : (
+        <View style={[styles.cartThumb, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
+          <Package color={theme.primary} size={26} />
+        </View>
+      )}
+
+      <View style={styles.cartInfo}>
+        <ThemedText type="default" numberOfLines={2}>
+          {item.name}
+        </ThemedText>
+
+        <View style={styles.quantityStepper}>
+          <Pressable
+            onPress={onDecrement}
+            disabled={Number(item.quantity) <= 1}
+            style={[styles.stepperButton, { borderColor: theme.primary }, Number(item.quantity) <= 1 && styles.stepperButtonDisabled]}>
+            <Minus color={theme.primary} size={16} />
+          </Pressable>
+          <Animated.View style={animatedStyle}>
+            <ThemedText type="smallBold" style={[styles.stepperValue, { color: theme.primary }]}>
+              {item.quantity}
+            </ThemedText>
+          </Animated.View>
+          <Pressable
+            onPress={onIncrement}
+            disabled={Number(item.quantity) >= item.stock}
+            style={[
+              styles.stepperButton,
+              { borderColor: theme.primary },
+              Number(item.quantity) >= item.stock && styles.stepperButtonDisabled,
+            ]}>
+            <Plus color={theme.primary} size={16} />
+          </Pressable>
+        </View>
+        {Number(item.quantity) >= item.stock ? (
+          <ThemedText type="caption" themeColor="textSecondary">
+            Stock máximo alcanzado
+          </ThemedText>
+        ) : null}
+      </View>
+
+      <View style={styles.cartRight}>
+        <ThemedText type="cardTitle">{formatCOP((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}</ThemedText>
+        <Pressable onPress={onRemove} style={styles.removeButton}>
+          <Trash2 color={theme.error} size={22} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// Small "punch" every time the total actually changes, so the number reads
+// as freshly updated rather than a silent re-render.
+function AnimatedTotal({ value, color }: { value: number; color: string }) {
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    scale.value = withSequence(withTiming(1.08, { duration: 100 }), withTiming(1, { duration: 140 }));
+  }, [value, scale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <ThemedText type="sectionTitle" style={{ color }}>
+        {formatCOP(value)}
+      </ThemedText>
+    </Animated.View>
+  );
+}
+
 export default function SellScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -68,6 +220,23 @@ export default function SellScreen() {
   const [discount, setDiscount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // The "Cobrar" button's own position is where the Mercado Libre-style
+  // success circle (rendered globally, see SaleSuccessOverlay) grows from.
+  const checkoutButtonRef = useRef<View>(null);
+
+  function measureCheckoutOrigin(): Promise<{ x: number; y: number } | null> {
+    return new Promise((resolve) => {
+      const buttonNode = checkoutButtonRef.current;
+      if (!buttonNode) {
+        resolve(null);
+        return;
+      }
+      buttonNode.measureInWindow((bx, by, bw, bh) => {
+        resolve({ x: bx + bw / 2, y: by + bh / 2 });
+      });
+    });
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -173,6 +342,8 @@ export default function SellScreen() {
     setSaving(true);
     try {
       await directSalesRepo.create(parsed.data);
+      const origin = await measureCheckoutOrigin();
+      if (origin) triggerSaleSuccessOverlay(origin);
       setCart([]);
       setNotes('');
       setSearch('');
@@ -189,7 +360,7 @@ export default function SellScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <ThemedView type="backgroundElement" style={[styles.searchBar, Shadow.subtle]}>
             <Search color={theme.textSecondary} size={18} />
@@ -234,31 +405,15 @@ export default function SellScreen() {
           </ScrollView>
 
           <View style={styles.productGrid}>
-            {visibleCatalog.map((product) => {
-              const selected = cart.some((item) => item.productId === product.id);
-              return (
-                <Pressable key={product.id} onPress={() => toggleProduct(product)} style={{ width: cardWidth }}>
-                  <ThemedView
-                    type={selected ? 'backgroundSelected' : 'backgroundElement'}
-                    style={[styles.productCard, Shadow.subtle]}>
-                    {product.imageUri ? (
-                      <Image source={{ uri: product.imageUri }} style={styles.productImage} />
-                    ) : (
-                      <View style={[styles.productImage, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
-                        <Package color={theme.primary} size={22} />
-                      </View>
-                    )}
-                    <ThemedText type="small" numberOfLines={2} style={styles.productName}>
-                      {product.name}
-                    </ThemedText>
-                    <ThemedText type="smallBold">{formatCOP(product.price)}</ThemedText>
-                    <ThemedText type="caption" themeColor="textSecondary">
-                      Stock: {product.stock}
-                    </ThemedText>
-                  </ThemedView>
-                </Pressable>
-              );
-            })}
+            {visibleCatalog.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                cardWidth={cardWidth}
+                selected={cart.some((item) => item.productId === product.id)}
+                onPress={() => toggleProduct(product)}
+              />
+            ))}
           </View>
 
           {catalog.length === 0 ? (
@@ -295,60 +450,19 @@ export default function SellScreen() {
               </ThemedText>
             ) : (
               cart.map((item, index) => (
-                <View key={item.productId}>
-                  <View style={styles.cartRow}>
-                    {item.imageUri ? (
-                      <Image source={{ uri: item.imageUri }} style={styles.cartThumb} />
-                    ) : (
-                      <View style={[styles.cartThumb, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
-                        <Package color={theme.primary} size={26} />
-                      </View>
-                    )}
-
-                    <View style={styles.cartInfo}>
-                      <ThemedText type="default" numberOfLines={2}>
-                        {item.name}
-                      </ThemedText>
-
-                      <View style={styles.quantityStepper}>
-                        <Pressable
-                          onPress={() => changeQuantity(item.productId, -1)}
-                          disabled={Number(item.quantity) <= 1}
-                          style={[styles.stepperButton, { borderColor: theme.primary }, Number(item.quantity) <= 1 && styles.stepperButtonDisabled]}>
-                          <Minus color={theme.primary} size={16} />
-                        </Pressable>
-                        <ThemedText type="smallBold" style={[styles.stepperValue, { color: theme.primary }]}>
-                          {item.quantity}
-                        </ThemedText>
-                        <Pressable
-                          onPress={() => changeQuantity(item.productId, 1)}
-                          disabled={Number(item.quantity) >= item.stock}
-                          style={[
-                            styles.stepperButton,
-                            { borderColor: theme.primary },
-                            Number(item.quantity) >= item.stock && styles.stepperButtonDisabled,
-                          ]}>
-                          <Plus color={theme.primary} size={16} />
-                        </Pressable>
-                      </View>
-                      {Number(item.quantity) >= item.stock ? (
-                        <ThemedText type="caption" themeColor="textSecondary">
-                          Stock máximo alcanzado
-                        </ThemedText>
-                      ) : null}
-                    </View>
-
-                    <View style={styles.cartRight}>
-                      <ThemedText type="cardTitle">
-                        {formatCOP((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}
-                      </ThemedText>
-                      <Pressable onPress={() => removeItem(item.productId)} style={styles.removeButton}>
-                        <Trash2 color={theme.error} size={22} />
-                      </Pressable>
-                    </View>
-                  </View>
+                <Animated.View
+                  key={item.productId}
+                  entering={FadeInDown.duration(220)}
+                  exiting={FadeOutLeft.duration(180)}
+                  layout={LinearTransition.delay(140)}>
+                  <CartRow
+                    item={item}
+                    onIncrement={() => changeQuantity(item.productId, 1)}
+                    onDecrement={() => changeQuantity(item.productId, -1)}
+                    onRemove={() => removeItem(item.productId)}
+                  />
                   {index < cart.length - 1 ? <View style={[styles.cartDivider, { backgroundColor: theme.border }]} /> : null}
-                </View>
+                </Animated.View>
               ))
             )}
           </ThemedView>
@@ -396,7 +510,7 @@ export default function SellScreen() {
             </Pressable>
 
             {showDiscount ? (
-              <>
+              <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
                 <View style={styles.totalRow}>
                   <ThemedText type="small" themeColor="textSecondary">
                     Subtotal
@@ -417,30 +531,30 @@ export default function SellScreen() {
                     style={[styles.discountInput, { color: theme.error }]}
                   />
                 </View>
-              </>
+              </Animated.View>
             ) : null}
 
-            <View style={styles.totalRow}>
-              <ThemedText type="cardTitle">Total</ThemedText>
-              <ThemedText type="sectionTitle" style={{ color: theme.primary }}>
-                {formatCOP(grandTotal)}
-              </ThemedText>
-            </View>
-
-            {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-
-            <Pressable onPress={handleSubmit} disabled={saving || cart.length === 0}>
-              <View
-                style={[
-                  styles.checkoutButton,
-                  { backgroundColor: theme.primary },
-                  (saving || cart.length === 0) && styles.checkoutButtonDisabled,
-                ]}>
-                <ThemedText type="sectionTitle" style={styles.checkoutLabel}>
-                  {saving ? 'Cobrando…' : 'Cobrar'}
-                </ThemedText>
+            <Animated.View layout={LinearTransition.delay(90)} style={styles.checkoutBottom}>
+              <View style={styles.totalRow}>
+                <ThemedText type="cardTitle">Total</ThemedText>
+                <AnimatedTotal value={grandTotal} color={theme.primary} />
               </View>
-            </Pressable>
+
+              {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
+
+              <Pressable ref={checkoutButtonRef} onPress={handleSubmit} disabled={saving || cart.length === 0}>
+                <View
+                  style={[
+                    styles.checkoutButton,
+                    { backgroundColor: theme.primary },
+                    (saving || cart.length === 0) && styles.checkoutButtonDisabled,
+                  ]}>
+                  <ThemedText type="sectionTitle" style={styles.checkoutLabel}>
+                    {saving ? 'Cobrando…' : 'Cobrar'}
+                  </ThemedText>
+                </View>
+              </Pressable>
+            </Animated.View>
           </ThemedView>
         </ScrollView>
       </SafeAreaView>
@@ -568,6 +682,7 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     gap: Spacing.three,
   },
+  checkoutBottom: { gap: Spacing.three },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

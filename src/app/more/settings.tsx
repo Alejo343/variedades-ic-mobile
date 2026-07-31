@@ -18,7 +18,7 @@ export default function SettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ThemedText type="small">Tema</ThemedText>
         <ThemedView style={styles.optionRow}>
           {OPTIONS.map((option) => (

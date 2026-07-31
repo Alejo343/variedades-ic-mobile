@@ -69,7 +69,7 @@ export default function SettlementDetailScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ThemedText type="small">Vendedor</ThemedText>
         <ThemedText type="default" style={styles.value}>
           {seller?.name ?? `Vendedor #${settlement.sellerId}`}

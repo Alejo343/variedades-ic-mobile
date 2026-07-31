@@ -34,7 +34,7 @@ export default function CashScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <FlatList
           data={movements}
           keyExtractor={(item) => String(item.id)}

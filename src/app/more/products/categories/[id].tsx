@@ -91,7 +91,7 @@ export default function EditCategoryScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ThemedText type="small">Nombre</ThemedText>
         <TextInput value={name} onChangeText={setName} style={inputStyle} />
 

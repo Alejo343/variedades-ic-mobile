@@ -30,7 +30,7 @@ export default function CategoriesScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <FlatList
           data={categories}
           keyExtractor={(item) => String(item.id)}
