@@ -30,7 +30,7 @@ export default function DistributorsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <FlatList
           data={distributors}
           keyExtractor={(item) => String(item.id)}

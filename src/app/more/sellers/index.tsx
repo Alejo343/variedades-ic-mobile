@@ -37,7 +37,7 @@ export default function SellersScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <FlatList
           data={sellers}
           keyExtractor={(item) => String(item.id)}

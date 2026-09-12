@@ -60,7 +60,7 @@ export default function AdjustStockScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <ThemedText type="small">Producto</ThemedText>
           {selected ? (

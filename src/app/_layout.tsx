@@ -5,6 +5,7 @@ import { Text, View } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { SaleSuccessOverlay } from '@/components/sale-success-overlay';
 import { useAppColorScheme } from '@/hooks/use-app-color-scheme';
 import { useDatabaseMigrations } from '@/lib/data/local/use-migrations';
 
@@ -37,6 +38,7 @@ export default function TabLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       <AppTabs />
+      <SaleSuccessOverlay />
     </ThemeProvider>
   );
 }

@@ -21,7 +21,7 @@ const MENU_ITEMS = [
 export default function MoreScreen() {
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         {MENU_ITEMS.map((item) => (
           <Link key={item.href} href={item.href} asChild>
             <Pressable>

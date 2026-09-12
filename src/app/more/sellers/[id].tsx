@@ -115,7 +115,7 @@ export default function EditSellerScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <ThemedText type="small">Nombre</ThemedText>
           <TextInput value={name} onChangeText={setName} style={inputStyle} />

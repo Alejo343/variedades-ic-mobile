@@ -93,7 +93,7 @@ export default function NewSellerDeliveryScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <ThemedText type="small">Vendedor</ThemedText>
           {selectedSeller ? (

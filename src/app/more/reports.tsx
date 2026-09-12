@@ -195,7 +195,7 @@ export default function ReportsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <ThemedText type="small">Rango de fechas (opcional, afecta Compras/Ventas/Utilidad/Caja del período)</ThemedText>
           <ThemedView style={styles.dateRow}>

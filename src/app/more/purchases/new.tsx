@@ -168,7 +168,7 @@ export default function NewPurchaseOrderScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <ThemedText type="small">Distribuidor (opcional)</ThemedText>
           <ThemedView style={styles.distributorRow}>
