@@ -24,6 +24,10 @@ export const products = sqliteTable("products", {
   price: integer("price").notNull(),
   purchasePrice: integer("purchase_price").notNull().default(0),
   categoryId: integer("category_id").references(() => categories.id),
+  // Optional code the distributor assigns to this specific product (their own
+  // SKU for it) — not a reference to `distributors.id`, just a free-text
+  // uniqueness guard so the same distributor product isn't registered twice.
+  distributorCode: text("distributor_code").unique(),
   stock: integer("stock").notNull().default(0),
   minStock: integer("min_stock").notNull().default(0),
   warrantyMonths: integer("warranty_months"),

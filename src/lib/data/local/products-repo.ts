@@ -1,4 +1,4 @@
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { formatSku, getSkuPrefix } from "../../domain/sku";
 import type { CreateProductInput, Product, ProductsRepo, UpdateProductInput } from "../products-repo";
 import { db } from "./db";
@@ -14,6 +14,7 @@ function toProduct(row: typeof products.$inferSelect): Product {
     price: row.price,
     purchasePrice: row.purchasePrice,
     categoryId: row.categoryId,
+    distributorCode: row.distributorCode,
     stock: row.stock,
     minStock: row.minStock,
     warrantyMonths: row.warrantyMonths,
@@ -49,6 +50,14 @@ export const localProductsRepo: ProductsRepo = {
     return row ? toProduct(row) : null;
   },
 
+  async findByDistributorCode(code: string) {
+    const normalized = code.trim().toLowerCase();
+    const row = await db.query.products.findFirst({
+      where: sql`lower(${products.distributorCode}) = ${normalized}`,
+    });
+    return row ? toProduct(row) : null;
+  },
+
   async create(data: CreateProductInput) {
     const sku = await generateSku(data.categoryId);
     const [row] = await db
@@ -61,6 +70,7 @@ export const localProductsRepo: ProductsRepo = {
         price: data.price,
         purchasePrice: data.purchasePrice ?? 0,
         categoryId: data.categoryId ?? null,
+        distributorCode: data.distributorCode ?? null,
         stock: data.stock ?? 0,
         minStock: data.minStock ?? 0,
         warrantyMonths: data.warrantyMonths ?? null,

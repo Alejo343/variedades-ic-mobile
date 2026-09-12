@@ -9,6 +9,7 @@ export type Product = {
   price: number;
   purchasePrice: number;
   categoryId: number | null;
+  distributorCode: string | null;
   stock: number;
   minStock: number;
   warrantyMonths: number | null;
@@ -26,6 +27,7 @@ export type UpdateProductInput = Partial<CreateProductInput>;
 export interface ProductsRepo {
   list(): Promise<Product[]>;
   getById(id: number): Promise<Product | null>;
+  findByDistributorCode(code: string): Promise<Product | null>;
   create(data: CreateProductInput): Promise<Product>;
   update(id: number, data: UpdateProductInput): Promise<Product>;
   deactivate(id: number): Promise<void>;

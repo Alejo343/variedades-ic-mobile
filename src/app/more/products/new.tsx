@@ -8,7 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { categoriesRepo, productsRepo, type Category } from '@/lib/data';
+import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
 import { pickAndPersistProductImage } from '@/lib/images';
 import { productSchema, toSlug } from '@/lib/validations';
 
@@ -22,11 +22,13 @@ export default function NewProductScreen() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
+  const [distributorCode, setDistributorCode] = useState('');
   const [stock, setStock] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [warrantyMonths, setWarrantyMonths] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -55,6 +57,7 @@ export default function NewProductScreen() {
       price: Number(price),
       purchasePrice: purchasePrice ? Number(purchasePrice) : 0,
       categoryId,
+      distributorCode: distributorCode.trim() || undefined,
       stock: Number(stock) || 0,
       minStock: Number(minStock) || 0,
       warrantyMonths: warrantyMonths ? Number(warrantyMonths) : null,
@@ -65,8 +68,17 @@ export default function NewProductScreen() {
       return;
     }
     setError(null);
+    setConflict(null);
     setSaving(true);
     try {
+      if (parsed.data.distributorCode) {
+        const existing = await productsRepo.findByDistributorCode(parsed.data.distributorCode);
+        if (existing) {
+          setError(`Ya existe un producto con este código de proveedor: ${existing.name}`);
+          setConflict(existing);
+          return;
+        }
+      }
       await productsRepo.create(parsed.data);
       router.back();
     } catch (e) {
@@ -135,6 +147,16 @@ export default function NewProductScreen() {
           <ThemedText type="small">Descripción (opcional)</ThemedText>
           <TextInput value={description} onChangeText={setDescription} style={inputStyle} multiline />
 
+          <ThemedText type="small">Código del proveedor (opcional)</ThemedText>
+          <TextInput
+            value={distributorCode}
+            onChangeText={setDistributorCode}
+            placeholder="Ej. PROV-100"
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            style={inputStyle}
+          />
+
           <ThemedText type="small">Precio de venta</ThemedText>
           <TextInput value={price} onChangeText={setPrice} keyboardType="numeric" style={inputStyle} />
 
@@ -151,6 +173,13 @@ export default function NewProductScreen() {
           <TextInput value={warrantyMonths} onChangeText={setWarrantyMonths} keyboardType="numeric" style={inputStyle} />
 
           {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
+          {conflict ? (
+            <Pressable onPress={() => router.push(`/more/products/${conflict.id}`)}>
+              <ThemedText type="linkPrimary" style={styles.conflictLink}>
+                Ir a editar {conflict.name}
+              </ThemedText>
+            </Pressable>
+          ) : null}
 
           <Pressable onPress={handleSubmit} disabled={saving}>
             <ThemedView type="backgroundSelected" style={styles.submitButton}>
@@ -197,6 +226,7 @@ const styles = StyleSheet.create({
     marginRight: Spacing.two,
   },
   error: { color: '#d9534f' },
+  conflictLink: { marginBottom: Spacing.two },
   submitButton: {
     marginTop: Spacing.three,
     padding: Spacing.three,

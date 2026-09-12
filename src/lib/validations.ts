@@ -14,6 +14,7 @@ export const productSchema = z.object({
   price: z.number().int().min(0, "El precio debe ser mayor a 0"),
   purchasePrice: z.number().int().min(0, "El precio de compra debe ser mayor a 0").optional().default(0),
   categoryId: z.number().int().nullable().optional(),
+  distributorCode: z.string().trim().min(1).optional(),
   stock: z.number().int().min(0).optional().default(0),
   minStock: z.number().int().min(0).optional().default(0),
   warrantyMonths: z.number().int().min(0).nullable().optional(),

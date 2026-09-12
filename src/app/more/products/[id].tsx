@@ -8,7 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { categoriesRepo, productsRepo, type Category } from '@/lib/data';
+import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
 import { pickAndPersistProductImage } from '@/lib/images';
 import { productSchema } from '@/lib/validations';
 
@@ -27,11 +27,13 @@ export default function EditProductScreen() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
+  const [distributorCode, setDistributorCode] = useState('');
   const [stock, setStock] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [warrantyMonths, setWarrantyMonths] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
 
   useFocusEffect(
@@ -52,6 +54,7 @@ export default function EditProductScreen() {
           setDescription(product.description ?? '');
           setPrice(String(product.price));
           setPurchasePrice(String(product.purchasePrice));
+          setDistributorCode(product.distributorCode ?? '');
           setStock(String(product.stock));
           setMinStock(String(product.minStock));
           setWarrantyMonths(product.warrantyMonths != null ? String(product.warrantyMonths) : '');
@@ -82,6 +85,7 @@ export default function EditProductScreen() {
       price: Number(price),
       purchasePrice: purchasePrice ? Number(purchasePrice) : 0,
       categoryId,
+      distributorCode: distributorCode.trim() || undefined,
       stock: Number(stock) || 0,
       minStock: Number(minStock) || 0,
       warrantyMonths: warrantyMonths ? Number(warrantyMonths) : null,
@@ -93,8 +97,17 @@ export default function EditProductScreen() {
       return;
     }
     setError(null);
+    setConflict(null);
     setSaving(true);
     try {
+      if (parsed.data.distributorCode) {
+        const existing = await productsRepo.findByDistributorCode(parsed.data.distributorCode);
+        if (existing && existing.id !== productId) {
+          setError(`Ya existe un producto con este código de proveedor: ${existing.name}`);
+          setConflict(existing);
+          return;
+        }
+      }
       await productsRepo.update(productId, parsed.data);
       router.back();
     } catch (e) {
@@ -174,6 +187,16 @@ export default function EditProductScreen() {
           <ThemedText type="small">Descripción (opcional)</ThemedText>
           <TextInput value={description} onChangeText={setDescription} style={inputStyle} multiline />
 
+          <ThemedText type="small">Código del proveedor (opcional)</ThemedText>
+          <TextInput
+            value={distributorCode}
+            onChangeText={setDistributorCode}
+            placeholder="Ej. PROV-100"
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            style={inputStyle}
+          />
+
           <ThemedText type="small">Precio de venta</ThemedText>
           <TextInput value={price} onChangeText={setPrice} keyboardType="numeric" style={inputStyle} />
 
@@ -190,6 +213,13 @@ export default function EditProductScreen() {
           <TextInput value={warrantyMonths} onChangeText={setWarrantyMonths} keyboardType="numeric" style={inputStyle} />
 
           {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
+          {conflict ? (
+            <Pressable onPress={() => router.push(`/more/products/${conflict.id}`)}>
+              <ThemedText type="linkPrimary" style={styles.conflictLink}>
+                Ir a editar {conflict.name}
+              </ThemedText>
+            </Pressable>
+          ) : null}
 
           <Pressable onPress={handleSubmit} disabled={saving}>
             <ThemedView type="backgroundSelected" style={styles.submitButton}>
@@ -245,6 +275,7 @@ const styles = StyleSheet.create({
     marginRight: Spacing.two,
   },
   error: { color: '#d9534f' },
+  conflictLink: { marginBottom: Spacing.two },
   submitButton: {
     marginTop: Spacing.three,
     padding: Spacing.three,

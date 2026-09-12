@@ -7,6 +7,7 @@ import {
   PackagePlus,
   PackageX,
   ShoppingCart,
+  Tag,
   TriangleAlert,
   Truck,
   Users,
@@ -53,7 +54,7 @@ type FavoriteProduct = { product: Product; quantity: number };
 
 const QUICK_ACTIONS: { href: string; label: string; icon: ComponentType<LucideProps> }[] = [
   { href: '/more/purchases/new', label: 'Registrar compra', icon: PackagePlus },
-  { href: '/more/sellers/deliveries/new', label: 'Entrega a vendedor', icon: Truck },
+  { href: '/more/products/new', label: 'Agregar producto', icon: Tag },
   { href: '/more/reports', label: 'Ver reportes', icon: ChartColumn },
   { href: '/more/inventory', label: 'Inventario', icon: Package },
 ];

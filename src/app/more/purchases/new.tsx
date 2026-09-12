@@ -1,7 +1,9 @@
+import { File } from 'expo-file-system';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { read, utils } from 'xlsx';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -9,6 +11,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { distributorsRepo, productsRepo, purchaseOrdersRepo, type Distributor, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { parseImportSheet, resolveImportRows } from '@/lib/purchase-import';
 import { purchaseOrderSchema } from '@/lib/validations';
 
 type CartItem = { productId: number; name: string; sku: string; quantity: string; unitCost: string };
@@ -24,6 +27,7 @@ export default function NewPurchaseOrderScreen() {
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     distributorsRepo.list().then((rows) => setDistributors(rows.filter((d) => d.active)));
@@ -55,6 +59,82 @@ export default function NewPurchaseOrderScreen() {
 
   function removeItem(productId: number) {
     setCart((prev) => prev.filter((item) => item.productId !== productId));
+  }
+
+  function mergeIntoCart(items: CartItem[]) {
+    setCart((prev) => {
+      const next = [...prev];
+      for (const item of items) {
+        const existingIndex = next.findIndex((c) => c.productId === item.productId);
+        if (existingIndex >= 0) {
+          next[existingIndex] = { ...next[existingIndex], quantity: String((Number(next[existingIndex].quantity) || 0) + Number(item.quantity)) };
+        } else {
+          next.push(item);
+        }
+      }
+      return next;
+    });
+  }
+
+  // Matches each row against the catalog by product name (the provider's own
+  // código in column A never matches our auto-generated SKU, so name is the
+  // only usable key — see resolveImportRows). Rows with no match create a new
+  // product on the spot (price defaults to the imported unit cost since the
+  // sheet has no sale price — editable later from the product's detail screen).
+  async function handleImportExcel() {
+    const picked = await File.pickFileAsync({
+      mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'],
+    });
+    if (picked.canceled) return;
+
+    setError(null);
+    setImporting(true);
+    try {
+      const buffer = await picked.result.arrayBuffer();
+      const workbook = read(buffer, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const sheetRows = utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+      const { rows, skipped } = parseImportSheet(sheetRows);
+
+      if (rows.length === 0) {
+        setError('No se encontraron filas válidas en el archivo.');
+        return;
+      }
+
+      const resolved = resolveImportRows(rows, products);
+      const newItems: CartItem[] = [];
+      let createdCount = 0;
+
+      for (const row of resolved) {
+        if (row.kind === 'existing') {
+          newItems.push({ productId: row.productId, name: row.name, sku: row.sku, quantity: String(row.quantity), unitCost: String(row.unitCost) });
+        } else {
+          const product = await productsRepo.create({
+            name: row.name,
+            slug: row.slug,
+            price: row.unitCost,
+            purchasePrice: row.unitCost,
+            stock: 0,
+            minStock: 0,
+            active: true,
+          });
+          setProducts((prev) => [...prev, product]);
+          createdCount += 1;
+          newItems.push({ productId: product.id, name: product.name, sku: product.sku, quantity: String(row.quantity), unitCost: String(row.unitCost) });
+        }
+      }
+
+      mergeIntoCart(newItems);
+
+      const summary = [`${resolved.length} producto(s) agregados al carrito.`];
+      if (createdCount > 0) summary.push(`${createdCount} producto(s) nuevo(s) creado(s) en el catálogo.`);
+      if (skipped.length > 0) summary.push(`${skipped.length} fila(s) omitida(s) (revisa que tengan nombre, cantidad y valor).`);
+      Alert.alert('Importación completa', summary.join('\n'));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo importar el archivo');
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function handleSubmit() {
@@ -122,6 +202,16 @@ export default function NewPurchaseOrderScreen() {
 
           <ThemedText type="small" style={styles.label}>
             Agregar producto
+          </ThemedText>
+          <Pressable onPress={handleImportExcel} disabled={importing}>
+            <ThemedView type="backgroundElement" style={styles.importButton}>
+              <ThemedText type="small" themeColor={importing ? 'textSecondary' : 'text'}>
+                {importing ? 'Importando…' : 'Importar desde Excel (.xlsx)'}
+              </ThemedText>
+            </ThemedView>
+          </Pressable>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.importHint}>
+            Los productos que no existan en tu catálogo se crean automáticamente.
           </ThemedText>
           <TextInput
             value={search}
@@ -232,6 +322,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
   },
   label: { marginTop: Spacing.two },
+  importButton: {
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+    alignItems: 'center',
+    marginBottom: Spacing.one,
+  },
+  importHint: { marginBottom: Spacing.two },
   distributorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.two },
   chip: {
     paddingVertical: Spacing.one,

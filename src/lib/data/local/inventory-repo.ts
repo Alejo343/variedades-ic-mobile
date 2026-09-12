@@ -82,6 +82,7 @@ function toProduct(row: typeof products.$inferSelect): Product {
     price: row.price,
     purchasePrice: row.purchasePrice,
     categoryId: row.categoryId,
+    distributorCode: row.distributorCode,
     stock: row.stock,
     minStock: row.minStock,
     warrantyMonths: row.warrantyMonths,

@@ -872,6 +872,137 @@ arriba de "Total"; al tocarlo aparecen filas de "Subtotal" y "Descuento"
 - Verificado con `npm run test` (44/44) + `npx tsc --noEmit` + `npm run
   lint` en verde. **No verificado todavía en el celular del usuario.**
 
+## Importación de compras desde Excel (.xlsx)
+
+Construida en la sesión 2026-08-01. El cliente de IC Variedades arma cada
+pedido a un proveedor copiando a mano en Excel: código del proveedor,
+nombre, cantidad, valor unitario y total por línea. Se agregó un botón
+"Importar desde Excel" en `more/purchases/new.tsx` (Fase 8) para subir ese
+mismo archivo en vez de teclear cada producto en el carrito.
+
+Dos decisiones tomadas explícitamente por el usuario, sin las cuales el
+diseño habría sido distinto:
+
+- **Columnas fijas por posición, no por nombre de encabezado**: el usuario
+  no sabe (o no le importa) cómo está literalmente rotulada cada columna
+  en el Excel de su cliente, solo su posición — A=código, B=nombre,
+  C=cantidad, D=valor unitario, E=total. `lib/purchase-import.ts` lee por
+  índice de columna (`sheet_to_json(sheet, { header: 1 })`, arreglo de
+  arreglos) en vez de matchear sinónimos de encabezado — más simple y es
+  lo que el usuario pidió. La columna E (total) no se usa para nada, se
+  recalcula `cantidad × valor` igual que en el resto de la app; la columna
+  A (código del proveedor) tampoco se usa para nada — ver la limitación
+  de abajo.
+- **Cada archivo subido crea productos nuevos automáticamente** si el
+  nombre no matchea ningún producto activo del catálogo — no hay pantalla
+  de revisión manual fila por fila. Precio de venta (`price`) del producto
+  nuevo se inicializa igual al valor unitario importado (no hay precio de
+  venta en el Excel, solo costo) — queda editable después desde el
+  detalle del producto, documentado como simplificación consciente.
+
+**Limitación real, explicada al usuario, no resuelta en esta sesión**: el
+código de columna A es el código del *proveedor*, mientras que
+`products.sku` se autogenera (`GEN-00001`, `lib/data/local/products-repo.ts`)
+y nunca acepta un valor externo — no hay forma de que ese código coincida
+con nuestro SKU interno. Por eso el emparejamiento de cada fila contra el
+catálogo propio es **por nombre normalizado** (sin tildes, minúsculas,
+trim), no por código. Si el nombre en el Excel no coincide *exactamente*
+con el nombre ya guardado en la app (típicamente porque el cliente lo
+escribe distinto de una vez a otra), se crea un producto nuevo en vez de
+reutilizar el existente — riesgo conocido, no hay fuzzy matching todavía.
+Si en la práctica esto genera muchos duplicados, la alternativa es el
+catálogo de productos por proveedor que se había planteado y se descartó
+para esta primera versión (código real del proveedor ↔ producto propio,
+mapeado una sola vez).
+
+- `lib/purchase-import.ts` (con test de caso conocido en
+  `lib/purchase-import.test.ts`, mismo criterio spec-first del resto del
+  proyecto): `parseCOPNumber` (acepta celdas numéricas o texto con
+  separador de miles, ej. `"8.500"` → `8500`), `parseImportSheet` (fila 1
+  se asume encabezado y se descarta en silencio; cualquier otra fila
+  inválida — ej. una fila de "TOTAL" al final — se reporta en `skipped`
+  con motivo, no se descarta sin explicación) y `resolveImportRows` (
+  empareja por nombre contra los productos ya cargados en la pantalla;
+  filas que resuelven al mismo producto — existente o nuevo — se
+  fusionan sumando cantidad, mismo comportamiento que ya tenía el carrito
+  al tocar dos veces el mismo producto; genera slug único para productos
+  nuevos, evitando colisión tanto contra `products.slug` existente como
+  contra otros productos nuevos del mismo archivo).
+- Lectura de archivo: `File.pickFileAsync({ mimeTypes: [...] })` +
+  `picked.result.arrayBuffer()` (API `File`/`Paths` nueva de
+  `expo-file-system`, mismo patrón ya usado en `more/backup.tsx` y
+  `lib/images.ts`) → `XLSX.read(buffer, { type: 'array' })` de la
+  dependencia nueva `xlsx` (SheetJS) → `utils.sheet_to_json(sheet, {
+  header: 1 })` sobre la primera hoja del libro (`workbook.SheetNames[0]`,
+  sin selector de hoja si el archivo tiene varias pestañas).
+- Los productos nuevos se crean secuencialmente con `await` dentro de un
+  `for` (no en paralelo) — mismo criterio que documenta el comentario de
+  `generateSku` en `products-repo.ts` (single device, sin condición de
+  carrera real, pero el conteo que genera el SKU sí depende de que cada
+  insert termine antes del siguiente).
+- Sin transacción que abarque la creación de productos: si `productsRepo.create`
+  falla a mitad de la importación, los productos ya creados antes del
+  error quedan en la base (no hay rollback) — aceptado como limitación de
+  esta primera versión, ya que crear un producto de más con stock 0 es
+  inofensivo (no aparece en ninguna alerta hasta tener una compra
+  recibida).
+- Verificado con `npm run test` (55/55, 11 tests nuevos) + `npx tsc
+  --noEmit` + `npm run lint` en verde (mismo error preexistente de
+  `use-color-scheme.web.ts`, no relacionado). **No verificado todavía en
+  el celular del usuario** — pendiente antes de dar la funcionalidad por
+  terminada, sobre todo por ser la primera vez que se lee un archivo
+  binario real con `arrayBuffer()` + `xlsx` en tiempo de ejecución
+  (typecheck/lint no lo garantizan).
+
+## Código de proveedor único por producto
+
+Construido en la sesión 2026-08-01 (misma sesión que la importación de
+Excel de arriba). Complementa la limitación documentada en esa sección:
+en vez de un catálogo de productos por proveedor aparte, es la versión
+ligera — un solo campo opcional en `products` que actúa como guardia
+contra duplicados al crear/editar un producto a mano.
+
+- Schema: `products.distributor_code` (`text`, nullable, `.unique()` —
+  SQLite permite múltiples `NULL`, así que no afecta a los productos sin
+  código). Migración `drizzle/0012_pale_captain_midlands.sql`, `ALTER
+  TABLE ADD COLUMN` simple sobre una tabla con datos reales.
+- **No es una referencia a `distributors.id`** (la tabla de la Fase 8) —
+  es el código que el proveedor le puso a ESE producto puntual (como su
+  propio SKU), texto libre, sin selector de distribuidor asociado. Mismo
+  criterio de nombres que ya generó confusión al diseñar esto: se dejó
+  documentado explícitamente para la próxima sesión.
+- `ProductsRepo` gana `findByDistributorCode(code)` — primer método
+  "finder" dedicado de este repo (el resto de pantallas resuelve por
+  nombre/SKU filtrando en memoria sobre `list()`, ver `purchases/new.tsx`,
+  `sell/index.tsx`). Se justifica acá porque la validación tiene que ser
+  autoritativa contra toda la tabla (incluye productos inactivos, que
+  igual "reservan" su código) y porque la pantalla necesita el producto
+  completo (id + nombre) para el link "Ir a editar". Comparación
+  case-insensitive vía `sql\`lower(...)\``, sin filtrar por `active`.
+- `products/new.tsx` y `products/[id].tsx`: nuevo campo "Código del
+  proveedor (opcional)" entre Descripción y Precio de venta. En
+  `handleSubmit`, si el campo no está vacío, se llama
+  `findByDistributorCode` antes de guardar; si devuelve un producto
+  (distinto al propio, en el caso de editar), se bloquea el guardado, se
+  muestra su nombre en el error y aparece un link "Ir a editar {nombre}"
+  que navega a `/more/products/${id}` — así el flujo pedido ("que le diga
+  que vaya a editar ese producto") queda con una acción directa, no solo
+  un mensaje.
+- Se encontró y corrigió un segundo `toProduct` duplicado en
+  `local/inventory-repo.ts` (mapea filas de `products` a `Product` para
+  devolver el stock actualizado tras un movimiento) que no tenía
+  `distributorCode` — typecheck lo marcó de inmediato al agregar el campo
+  al tipo `Product`. Queda como recordatorio de que hay dos mapeos
+  `products` → `Product` en el proyecto, no uno solo.
+- Fuera de alcance, documentado para no repreguntar: este campo no se usa
+  todavía para mejorar el emparejamiento de la importación de Excel (que
+  sigue emparejando por nombre) — sería la mejora natural si los
+  duplicados por nombre distinto resultan un problema real en la
+  práctica.
+- Verificado con `npm run test` (55/55) + `npx tsc --noEmit` + `npm run
+  lint` en verde (mismo error preexistente de `use-color-scheme.web.ts`).
+  **No verificado todavía en el celular del usuario.**
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,
