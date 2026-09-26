@@ -10,6 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
 import type { ImageDraft } from '@/lib/domain/product-images';
+import { pendingUuidsForType } from '@/lib/sync/outbox';
 import { productSchema } from '@/lib/validations';
 
 export default function EditProductScreen() {
@@ -19,6 +20,7 @@ export default function EditProductScreen() {
 
   const [loading, setLoading] = useState(true);
   const [sku, setSku] = useState('');
+  const [skuPending, setSkuPending] = useState(false);
   const [active, setActive] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<number | null>(null);
@@ -44,10 +46,11 @@ export default function EditProductScreen() {
       categoriesRepo.list().then((rows) => {
         if (!cancelled) setCategories(rows.filter((c) => c.active));
       });
-      productsRepo.getById(productId).then((product) => {
+      Promise.all([productsRepo.getById(productId), pendingUuidsForType('upsertProduct')]).then(([product, pending]) => {
         if (cancelled) return;
         if (product) {
           setSku(product.sku);
+          setSkuPending(pending.has(product.uuid));
           setActive(product.active);
           setCategoryId(product.categoryId);
           setName(product.name);
@@ -143,6 +146,7 @@ export default function EditProductScreen() {
 
           <ThemedText themeColor="textSecondary" type="small" style={styles.skuText}>
             SKU: {sku}
+            {skuPending ? ' (pendiente de confirmar al sincronizar)' : ''}
           </ThemedText>
 
           <ThemedText type="small">Nombre</ThemedText>

@@ -42,6 +42,7 @@ import {
   formatRelativeTime,
   todayLocalDateString,
 } from "@/lib/format";
+import { resolveImageUri } from "@/lib/sync/image-url";
 
 type ActivityKind = "sale" | "purchase" | "adjustment" | "settlement";
 
@@ -446,7 +447,7 @@ export default function HomeScreen() {
                       >
                         {product.primaryImageUri ? (
                           <Image
-                            source={{ uri: product.primaryImageUri }}
+                            source={{ uri: resolveImageUri(product.primaryImageUri) }}
                             style={styles.favoriteImage}
                           />
                         ) : (

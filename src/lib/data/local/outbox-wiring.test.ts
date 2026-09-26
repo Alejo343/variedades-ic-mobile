@@ -58,7 +58,9 @@ describe("cada repo local encola su operación (sub-paso 10)", async () => {
     expect(lastPayload()).toMatchObject({ uuid: prodRow.uuid, name: "Cable", categoryUuid: "cat-1" });
     expect(lastPayload()).not.toHaveProperty("sku");
     expect(lastPayload()).not.toHaveProperty("stock");
-    expect(lastPayload()).not.toHaveProperty("images");
+    // Se creó sin fotos: nada pendiente de subir, así que la galería (vacía)
+    // ya viaja en este mismo mensaje — no hace falta esperar al sub-paso 13.
+    expect(lastPayload()).toMatchObject({ images: [] });
 
     const seller = await localSellersRepo.create({ name: "Pedro", commissionType: "percentage", commissionValue: 500, active: true });
     expect(last().type).toBe("upsertSeller");

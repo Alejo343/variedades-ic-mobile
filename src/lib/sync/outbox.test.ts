@@ -19,7 +19,7 @@ type AnyDb = Parameters<typeof import("./outbox").enqueueOperation>[0];
 const testDb = proxy as unknown as AnyDb;
 
 describe("enqueueOperation", async () => {
-  const { enqueueOperation, listOutbox, getOutboxCount } = await import("./outbox");
+  const { enqueueOperation, listOutbox, getOutboxCount, pendingUuidsForType } = await import("./outbox");
 
   it("agrega una fila con opId propio y el payload intacto", async () => {
     const payload = { uuid: "abc", name: "ZZ", items: [{ uuid: "x", quantity: 2 }] };
@@ -45,5 +45,15 @@ describe("enqueueOperation", async () => {
       await enqueueOperation(tx as unknown as AnyDb, "createDirectSale", { uuid: "op3" });
     });
     expect(await getOutboxCount()).toBe(before + 1);
+  });
+
+  it("pendingUuidsForType solo trae los uuid del tipo pedido (sub-paso 13)", async () => {
+    await enqueueOperation(testDb, "upsertProduct", { uuid: "prod-a" });
+    await enqueueOperation(testDb, "upsertProduct", { uuid: "prod-b" });
+    await enqueueOperation(testDb, "upsertCategory", { uuid: "cat-x" }); // otro tipo, no debe salir
+    const pending = await pendingUuidsForType("upsertProduct");
+    expect(pending.has("prod-a")).toBe(true);
+    expect(pending.has("prod-b")).toBe(true);
+    expect(pending.has("cat-x")).toBe(false);
   });
 });

@@ -3,6 +3,10 @@ import type { ProductInput } from "../validations";
 
 export type Product = {
   id: number;
+  // The sync identity (CLAUDE.md, "Fase 10") — exposed so a screen can check
+  // lib/sync/outbox.ts#pendingUuidsForType and mark this row's sku/gallery as
+  // still provisional (queued but not yet confirmed by the server).
+  uuid: string;
   name: string;
   slug: string;
   description: string | null;

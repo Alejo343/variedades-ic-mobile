@@ -7,6 +7,7 @@ import { Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { addImage, type ImageDraft, removeImage, setPrimaryImage } from '@/lib/domain/product-images';
 import { deleteProductImageFile, pickAndPersistProductImages } from '@/lib/images';
+import { resolveImageUri } from '@/lib/sync/image-url';
 
 type Props = {
   images: ImageDraft[];
@@ -46,7 +47,7 @@ export function ProductImageGallery({ images, onChange, onError, savedUrls }: Pr
         {images.map((image, index) => (
           <View key={image.url} style={styles.item}>
             <Image
-              source={{ uri: image.url }}
+              source={{ uri: resolveImageUri(image.url) }}
               style={[
                 styles.thumb,
                 image.isPrimary && { borderWidth: 3, borderColor: theme.primary },

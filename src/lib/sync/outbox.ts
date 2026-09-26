@@ -31,3 +31,16 @@ export async function getOutboxCount(): Promise<number> {
   const [row] = await db.select({ n: count() }).from(syncOutbox);
   return row?.n ?? 0;
 }
+
+// The uuids with an operation of `type` still queued (sub-paso 13): what a
+// product/etc list uses to show "(pendiente de sincronizar)" — a number the
+// server hasn't confirmed yet (the SKU it assigns, a photo it hasn't seen)
+// might still change once this operation actually goes through.
+export async function pendingUuidsForType(type: SyncOperationType): Promise<Set<string>> {
+  const rows = await listOutbox();
+  const uuids = rows
+    .filter((row) => row.type === type)
+    .map((row) => (row.payload as { uuid?: unknown }).uuid)
+    .filter((uuid): uuid is string => typeof uuid === 'string');
+  return new Set(uuids);
+}

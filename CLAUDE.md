@@ -1216,7 +1216,7 @@ choca en la implementación):**
 | 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
 | 11 | Motor de sync: push → pull, upsert por `uuid`, lápidas, stock del servidor, operaciones rechazadas visibles | móvil | ✅ listo |
 | 12 | Disparadores (reconexión, volver a la app, botón) + indicador de pendientes | móvil | ✅ listo |
-| 13 | Fotos (subir antes del push, mostrar URL remota con caché) + SKU/números provisionales hasta sincronizar | móvil | ⏳ pendiente |
+| 13 | Fotos (subir antes del push, mostrar URL remota con caché) + SKU/números provisionales hasta sincronizar | móvil | ✅ listo |
 | 14 | Navegación por rol (vendedor: su inventario, "Vender" = venta de vendedor, devoluciones/pérdidas, sus liquidaciones); Respaldo→Importar bloqueado con sesión activa | móvil | ⏳ pendiente |
 | 15 | Desplegar la web con las migraciones + verificación end-to-end: dueño + 2 vendedores, ventas sin conexión, stock negativo, la web muestra lo mismo | ambos | ⏳ pendiente |
 
@@ -1914,6 +1914,91 @@ choca en la implementación):**
   app, cambiar de tab y volver, y probar con el WiFi para confirmarlos en
   vivo. Además la sync real contra producción sigue bloqueada hasta el
   despliegue (sub-paso 15).
+- **Sub-paso 13 (fotos + números provisionales)**, solo móvil.
+- **Fotos, encoladas junto con el catálogo, no aparte**: `upsertProduct`
+  (sub-paso 10) ya decidía si el catálogo sincronizaba de una o esperaba
+  — esta sesión completó esa decisión en vez de agregar un mecanismo
+  nuevo. `products-repo.ts#toUpsertPayload` se volvió
+  `buildUpsertProductPayload` (exportada) y ahora **siempre** relee la
+  galería actual del producto: si algún `url` sigue siendo `file:` (una
+  foto recién elegida, todavía no subida), el mensaje sale sin `images`
+  (igual que antes); si no queda ninguna local, sale con la galería
+  completa — incluida una **vacía** (`images: []`) para un producto
+  creado sin fotos, que antes se omitía sin necesidad. Efecto real: quitar
+  una foto ya subida, o reordenar la galería, ahora sincroniza de
+  inmediato en vez de esperar sin motivo a que el sub-paso 13 "hiciera
+  algo" — no hacía falta esperar, solo hacía falta esta función.
+- **Qué hace falta para que una foto deje de estar "atascada"**:
+  `lib/sync/photo-upload.ts#uploadPendingProductPhotos`, llamada por
+  `engine.ts` **antes** del push. Busca en `product_images` cualquier
+  `url` que empiece por `file:`, la sube con
+  `File(uri).upload(...)` (API nueva de `expo-file-system`, con
+  `UploadType.MULTIPART` y el MIME inferido de la extensión — mismo
+  patrón ya usado en `images.ts`/`more/backup.tsx` para todo lo demás de
+  archivos), guarda la ruta relativa que devuelve el servidor
+  (`/uploads/products/x.webp`, tal cual, sin volverla absoluta) y, **solo
+  cuando las fotos de un producto quedaron todas subidas**, encola un
+  `upsertProduct` de seguimiento llamando a la misma
+  `buildUpsertProductPayload` — sin duplicar la lógica de qué va en el
+  mensaje. Va producto por producto: si una foto falla, ese producto se
+  detiene ahí (lo ya subido queda subido, nada se repite) pero los demás
+  productos siguen su curso; el error queda visible en el resultado de
+  `runSync` (`photoUploadError`) sin frenar el push/pull de todo lo demás.
+- **Por qué la URL vive igual en los dos lados, sin conversión**: el
+  `url` de una foto sincronizada se guarda tal cual lo manda o lo recibe
+  el servidor — una ruta relativa, `/uploads/products/x.webp` — tanto al
+  subir como al recibir por `pull` (`pull-apply.ts` ya lo hacía así desde
+  el sub-paso 11, sin cambios). La única conversión ocurre al **mostrar**
+  la foto: `lib/sync/image-url.ts#resolveImageUri` (con test) le agrega
+  el dominio del servidor a una ruta relativa, y deja intacta una que ya
+  sea absoluta o una `file:` local. Los 5 lugares que pintan una foto de
+  producto (`more/products/index.tsx`, `sell/index.tsx` ×2,
+  `home/index.tsx`, `components/product-image-gallery.tsx`) pasan ahora
+  por esta función antes de dársela a `<Image>`.
+- **"Con caché" no fue código nuevo**: `expo-image` (ya en uso en las
+  cinco pantallas de arriba, sin `cachePolicy` explícito en ninguna) cachea
+  en disco por defecto (`cachePolicy: 'disk'`, confirmado en su propio
+  tipo). En cuanto una foto pasa a ser una URL remota, `expo-image` ya la
+  guarda localmente sola la primera vez que se muestra — es lo que hace
+  que se vea sin conexión después. No hubo que construir nada para esto.
+- **SKU provisional**: `Product` (interfaz pública, `lib/data/products-repo.ts`)
+  gana el campo `uuid` — hacía falta exponerlo para poder cruzarlo contra
+  la cola. `lib/sync/outbox.ts#pendingUuidsForType(type)` (con test)
+  agrupa los `uuid` con una operación de ese tipo aún en `sync_outbox`. La
+  lista de productos y el detalle/edición muestran "(pendiente)" /
+  "(pendiente de confirmar al sincronizar)" junto al SKU cuando el `uuid`
+  del producto aparece en `pendingUuidsForType('upsertProduct')` — deja
+  de aparecer solo (sin ningún flag que limpiar a mano) en cuanto la
+  operación se resuelve, porque en ese momento ya no está en la cola.
+- **"Números provisionales" se acotó a lo que realmente cambia al
+  sincronizar — decisión propia, no preguntada, documentada para no
+  repreguntarla**: el SKU es el único identificador que el servidor
+  **reasigna de verdad** (lo genera él, nunca lo manda el celular — sub-paso
+  7, parte 3a) y que alguien podría escribir en una etiqueta de precio antes
+  de tiempo. Los "Venta #7"/"Pedido #3" que muestran otras pantallas
+  (`sell/history.tsx`, `sellers/sales`, `purchases`, etc.) son el `id`
+  local de SQLite — un número que **nunca** viaja al servidor ni vuelve
+  por el `pull` (la fila de `direct_sales`/`seller_sales`/etc. no manda
+  ningún número de vuelta, solo su `uuid`), así que no hay nada que
+  "confirmar" ahí: ese número siempre fue solo una etiqueta de este
+  teléfono, no una promesa de que coincida con la de otro. Extender la
+  misma alerta a esas pantallas es un cambio de UI mucho más amplio para
+  un beneficio menor (confusión cosmética entre teléfonos, no un dato mal
+  sincronizado) — queda fuera de esta sesión, sin construir.
+- Tests nuevos: `photo-upload.test.ts` (sube cada foto pendiente y encola
+  el seguimiento con la galería completa; nada pendiente no llama a la
+  red; una foto que falla detiene solo ese producto y conserva lo ya
+  subido); `image-url.test.ts`; ampliación de `outbox.test.ts` para
+  `pendingUuidsForType`; `engine.test.ts` cubre que las fotos van antes
+  del push y que un error de fotos no detiene push/pull.
+  `outbox-wiring.test.ts` se actualizó: un producto sin fotos ahora
+  espera `images: []` en el mensaje, no su ausencia.
+- Verificado: `npm run test` (128) + `npx tsc --noEmit` en verde (`npm
+  run lint`: el mismo error preexistente). **No verificado todavía en el
+  celular del usuario** — `File.upload()` contra un servidor real y el
+  cacheo de `expo-image` en la práctica son cosas que solo se confirman
+  ahí; typecheck/tests no lo garantizan (mismo tipo de limitación ya
+  documentada para otras piezas de `expo-file-system` en este proyecto).
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

@@ -9,18 +9,22 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { productsRepo, type Product } from '@/lib/data';
 import { formatCOP, stockLabel } from '@/lib/format';
+import { resolveImageUri } from '@/lib/sync/image-url';
+import { pendingUuidsForType } from '@/lib/sync/outbox';
 
 export default function ProductsScreen() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [pendingUuids, setPendingUuids] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
-      productsRepo.list().then((rows) => {
+      Promise.all([productsRepo.list(), pendingUuidsForType('upsertProduct')]).then(([rows, pending]) => {
         if (!cancelled) {
           setProducts(rows);
+          setPendingUuids(pending);
           setLoading(false);
         }
       });
@@ -49,7 +53,7 @@ export default function ProductsScreen() {
               <Pressable>
                 <ThemedView type="backgroundElement" style={styles.row}>
                   {item.primaryImageUri ? (
-                    <Image source={{ uri: item.primaryImageUri }} style={styles.thumb} />
+                    <Image source={{ uri: resolveImageUri(item.primaryImageUri) }} style={styles.thumb} />
                   ) : (
                     <ThemedView type="backgroundSelected" style={styles.thumb} />
                   )}
@@ -59,7 +63,8 @@ export default function ProductsScreen() {
                       {!item.active ? ' · inactivo' : ''}
                     </ThemedText>
                     <ThemedText themeColor="textSecondary" type="small">
-                      {item.sku} · {formatCOP(item.price)}
+                      {item.sku}
+                      {pendingUuids.has(item.uuid) ? ' (pendiente)' : ''} · {formatCOP(item.price)}
                     </ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">
                       Stock: {item.stock}

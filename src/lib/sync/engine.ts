@@ -1,19 +1,28 @@
 import { sessionStore } from './session';
 import { setLastSyncAt } from './cursor';
 import { refreshPendingCount } from './pending';
+import { uploadPendingProductPhotos } from './photo-upload';
 import { pushPendingOperations } from './push-engine';
 import { pullServerChanges } from './pull-engine';
 
-// Orchestrates one sync round (sub-paso 11): push everything pending, THEN
-// pull — always in that order, so the pull sees a server state that already
-// includes whatever this device just sent (CLAUDE.md, "Fase 10": "Orden
-// fijo: primero push, después pull"). No-op without a session; a second
-// call while one is already running just waits for it instead of racing it
-// (two overlapping syncs would both read/clear the same outbox rows).
+// Orchestrates one sync round: upload any pending photos, THEN push
+// everything pending, THEN pull — always in that order, so the pull sees a
+// server state that already includes whatever this device just sent
+// (CLAUDE.md, "Fase 10": "Orden fijo: primero push, después pull"; photos
+// go first because a product's upsertProduct can only carry `images` once
+// none of them are local anymore — sub-paso 13). No-op without a session; a
+// second call while one is already running just waits for it instead of
+// racing it (two overlapping syncs would both read/clear the same outbox
+// rows).
+//
+// A photo upload failure is reported but doesn't stop the round: the
+// affected product's catalog fields still sync normally (without `images`,
+// same as before this device could upload anything), and the next sync
+// retries just the photos that never made it.
 
 export type SyncResult =
   | { status: 'skipped-no-session' }
-  | { status: 'ok'; pushed: number; rejected: number; pulledPages: number }
+  | { status: 'ok'; pushed: number; rejected: number; pulledPages: number; photoUploadError?: string }
   | { status: 'error'; stage: 'push' | 'pull'; error: string; pushed: number; rejected: number };
 
 type Listener = () => void;
@@ -50,6 +59,8 @@ async function performSync(): Promise<SyncResult> {
 
   setRunning(true);
   try {
+    const photoSummary = await uploadPendingProductPhotos(session.session.token);
+
     const pushSummary = await pushPendingOperations(session.session.token);
     if (pushSummary.error) {
       return { status: 'error', stage: 'push', error: pushSummary.error, pushed: pushSummary.applied, rejected: pushSummary.rejected };
@@ -61,7 +72,13 @@ async function performSync(): Promise<SyncResult> {
     }
 
     setLastSyncAt(new Date().toISOString());
-    return { status: 'ok', pushed: pushSummary.applied, rejected: pushSummary.rejected, pulledPages: pullSummary.pages };
+    return {
+      status: 'ok',
+      pushed: pushSummary.applied,
+      rejected: pushSummary.rejected,
+      pulledPages: pullSummary.pages,
+      ...(photoSummary.error ? { photoUploadError: photoSummary.error } : {}),
+    };
   } finally {
     // Whatever the outcome — a rejection during push still resolves that
     // operation out of the outbox, so the count can change even on failure.

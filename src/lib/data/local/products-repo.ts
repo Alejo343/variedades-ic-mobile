@@ -30,6 +30,7 @@ type ProductRow = typeof products.$inferSelect & { primaryImageUri: string | nul
 export function toProduct(row: ProductRow): Product {
   return {
     id: row.id,
+    uuid: row.uuid,
     name: row.name,
     slug: row.slug,
     description: row.description,
@@ -65,16 +66,24 @@ async function getProduct(id: number): Promise<Product | null> {
 }
 
 // upsertProduct never carries sku or stock (the server assigns/derives both —
-// see CLAUDE.md, "Fase 10", sub-paso 7 parte 3a) and never carries `images`
-// here: a fresh photo's url is still this device's local file:// path, which
-// the server's push rejects outright ("todavía no se ha subido"). The
-// gallery syncs once sub-paso 13 uploads it and enqueues a follow-up
-// upsertProduct that DOES include `images` with the resulting remote URLs —
-// until then, catalog fields sync but photos don't.
-async function toUpsertPayload(tx: Tx, row: typeof products.$inferSelect) {
+// see CLAUDE.md, "Fase 10", sub-paso 7 parte 3a). `images` is included only
+// when the CURRENT gallery has nothing left to upload: a fresh photo's url
+// is still this device's local file:// path, which the server's push rejects
+// outright ("todavía no se ha subido"), so sending it now would just get the
+// whole operation rejected. Once sub-paso 13's photo-upload step turns every
+// url into the server's own remote path, it calls this same function again
+// (with nothing pending) and that follow-up carries `images` for real — an
+// edit made after everything's already synced (e.g. removing a photo, or one
+// that never had any) doesn't need to wait for that: this reads the gallery
+// fresh every time, so it's included immediately whenever there's nothing
+// local left in it.
+export async function buildUpsertProductPayload(tx: Tx, row: typeof products.$inferSelect) {
   const categoryUuid = row.categoryId
     ? (await tx.query.categories.findFirst({ where: eq(categories.id, row.categoryId), columns: { uuid: true } }))?.uuid ?? null
     : null;
+  const images = await tx.select().from(productImages).where(eq(productImages.productId, row.id)).orderBy(asc(productImages.displayOrder));
+  const hasPendingUpload = images.some((image) => image.url.startsWith("file:"));
+
   return {
     uuid: row.uuid,
     name: row.name,
@@ -87,6 +96,9 @@ async function toUpsertPayload(tx: Tx, row: typeof products.$inferSelect) {
     minStock: row.minStock,
     warrantyMonths: row.warrantyMonths,
     active: row.active,
+    ...(hasPendingUpload
+      ? {}
+      : { images: images.map((image) => ({ uuid: image.uuid, url: image.url, alt: image.alt, displayOrder: image.displayOrder, isPrimary: image.isPrimary })) }),
   };
 }
 
@@ -187,7 +199,7 @@ export const localProductsRepo: ProductsRepo = {
         })
         .returning();
       if (images) await replaceImages(tx, row.id, images);
-      await enqueueOperation(tx, "upsertProduct", await toUpsertPayload(tx, row));
+      await enqueueOperation(tx, "upsertProduct", await buildUpsertProductPayload(tx, row));
       return row.id;
     });
     return (await getProduct(id))!;
@@ -201,8 +213,9 @@ export const localProductsRepo: ProductsRepo = {
         .where(eq(products.id, id))
         .returning();
       if (!row) throw new Error("Producto no encontrado");
-      await enqueueOperation(tx, "upsertProduct", await toUpsertPayload(tx, row));
-      return images ? replaceImages(tx, id, images) : [];
+      const removed = images ? await replaceImages(tx, id, images) : [];
+      await enqueueOperation(tx, "upsertProduct", await buildUpsertProductPayload(tx, row));
+      return removed;
     });
     // Only after commit: a rolled-back save must not lose the photo files.
     removedUrls.forEach(deleteProductImageFile);
@@ -216,7 +229,7 @@ export const localProductsRepo: ProductsRepo = {
         .set({ active: false, updatedAt: new Date().toISOString() })
         .where(eq(products.id, id))
         .returning();
-      if (row) await enqueueOperation(tx, "upsertProduct", await toUpsertPayload(tx, row));
+      if (row) await enqueueOperation(tx, "upsertProduct", await buildUpsertProductPayload(tx, row));
     });
   },
 };

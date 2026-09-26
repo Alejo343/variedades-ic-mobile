@@ -12,6 +12,7 @@ import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { cashAccountsRepo, categoriesRepo, directSalesRepo, productsRepo, type CashAccount, type Category, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { resolveImageUri } from '@/lib/sync/image-url';
 import { triggerSaleSuccessOverlay } from '@/lib/success-overlay';
 import { directSaleSchema } from '@/lib/validations';
 
@@ -87,7 +88,7 @@ function ProductCard({ product, selected, cardWidth, onPress }: ProductCardProps
       <Animated.View style={animatedStyle}>
         <ThemedView type={selected ? 'backgroundSelected' : 'backgroundElement'} style={[styles.productCard, Shadow.subtle]}>
           {product.primaryImageUri ? (
-            <Image source={{ uri: product.primaryImageUri }} style={styles.productImage} />
+            <Image source={{ uri: resolveImageUri(product.primaryImageUri) }} style={styles.productImage} />
           ) : (
             <View style={[styles.productImage, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
               <Package color={theme.primary} size={22} />
@@ -132,7 +133,7 @@ function CartRow({ item, onIncrement, onDecrement, onRemove }: CartRowProps) {
   return (
     <View style={styles.cartRow}>
       {item.imageUri ? (
-        <Image source={{ uri: item.imageUri }} style={styles.cartThumb} />
+        <Image source={{ uri: resolveImageUri(item.imageUri) }} style={styles.cartThumb} />
       ) : (
         <View style={[styles.cartThumb, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
           <Package color={theme.primary} size={26} />
