@@ -1210,7 +1210,7 @@ choca en la implementación):**
 | 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ✅ listo |
 | 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ✅ listo |
 | 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ✅ listo |
-| 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ pendiente |
+| 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ en curso (parte 1/3 lista) |
 | 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ⏳ pendiente |
 | 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ⏳ pendiente |
 | 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
@@ -1470,6 +1470,50 @@ choca en la implementación):**
   ninguna de las 5 ventas del otro vendedor, sin tablas de caja/compras y
   costos en 0. Datos de prueba borrados. `npm run test` (84) + `npm run
   test:db` (11) + `npm run lint` + `npm run build` en verde.
+- **Sub-paso 7 (push)**, solo web, troceado en tres partes: (1) el
+  mecanismo común, (2) las operaciones del vendedor (venta, devolución,
+  pérdida), (3) las del dueño en tandas (catálogo; caja y ventas en local;
+  entregas y liquidaciones; compras).
+- **Parte 1 — mecanismo común** (migración `0022`, tabla
+  `sync_applied_operations`: `op_id` uuid PK, sesión, usuario, tipo,
+  `status` `applied`/`rejected`, `error`). `POST /api/sync/push` recibe
+  `{operations: [{id, type, payload}]}` (1-100, `id` uuid generado en el
+  celular, sin repetidos en el lote — `syncPushSchema`, con test) y
+  responde siempre `200 {results: [{id, status, error?, duplicate?}]}` una
+  vez que el sobre es válido. Lógica en `lib/sync/push.ts#applyOperations`:
+  - cada operación en **su propia transacción**; lo primero que hace es
+    reclamar su `id` en `sync_applied_operations` (`ON CONFLICT DO
+    NOTHING`), así un reintento concurrente de la misma operación espera a
+    que termine la primera y luego la encuentra registrada;
+  - **idempotencia**: una operación ya registrada devuelve su primer
+    resultado con `duplicate: true` y nunca se aplica dos veces;
+  - **`rejected`** (definitivo, se registra y el celular lo muestra): tipo
+    desconocido o prohibido para el rol, tipo sin handler todavía, payload
+    que no pasa su esquema zod, `SyncRejection` lanzada por el handler, o
+    error de Postgres de datos (clase `22`) o integridad (clase `23`,
+    traducido a un mensaje legible). Lo que la operación alcanzó a escribir
+    se deshace;
+  - **`error`** (cualquier otra falla: bug, base caída): **no** se
+    registra, se loguea en el servidor y el resto del lote queda
+    `skipped`, porque las siguientes pueden depender de ella. El celular
+    las reintenta después;
+  - **permisos**: `authorizeOperation` por tipo antes de validar, y para un
+    vendedor otra vez con el `sellerUuid` que el handler extrae del payload
+    (debe ser el suyo).
+- Cada operación se declara con `defineHandler({schema, sellerUuid?,
+  apply(tx, payload, {principal})})` en el registro
+  `lib/sync/operations/index.ts` (vacío en la parte 1). El `tx` es una
+  transacción Drizzle.
+- Test nuevo `lib/sync/push.integration.test.ts` con handlers de prueba:
+  aplicar y reenviar sin duplicar; un rechazo deshace lo escrito y se
+  recuerda; payload inválido, violación de unicidad, tipo desconocido y
+  tipo sin handler → `rejected`; un vendedor aplica lo suyo y se le
+  rechaza lo ajeno y lo del dueño; un error inesperado no se registra y
+  deja el resto `skipped`. Verificado además contra el build: operación
+  sin handler → `rejected` con mensaje claro, reenviada → mismo resultado
+  con `duplicate: true`, sobre inválido → 400, sin token → 401.
+  `npm run test` + `npm run test:db` (16) + `npm run lint` + `npm run
+  build` en verde.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
