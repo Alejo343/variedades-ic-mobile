@@ -1733,6 +1733,79 @@ choca en la implementación):**
   en producción), primer login → mensaje de reiniciar → tras reabrir, base
   vacía y ya autenticado sin volver a pedir login; cerrar sesión y volver
   a entrar → esta vez **sin** borrar nada.
+- **Sub-paso 10 (cola `sync_outbox`)**, solo móvil. Tabla nueva
+  `sync_outbox` (`0018`): `opId` (uuid propio, generado aquí — no es un
+  `syncUuid()` porque esta tabla nunca es una fila que el servidor guarde,
+  describe operaciones, no datos), `type`, `payload` (JSON en texto),
+  `createdAt`. **Sin columna de estado a propósito**: una fila en la cola
+  ES lo pendiente; el sub-paso 11 la borra al recibir `applied` o
+  `rejected` del servidor, y la deja para reintentar si la respuesta es
+  `error`. `lib/sync/operation-types.ts#SYNC_OPERATION_TYPES` es una copia
+  exacta de la lista del servidor (repos separados, no hay código
+  compartido) — 17 tipos.
+- `lib/sync/outbox.ts#enqueueOperation(dbOrTx, type, payload)` — se llama
+  **dentro de la misma transacción Drizzle** que el cambio local que
+  describe, así los dos siempre viven o mueren juntos. `payload` no se
+  valida aquí (cada repo lo construye a mano calcando el esquema zod del
+  handler correspondiente, documentado en la sección del sub-paso 7).
+- **Se tocaron los 15 repos de `lib/data/local/*` que escriben algo**
+  (los únicos de solo lectura — `reports-repo.ts` y los métodos
+  `list`/`getBalance`/etc. de los demás — no cambiaron). Cada `create`/
+  `update`/`deactivate`/transición ahora: (1) hace su escritura igual que
+  antes, (2) resuelve el o los `uuid` que el payload necesita (de la fila
+  recién escrita, vía `.returning()` sin consulta extra; de una fila
+  referenciada, con un `SELECT ... WHERE id = ?` liviano si no se había
+  cargado ya), (3) llama `enqueueOperation` con el mismo `tx`. Los que
+  antes no usaban transacción (`categories-repo`, `sellers-repo`,
+  `distributors-repo`, `cash-accounts-repo`, `products.deactivate`) ahora
+  la usan, porque el encolado tiene que ser atómico con el cambio.
+- `recordProductMovement`/`recordSellerMovement` (`inventory-repo.ts`)
+  ahora devuelven también `productUuid`, `movementUuid` y
+  `movementCreatedAt` (la hora **realmente guardada** en el movimiento,
+  no una recalculada en JS, para que el historial no tenga un
+  micro-desfase con lo que ve el servidor) — casi gratis, porque estas
+  funciones ya cargaban esas filas para el fail-fast de siempre.
+  `recordCashMovementTx` (`cash-repo.ts`) devuelve el `uuid` de la fila
+  junto al `CashMovement` público (que no lo lleva).
+- **`upsertProduct` nunca manda `images`** todavía: una foto recién
+  elegida sigue siendo una ruta `file://` de este teléfono, y el `push`
+  del servidor la rechaza de plano ("todavía no se ha subido"). El
+  catálogo (nombre, precio, categoría, etc.) sí sincroniza ya; las fotos
+  sincronizan cuando el sub-paso 13 suba el archivo y encole un
+  `upsertProduct` de seguimiento con las URLs reales.
+- **Dos bugs reales del servidor, encontrados al construir el payload
+  exacto que cada operación necesita** (no bugs introducidos por esta
+  sesión, preexistentes desde el sub-paso 7 parte 3, sin cobertura de
+  prueba que los agarrara porque los tests de ahí siempre mandaban el
+  campo): `createDirectSale.cashMovementUuid` y
+  `markSettlementSettled.cashMovementUuid` eran **obligatorios** en el
+  esquema zod, pero el handler solo inserta el movimiento de caja si el
+  monto es mayor a 0 — una venta gratis (todos los items en $0) o una
+  liquidación con saldo $0 habrían quedado imposibles de sincronizar
+  desde el celular. Corregido en la web: los dos campos pasan a
+  `.optional()`, con un rechazo explícito si el monto es mayor a 0 y el
+  campo no llegó (para que un cliente con el bug real, no el caso
+  legítimo de monto 0, siga fallando con un mensaje claro). Tests nuevos
+  en `cash-sales.integration.test.ts` y
+  `deliveries-settlements.integration.test.ts`.
+- Test nuevo `lib/data/local/outbox-wiring.test.ts`: ejercita los 15 repos
+  reales contra SQLite migrado y revisa la cola resultante — cada
+  operación con el `type` correcto, las referencias resueltas a `uuid`
+  real (no al id local), `sku`/`stock`/`images` ausentes de `upsertProduct`,
+  sin `cashMovementUuid` en una venta gratis, `receivedMovements` con un
+  ítem por cada línea recibida, y el conteo final de la cola coincide con
+  las 20 operaciones hechas en la prueba. `lib/sync/outbox.test.ts` cubre
+  el mecanismo en aislado (opId único, funciona dentro de una transacción
+  ajena).
+- Verificado: móvil `npm run test` (101) + `npx tsc --noEmit` en verde
+  (`npm run lint`: el mismo error preexistente de siempre); web `npm run
+  test` (87) + `npm run test:db` (40) + `npm run lint` + `npm run build`
+  en verde tras los dos arreglos. **No verificado todavía en el celular
+  del usuario** — no hay nada visible que probar aún (la cola no se
+  muestra en ninguna pantalla; eso llega con el indicador de pendientes
+  del sub-paso 12), así que la verificación real es que el flujo normal
+  de la app (crear un producto, una venta, etc.) sigue funcionando igual
+  que antes, sin errores nuevos en pantalla.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

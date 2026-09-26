@@ -1,9 +1,10 @@
 import { desc, eq } from "drizzle-orm";
+import { enqueueOperation } from "../../sync/outbox";
 import type { SellerDeliveryInput } from "../../validations";
 import type { SellerDelivery, SellerDeliveryItem, SellerDeliveriesRepo } from "../seller-deliveries-repo";
 import { recordProductMovement, recordSellerMovement } from "./inventory-repo";
 import { db } from "./db";
-import { sellerDeliveries, sellerDeliveryItems } from "./schema";
+import { sellerDeliveries, sellerDeliveryItems, sellers } from "./schema";
 
 function toDelivery(row: typeof sellerDeliveries.$inferSelect): Omit<SellerDelivery, "items"> {
   return {
@@ -51,13 +52,18 @@ export const localSellerDeliveriesRepo: SellerDeliveriesRepo = {
 
   async create(data: SellerDeliveryInput) {
     return db.transaction(async (tx) => {
+      const seller = await tx.query.sellers.findFirst({ where: eq(sellers.id, data.sellerId), columns: { uuid: true } });
+      if (!seller) throw new Error("Vendedor no encontrado");
+
       const [delivery] = await tx.insert(sellerDeliveries).values({ sellerId: data.sellerId, notes: data.notes ?? null }).returning();
 
       const items: SellerDeliveryItem[] = [];
+      const outboxItems: { uuid: string; productUuid: string; quantity: number; unitCost: number; principalMovementUuid: string; sellerMovementUuid: string }[] = [];
+
       for (const item of data.items) {
         // Descuenta el inventario principal — falla y hace rollback si no
         // alcanza el stock, mismo criterio fail-fast que direct-sales-repo.
-        await recordProductMovement(tx, {
+        const principal = await recordProductMovement(tx, {
           productId: item.productId,
           quantityDelta: -item.quantity,
           type: "entrega_vendedor",
@@ -67,7 +73,7 @@ export const localSellerDeliveriesRepo: SellerDeliveriesRepo = {
         // Segunda fila del mismo ledger: entra al inventario del vendedor.
         // No toca products.stock — el inventario del vendedor se deriva del
         // ledger (ownerType: 'seller').
-        await recordSellerMovement(tx, {
+        const forSeller = await recordSellerMovement(tx, {
           sellerId: data.sellerId,
           productId: item.productId,
           quantityDelta: item.quantity,
@@ -80,7 +86,23 @@ export const localSellerDeliveriesRepo: SellerDeliveriesRepo = {
           .values({ deliveryId: delivery.id, productId: item.productId, quantity: item.quantity, unitCost: item.unitCost })
           .returning();
         items.push(toItem(row));
+        outboxItems.push({
+          uuid: row.uuid,
+          productUuid: principal.productUuid,
+          quantity: item.quantity,
+          unitCost: item.unitCost,
+          principalMovementUuid: principal.movementUuid,
+          sellerMovementUuid: forSeller.movementUuid,
+        });
       }
+
+      await enqueueOperation(tx, "createSellerDelivery", {
+        uuid: delivery.uuid,
+        sellerUuid: seller.uuid,
+        deliveryDate: delivery.deliveryDate,
+        notes: delivery.notes,
+        items: outboxItems,
+      });
 
       return { ...toDelivery(delivery), items };
     });

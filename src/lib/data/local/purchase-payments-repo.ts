@@ -1,10 +1,11 @@
 import { and, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
+import { enqueueOperation } from "../../sync/outbox";
 import type { PurchasePaymentInput } from "../../validations";
 import type { AccountsPayableLine, PurchaseOrderBalance, PurchasePayment, PurchasePaymentsRepo } from "../purchase-payments-repo";
 import { recordCashMovementTx } from "./cash-repo";
 import { db } from "./db";
 import type { Tx } from "./db";
-import { purchaseOrders, purchasePayments } from "./schema";
+import { cashAccounts, purchaseOrders, purchasePayments } from "./schema";
 
 function toPayment(row: typeof purchasePayments.$inferSelect): PurchasePayment {
   return {
@@ -57,6 +58,9 @@ export const localPurchasePaymentsRepo: PurchasePaymentsRepo = {
         throw new Error(`Saldo insuficiente: hay ${balance.pending} pendiente, se intentó pagar ${data.amount}`);
       }
 
+      const account = await tx.query.cashAccounts.findFirst({ where: eq(cashAccounts.id, data.accountId), columns: { uuid: true } });
+      if (!account) throw new Error("Cuenta no encontrada");
+
       const [row] = await tx
         .insert(purchasePayments)
         .values({ purchaseOrderId, amount: data.amount, accountId: data.accountId, notes: data.notes ?? null })
@@ -65,13 +69,23 @@ export const localPurchasePaymentsRepo: PurchasePaymentsRepo = {
       // Fixes a real gap found while designing the accounts model: paying a
       // distributor used to not touch cash_movements at all, so an
       // account's balance would silently omit money paid out here.
-      await recordCashMovementTx(tx, {
+      const movement = await recordCashMovementTx(tx, {
         type: "gasto",
         amount: data.amount,
         concept: `Pago pedido de compra #${purchaseOrderId}`,
         sourceType: "purchase_payment",
         sourceId: row.id,
         accountId: data.accountId,
+      });
+
+      await enqueueOperation(tx, "createPurchasePayment", {
+        uuid: row.uuid,
+        purchaseOrderUuid: order.uuid,
+        amount: row.amount,
+        paidAt: row.paidAt,
+        accountUuid: account.uuid,
+        notes: row.notes,
+        cashMovementUuid: movement.uuid,
       });
 
       return toPayment(row);

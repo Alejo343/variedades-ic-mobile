@@ -10,6 +10,24 @@ import { newUuid } from "../../uuid";
 // integer `id` stays local to each database. Drizzle fills it on every insert.
 const syncUuid = () => text("uuid").notNull().unique().$defaultFn(newUuid);
 
+// Every push operation this device still owes the server, one row per call
+// to enqueueOperation (lib/sync/outbox.ts) — written in the SAME transaction
+// as the local change it describes, so the two can never drift apart. A row
+// here IS "pending": there's no status column on purpose (sub-paso 10) — the
+// sync engine (sub-paso 11) simply deletes a row once the server has
+// acknowledged it (applied or permanently rejected); an unexpected server
+// error leaves the row for the next sync to retry. `opId` is what the server
+// calls an operation's `id` — generated here, not by syncUuid(), because this
+// table is never itself pulled/pushed as data (its rows describe operations,
+// they aren't rows the server stores as such).
+export const syncOutbox = sqliteTable("sync_outbox", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  opId: text("op_id").notNull().unique().$defaultFn(newUuid),
+  type: text("type").notNull(),
+  payload: text("payload").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+});
+
 export const categories = sqliteTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   uuid: syncUuid(),

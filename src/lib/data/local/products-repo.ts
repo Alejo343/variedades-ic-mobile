@@ -2,6 +2,7 @@ import { asc, count, eq, getTableColumns, sql } from "drizzle-orm";
 import { type ImageDraft, normalizeImages } from "../../domain/product-images";
 import { formatSku, getSkuPrefix } from "../../domain/sku";
 import { deleteProductImageFile } from "../../images";
+import { enqueueOperation } from "../../sync/outbox";
 import type { CreateProductInput, Product, ProductImage, ProductsRepo, UpdateProductInput } from "../products-repo";
 import type { Tx } from "./db";
 import { db } from "./db";
@@ -61,6 +62,32 @@ function toProductImage(row: typeof productImages.$inferSelect): ProductImage {
 async function getProduct(id: number): Promise<Product | null> {
   const [row] = await db.select(productColumns).from(products).where(eq(products.id, id));
   return row ? toProduct(row) : null;
+}
+
+// upsertProduct never carries sku or stock (the server assigns/derives both —
+// see CLAUDE.md, "Fase 10", sub-paso 7 parte 3a) and never carries `images`
+// here: a fresh photo's url is still this device's local file:// path, which
+// the server's push rejects outright ("todavía no se ha subido"). The
+// gallery syncs once sub-paso 13 uploads it and enqueues a follow-up
+// upsertProduct that DOES include `images` with the resulting remote URLs —
+// until then, catalog fields sync but photos don't.
+async function toUpsertPayload(tx: Tx, row: typeof products.$inferSelect) {
+  const categoryUuid = row.categoryId
+    ? (await tx.query.categories.findFirst({ where: eq(categories.id, row.categoryId), columns: { uuid: true } }))?.uuid ?? null
+    : null;
+  return {
+    uuid: row.uuid,
+    name: row.name,
+    slug: row.slug,
+    description: row.description,
+    price: row.price,
+    purchasePrice: row.purchasePrice,
+    categoryUuid,
+    distributorCode: row.distributorCode,
+    minStock: row.minStock,
+    warrantyMonths: row.warrantyMonths,
+    active: row.active,
+  };
 }
 
 // Makes the product's gallery match `drafts` exactly (order = displayOrder).
@@ -158,8 +185,9 @@ export const localProductsRepo: ProductsRepo = {
           warrantyMonths: data.warrantyMonths ?? null,
           active: data.active ?? true,
         })
-        .returning({ id: products.id });
+        .returning();
       if (images) await replaceImages(tx, row.id, images);
+      await enqueueOperation(tx, "upsertProduct", await toUpsertPayload(tx, row));
       return row.id;
     });
     return (await getProduct(id))!;
@@ -171,8 +199,9 @@ export const localProductsRepo: ProductsRepo = {
         .update(products)
         .set({ ...data, updatedAt: new Date().toISOString() })
         .where(eq(products.id, id))
-        .returning({ id: products.id });
+        .returning();
       if (!row) throw new Error("Producto no encontrado");
+      await enqueueOperation(tx, "upsertProduct", await toUpsertPayload(tx, row));
       return images ? replaceImages(tx, id, images) : [];
     });
     // Only after commit: a rolled-back save must not lose the photo files.
@@ -181,9 +210,13 @@ export const localProductsRepo: ProductsRepo = {
   },
 
   async deactivate(id: number) {
-    await db
-      .update(products)
-      .set({ active: false, updatedAt: new Date().toISOString() })
-      .where(eq(products.id, id));
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(products)
+        .set({ active: false, updatedAt: new Date().toISOString() })
+        .where(eq(products.id, id))
+        .returning();
+      if (row) await enqueueOperation(tx, "upsertProduct", await toUpsertPayload(tx, row));
+    });
   },
 };

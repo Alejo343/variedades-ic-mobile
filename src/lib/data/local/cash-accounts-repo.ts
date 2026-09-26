@@ -1,4 +1,5 @@
 import { eq, sql } from "drizzle-orm";
+import { enqueueOperation } from "../../sync/outbox";
 import type { CashAccountsRepo, CashAccount, CashAccountWithBalance, CreateCashAccountInput, UpdateCashAccountInput } from "../cash-accounts-repo";
 import { db } from "./db";
 import { cashAccounts, cashMovements } from "./schema";
@@ -15,6 +16,11 @@ function toCashAccount(row: typeof cashAccounts.$inferSelect): CashAccount {
   };
 }
 
+// See categories-repo.ts#toUpsertPayload — same "whole row, last write wins" contract.
+function toUpsertPayload(row: typeof cashAccounts.$inferSelect) {
+  return { uuid: row.uuid, name: row.name, type: row.type, active: row.active, notes: row.notes };
+}
+
 export const localCashAccountsRepo: CashAccountsRepo = {
   async list() {
     const rows = await db.select().from(cashAccounts).orderBy(cashAccounts.name);
@@ -27,28 +33,38 @@ export const localCashAccountsRepo: CashAccountsRepo = {
   },
 
   async create(data: CreateCashAccountInput) {
-    const [row] = await db
-      .insert(cashAccounts)
-      .values({ name: data.name, type: data.type, notes: data.notes ?? null, active: data.active ?? true })
-      .returning();
-    return toCashAccount(row);
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(cashAccounts)
+        .values({ name: data.name, type: data.type, notes: data.notes ?? null, active: data.active ?? true })
+        .returning();
+      await enqueueOperation(tx, "upsertCashAccount", toUpsertPayload(row));
+      return toCashAccount(row);
+    });
   },
 
   async update(id: number, data: UpdateCashAccountInput) {
-    const [row] = await db
-      .update(cashAccounts)
-      .set({ ...data, updatedAt: new Date().toISOString() })
-      .where(eq(cashAccounts.id, id))
-      .returning();
-    if (!row) throw new Error("Cuenta no encontrada");
-    return toCashAccount(row);
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(cashAccounts)
+        .set({ ...data, updatedAt: new Date().toISOString() })
+        .where(eq(cashAccounts.id, id))
+        .returning();
+      if (!row) throw new Error("Cuenta no encontrada");
+      await enqueueOperation(tx, "upsertCashAccount", toUpsertPayload(row));
+      return toCashAccount(row);
+    });
   },
 
   async deactivate(id: number) {
-    await db
-      .update(cashAccounts)
-      .set({ active: false, updatedAt: new Date().toISOString() })
-      .where(eq(cashAccounts.id, id));
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(cashAccounts)
+        .set({ active: false, updatedAt: new Date().toISOString() })
+        .where(eq(cashAccounts.id, id))
+        .returning();
+      if (row) await enqueueOperation(tx, "upsertCashAccount", toUpsertPayload(row));
+    });
   },
 
   async listWithBalances(): Promise<CashAccountWithBalance[]> {

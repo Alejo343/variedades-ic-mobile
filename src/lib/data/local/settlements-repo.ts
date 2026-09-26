@@ -1,12 +1,13 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { calculateSettlement } from "../../domain/settlement";
 import { canTransitionSettlement, type SettlementStatus } from "../../domain/settlement-status";
+import { enqueueOperation } from "../../sync/outbox";
 import type { SettlementInput } from "../../validations";
 import type { Settlement, SettlementPreview, SettlementsRepo } from "../settlements-repo";
 import { recordCashMovementTx } from "./cash-repo";
 import { db } from "./db";
 import type { Tx } from "./db";
-import { sellerLossItems, sellerLosses, sellerSales, settlements } from "./schema";
+import { cashAccounts, sellerLossItems, sellerLosses, sellers, sellerSales, settlements } from "./schema";
 
 function toSettlement(row: typeof settlements.$inferSelect): Settlement {
   return {
@@ -27,8 +28,8 @@ function toSettlement(row: typeof settlements.$inferSelect): Settlement {
 // sale and loss on or before periodDate that no earlier settlement included.
 // Anything that arrived late (e.g. a seller's phone that synced after the day
 // was settled) lands in the next settlement instead of being lost, and the
-// settlementId marks keep anything from being charged twice. Same rule as the
-// web's lib/db/queries/settlements.ts (CLAUDE.md, "Fase 10").
+// settlementId marks keep anything from being charged twice — same rule as
+// the web's lib/db/queries/settlements.ts (CLAUDE.md, "Fase 10").
 const pendingSales = (sellerId: number, periodDate: string) =>
   and(eq(sellerSales.sellerId, sellerId), sql`DATE(${sellerSales.saleDate}) <= ${periodDate}`, isNull(sellerSales.settlementId));
 const pendingLosses = (sellerId: number, periodDate: string) =>
@@ -77,6 +78,9 @@ export const localSettlementsRepo: SettlementsRepo = {
 
   async create(data: SettlementInput) {
     return db.transaction(async (tx) => {
+      const seller = await tx.query.sellers.findFirst({ where: eq(sellers.id, data.sellerId), columns: { uuid: true } });
+      if (!seller) throw new Error("Vendedor no encontrado");
+
       const existing = await tx.query.settlements.findFirst({
         where: and(eq(settlements.sellerId, data.sellerId), eq(settlements.periodDate, data.periodDate)),
       });
@@ -99,6 +103,11 @@ export const localSettlementsRepo: SettlementsRepo = {
       await tx.update(sellerSales).set({ settlementId: row.id }).where(pendingSales(data.sellerId, data.periodDate));
       await tx.update(sellerLosses).set({ settlementId: row.id }).where(pendingLosses(data.sellerId, data.periodDate));
 
+      // No item-level detail needed here: the server recomputes the same
+      // totals from its own (by-then-synced) sales/losses — see
+      // CLAUDE.md, "Fase 10", sub-paso 7 parte 3c.
+      await enqueueOperation(tx, "createSettlement", { uuid: row.uuid, sellerUuid: seller.uuid, periodDate: data.periodDate });
+
       return toSettlement(row);
     });
   },
@@ -112,14 +121,18 @@ export const localSettlementsRepo: SettlementsRepo = {
         throw new Error(`No se puede liquidar una liquidación en estado '${existing.status}'`);
       }
 
+      const account = await tx.query.cashAccounts.findFirst({ where: eq(cashAccounts.id, accountId), columns: { uuid: true } });
+      if (!account) throw new Error("Cuenta no encontrada");
+
       const [row] = await tx
         .update(settlements)
         .set({ status: "liquidada", settledAt: new Date().toISOString() })
         .where(eq(settlements.id, id))
         .returning();
 
+      let cashMovementUuid: string | undefined;
       if (row.amountDue > 0) {
-        await recordCashMovementTx(tx, {
+        const movement = await recordCashMovementTx(tx, {
           type: "ingreso",
           amount: row.amountDue,
           concept: `Liquidación vendedor #${row.sellerId} — ${row.periodDate}`,
@@ -127,7 +140,15 @@ export const localSettlementsRepo: SettlementsRepo = {
           sourceId: row.id,
           accountId,
         });
+        cashMovementUuid = movement.uuid;
       }
+
+      await enqueueOperation(tx, "markSettlementSettled", {
+        settlementUuid: row.uuid,
+        accountUuid: account.uuid,
+        settledAt: row.settledAt,
+        cashMovementUuid,
+      });
 
       return toSettlement(row);
     });

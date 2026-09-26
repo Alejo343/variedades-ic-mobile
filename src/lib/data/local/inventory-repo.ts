@@ -1,5 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { applyMovement, type MovementType, validateAdjustmentReason } from "../../domain/inventory-movement";
+import { enqueueOperation } from "../../sync/outbox";
 import type { InventoryAdjustmentInput } from "../../validations";
 import type { InventoryMovement, InventoryRepo } from "../inventory-repo";
 import type { Tx } from "./db";
@@ -10,10 +11,13 @@ import { inventoryMovements, products } from "./schema";
 // Reused by other local/* repos (e.g. direct-sales-repo) that need to move
 // principal stock and record the ledger entry inside their own transaction —
 // same role as recordPrincipalMovement in the web repo's lib/db/queries/inventory.ts.
+// Returns both uuids the caller needs to build its own outbox payload:
+// productUuid comes free from the row this function already has to load to
+// check the balance, so no extra query is needed for it.
 export async function recordProductMovement(
   tx: Tx,
   input: { productId: number; quantityDelta: number; type: MovementType; reason?: string | null; sourceType?: string | null },
-): Promise<{ newStock: number }> {
+): Promise<{ newStock: number; productUuid: string; movementUuid: string; movementCreatedAt: string }> {
   const product = await tx.query.products.findFirst({ where: eq(products.id, input.productId) });
   if (!product) throw new Error("Producto no encontrado");
 
@@ -25,15 +29,18 @@ export async function recordProductMovement(
     .set({ stock: result.newBalance, updatedAt: new Date().toISOString() })
     .where(eq(products.id, input.productId));
 
-  await tx.insert(inventoryMovements).values({
-    productId: input.productId,
-    type: input.type,
-    quantityDelta: input.quantityDelta,
-    reason: input.reason ?? null,
-    sourceType: input.sourceType ?? null,
-  });
+  const [movement] = await tx
+    .insert(inventoryMovements)
+    .values({
+      productId: input.productId,
+      type: input.type,
+      quantityDelta: input.quantityDelta,
+      reason: input.reason ?? null,
+      sourceType: input.sourceType ?? null,
+    })
+    .returning();
 
-  return { newStock: result.newBalance };
+  return { newStock: result.newBalance, productUuid: product.uuid, movementUuid: movement.uuid, movementCreatedAt: movement.createdAt };
 }
 
 // Same role as recordProductMovement but for a seller's consigned inventory
@@ -44,7 +51,7 @@ export async function recordProductMovement(
 export async function recordSellerMovement(
   tx: Tx,
   input: { sellerId: number; productId: number; quantityDelta: number; type: MovementType; sourceType?: string | null },
-): Promise<{ newSellerStock: number }> {
+): Promise<{ newSellerStock: number; productUuid: string; movementUuid: string; movementCreatedAt: string }> {
   const [row] = await tx
     .select({ total: sql<number>`COALESCE(SUM(${inventoryMovements.quantityDelta}), 0)` })
     .from(inventoryMovements)
@@ -60,16 +67,25 @@ export async function recordSellerMovement(
   const result = applyMovement(current, input.quantityDelta);
   if (!result.ok) throw new Error(result.reason);
 
-  await tx.insert(inventoryMovements).values({
-    productId: input.productId,
-    type: input.type,
-    quantityDelta: input.quantityDelta,
-    sourceType: input.sourceType ?? null,
-    ownerType: "seller",
-    sellerId: input.sellerId,
-  });
+  // Not otherwise needed here (unlike recordProductMovement, which loads the
+  // product row anyway to check stock) — one extra lookup by primary key,
+  // just for the uuid the caller's outbox payload needs.
+  const product = await tx.query.products.findFirst({ where: eq(products.id, input.productId), columns: { uuid: true } });
+  if (!product) throw new Error("Producto no encontrado");
 
-  return { newSellerStock: result.newBalance };
+  const [movement] = await tx
+    .insert(inventoryMovements)
+    .values({
+      productId: input.productId,
+      type: input.type,
+      quantityDelta: input.quantityDelta,
+      sourceType: input.sourceType ?? null,
+      ownerType: "seller",
+      sellerId: input.sellerId,
+    })
+    .returning();
+
+  return { newSellerStock: result.newBalance, productUuid: product.uuid, movementUuid: movement.uuid, movementCreatedAt: movement.createdAt };
 }
 
 function toMovement(row: typeof inventoryMovements.$inferSelect): InventoryMovement {
@@ -90,15 +106,23 @@ export const localInventoryRepo: InventoryRepo = {
       throw new Error("El motivo es requerido para un ajuste");
     }
 
-    return db.transaction((tx) =>
-      recordProductMovement(tx, {
+    return db.transaction(async (tx) => {
+      const { newStock, productUuid, movementUuid, movementCreatedAt } = await recordProductMovement(tx, {
         productId: input.productId,
         quantityDelta: input.quantityDelta,
         type: "ajuste",
         reason: input.reason,
         sourceType: "manual",
-      }),
-    );
+      });
+      await enqueueOperation(tx, "createInventoryAdjustment", {
+        uuid: movementUuid,
+        productUuid,
+        quantityDelta: input.quantityDelta,
+        reason: input.reason,
+        occurredAt: movementCreatedAt,
+      });
+      return { newStock };
+    });
   },
 
   async getMovementsForProduct(productId: number) {

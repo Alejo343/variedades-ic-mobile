@@ -23,7 +23,10 @@ const { raw, db: proxy } = createMigratedTestDb({
 vi.mock("./db", () => ({ get db() { return proxy; } }));
 vi.mock("../../images", () => ({ deleteProductImageFile: () => {} }));
 
-const tables = (raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%'").all() as { name: string }[]).map((t) => t.name);
+// sync_outbox (sub-paso 10) is deliberately excluded: it's a local-only
+// queue of pending push operations, not a row the server itself stores, so
+// it has no uuid/sync_version of its own — see its comment in schema.ts.
+const tables = (raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%' AND name <> 'sync_outbox'").all() as { name: string }[]).map((t) => t.name);
 const uuidsOf = (table: string) => (raw.prepare(`SELECT uuid FROM ${table}`).all() as { uuid: string | null }[]).map((r) => r.uuid);
 
 describe("uuid de sincronización", async () => {

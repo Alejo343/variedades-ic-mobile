@@ -1,5 +1,6 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { calculateCommission, type CommissionConfig } from "../../domain/commission";
+import { enqueueOperation } from "../../sync/outbox";
 import type { SellerSaleInput } from "../../validations";
 import type { SellerSale, SellerSaleItem, SellerSalesRepo } from "../seller-sales-repo";
 import { recordSellerMovement } from "./inventory-repo";
@@ -62,11 +63,12 @@ export const localSellerSalesRepo: SellerSalesRepo = {
       let totalAmount = 0;
       let totalQuantity = 0;
       const items: SellerSaleItem[] = [];
+      const outboxItems: { uuid: string; productUuid: string; quantity: number; unitPrice: number; movementUuid: string }[] = [];
 
       for (const item of data.items) {
         // Descuenta SOLO el inventario de este vendedor — nunca el
         // principal. Falla y hace rollback si no tiene suficiente disponible.
-        await recordSellerMovement(tx, {
+        const { productUuid, movementUuid } = await recordSellerMovement(tx, {
           sellerId: data.sellerId,
           productId: item.productId,
           quantityDelta: -item.quantity,
@@ -83,6 +85,7 @@ export const localSellerSalesRepo: SellerSalesRepo = {
           .values({ saleId: sale.id, productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice, subtotal })
           .returning();
         items.push(toItem(row));
+        outboxItems.push({ uuid: row.uuid, productUuid, quantity: item.quantity, unitPrice: item.unitPrice, movementUuid });
       }
 
       const commissionConfig: CommissionConfig = { type: seller.commissionType as CommissionConfig["type"], value: seller.commissionValue };
@@ -96,6 +99,18 @@ export const localSellerSalesRepo: SellerSalesRepo = {
         .set({ totalAmount, commissionAmount })
         .where(eq(sellerSales.id, sale.id))
         .returning();
+
+      // commissionAmount/totalAmount aren't sent: the server recomputes both
+      // from the seller's current commission config, then the phone's next
+      // pull replaces this local estimate (CLAUDE.md, "Fase 10", sub-paso 7
+      // parte 2).
+      await enqueueOperation(tx, "createSellerSale", {
+        uuid: updated.uuid,
+        sellerUuid: seller.uuid,
+        saleDate: updated.saleDate,
+        notes: updated.notes,
+        items: outboxItems,
+      });
 
       return { ...toSale(updated), items };
     });

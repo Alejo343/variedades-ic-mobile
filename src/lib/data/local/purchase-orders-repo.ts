@@ -1,10 +1,11 @@
 import { desc, eq } from "drizzle-orm";
 import { canTransitionPurchaseOrder, type PurchaseOrderStatus } from "../../domain/order-status";
+import { enqueueOperation } from "../../sync/outbox";
 import type { PurchaseOrderInput } from "../../validations";
 import type { PurchaseOrder, PurchaseOrderItem, PurchaseOrdersRepo } from "../purchase-orders-repo";
 import { recordProductMovement } from "./inventory-repo";
 import { db } from "./db";
-import { purchaseOrders, purchaseOrderItems } from "./schema";
+import { distributors, products, purchaseOrders, purchaseOrderItems } from "./schema";
 
 function toOrder(row: typeof purchaseOrders.$inferSelect): Omit<PurchaseOrder, "items"> {
   return {
@@ -61,6 +62,10 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
 
   async create(data: PurchaseOrderInput) {
     return db.transaction(async (tx) => {
+      const distributorUuid = data.distributorId
+        ? (await tx.query.distributors.findFirst({ where: eq(distributors.id, data.distributorId), columns: { uuid: true } }))?.uuid ?? null
+        : null;
+
       const [order] = await tx
         .insert(purchaseOrders)
         .values({
@@ -73,16 +78,30 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
 
       let totalCost = 0;
       const items: PurchaseOrderItem[] = [];
+      const outboxItems: { uuid: string; productUuid: string; quantity: number; unitCost: number }[] = [];
       for (const item of data.items) {
         totalCost += item.quantity * item.unitCost;
+        const product = await tx.query.products.findFirst({ where: eq(products.id, item.productId), columns: { uuid: true } });
+        if (!product) throw new Error("Producto no encontrado");
         const [row] = await tx
           .insert(purchaseOrderItems)
           .values({ orderId: order.id, productId: item.productId, quantity: item.quantity, unitCost: item.unitCost })
           .returning();
         items.push(toItem(row));
+        outboxItems.push({ uuid: row.uuid, productUuid: product.uuid, quantity: item.quantity, unitCost: item.unitCost });
       }
 
       const [updated] = await tx.update(purchaseOrders).set({ totalCost }).where(eq(purchaseOrders.id, order.id)).returning();
+
+      await enqueueOperation(tx, "createPurchaseOrder", {
+        uuid: updated.uuid,
+        distributorUuid,
+        purchaseType: updated.purchaseType,
+        orderDate: updated.orderDate,
+        expectedDate: updated.expectedDate,
+        notes: updated.notes,
+        items: outboxItems,
+      });
 
       return { ...toOrder(updated), items };
     });
@@ -100,6 +119,7 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
         .where(eq(purchaseOrders.id, id))
         .returning();
       const items = await tx.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
+      await enqueueOperation(tx, "transitionPurchaseOrder", { purchaseOrderUuid: row.uuid, to: "en_viaje", occurredAt: row.updatedAt });
       return { ...toOrder(row), items: items.map(toItem) };
     });
   },
@@ -111,13 +131,15 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
       requireTransition(existing.status as PurchaseOrderStatus, "recibido");
 
       const items = await tx.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
+      const receivedMovements: { itemUuid: string; movementUuid: string }[] = [];
       for (const item of items) {
-        await recordProductMovement(tx, {
+        const { movementUuid } = await recordProductMovement(tx, {
           productId: item.productId,
           quantityDelta: item.quantity,
           type: "compra",
           sourceType: "purchase_order",
         });
+        receivedMovements.push({ itemUuid: item.uuid, movementUuid });
       }
 
       const [row] = await tx
@@ -125,6 +147,12 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
         .set({ status: "recibido", updatedAt: new Date().toISOString() })
         .where(eq(purchaseOrders.id, id))
         .returning();
+      await enqueueOperation(tx, "transitionPurchaseOrder", {
+        purchaseOrderUuid: row.uuid,
+        to: "recibido",
+        occurredAt: row.updatedAt,
+        receivedMovements,
+      });
       return { ...toOrder(row), items: items.map(toItem) };
     });
   },
@@ -141,6 +169,7 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
         .where(eq(purchaseOrders.id, id))
         .returning();
       const items = await tx.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
+      await enqueueOperation(tx, "transitionPurchaseOrder", { purchaseOrderUuid: row.uuid, to: "cancelado", occurredAt: row.updatedAt });
       return { ...toOrder(row), items: items.map(toItem) };
     });
   },

@@ -1,9 +1,10 @@
 import { desc, eq, sql } from "drizzle-orm";
+import { enqueueOperation } from "../../sync/outbox";
 import type { SellerReturnInput } from "../../validations";
 import type { SellerReturn, SellerReturnItem, SellerReturnsRepo } from "../seller-returns-repo";
 import { recordProductMovement, recordSellerMovement } from "./inventory-repo";
 import { db } from "./db";
-import { sellerReturns, sellerReturnItems } from "./schema";
+import { sellers, sellerReturns, sellerReturnItems } from "./schema";
 
 function toReturn(row: typeof sellerReturns.$inferSelect): Omit<SellerReturn, "items"> {
   return {
@@ -46,13 +47,18 @@ export const localSellerReturnsRepo: SellerReturnsRepo = {
 
   async create(data: SellerReturnInput) {
     return db.transaction(async (tx) => {
+      const seller = await tx.query.sellers.findFirst({ where: eq(sellers.id, data.sellerId), columns: { uuid: true } });
+      if (!seller) throw new Error("Vendedor no encontrado");
+
       const [ret] = await tx.insert(sellerReturns).values({ sellerId: data.sellerId, notes: data.notes ?? null }).returning();
 
       const items: SellerReturnItem[] = [];
+      const outboxItems: { uuid: string; productUuid: string; quantity: number; sellerMovementUuid: string; principalMovementUuid: string }[] = [];
+
       for (const item of data.items) {
         // Descuenta SOLO el inventario de este vendedor — falla y hace
         // rollback si no tiene suficiente disponible.
-        await recordSellerMovement(tx, {
+        const fromSeller = await recordSellerMovement(tx, {
           sellerId: data.sellerId,
           productId: item.productId,
           quantityDelta: -item.quantity,
@@ -61,7 +67,7 @@ export const localSellerReturnsRepo: SellerReturnsRepo = {
         });
 
         // Segunda fila del mismo ledger: regresa al inventario principal.
-        await recordProductMovement(tx, {
+        const toPrincipal = await recordProductMovement(tx, {
           productId: item.productId,
           quantityDelta: item.quantity,
           type: "devolucion",
@@ -73,7 +79,22 @@ export const localSellerReturnsRepo: SellerReturnsRepo = {
           .values({ returnId: ret.id, productId: item.productId, quantity: item.quantity })
           .returning();
         items.push(toItem(row));
+        outboxItems.push({
+          uuid: row.uuid,
+          productUuid: toPrincipal.productUuid,
+          quantity: item.quantity,
+          sellerMovementUuid: fromSeller.movementUuid,
+          principalMovementUuid: toPrincipal.movementUuid,
+        });
       }
+
+      await enqueueOperation(tx, "createSellerReturn", {
+        uuid: ret.uuid,
+        sellerUuid: seller.uuid,
+        returnDate: ret.returnDate,
+        notes: ret.notes,
+        items: outboxItems,
+      });
 
       return { ...toReturn(ret), items };
     });
