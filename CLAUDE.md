@@ -1208,7 +1208,7 @@ choca en la implementación):**
 | 2 | `sync_version` (trigger + secuencia + advisory lock) y `sync_tombstones` | web | ✅ listo |
 | 3 | Tablas `users` (rol `owner`/`seller`, `sellerId`) + `device_sessions`; NextAuth lee `users`; dueño sembrado desde `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH` | web | ✅ listo |
 | 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ✅ listo |
-| 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ⏳ pendiente |
+| 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ✅ listo |
 | 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ⏳ pendiente |
 | 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ pendiente |
 | 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ⏳ pendiente |
@@ -1376,6 +1376,49 @@ choca en la implementación):**
   página del vendedor muestra la tarjeta, el usuario, el celular y
   "Revocado". Datos de prueba borrados al terminar. `npm run test` (72) +
   `npm run test:db` (6) + `npm run lint` + `npm run build` en verde.
+- **Sub-paso 5 (login del celular + token + permisos)**, solo web, sin
+  migración nueva. Rutas públicas (fuera del `proxy.ts`, que solo cubre
+  `/admin`): `POST /api/sync/login` (`{username, password, deviceName?}` →
+  `201 {token, user: {username, name, role}, seller: {uuid, name} | null}`),
+  `GET /api/sync/me` (valida el token y devuelve lo mismo sin token) y
+  `POST /api/sync/logout` (revoca solo el token de ese celular). Tanto el
+  dueño como los vendedores pueden entrar desde el celular. El celular
+  nunca recibe `id` locales del servidor: se identifica al vendedor por
+  `uuid`.
+- `lib/sync/tokens.ts` (con test): token = 32 bytes aleatorios en
+  base64url, enviado como `Authorization: Bearer`; el servidor guarda solo
+  su SHA-256 (un hash simple basta porque el token es aleatorio y largo, a
+  diferencia de una contraseña).
+- `lib/sync/auth.ts#authenticateDevice`: en **cada** petición exige sesión
+  no revocada + usuario activo + (dueño o vendedor con `sellers.active`), y
+  actualiza `lastSeenAt` (lo que muestra "Última sincronización" en el
+  panel). Así revocar un celular, desactivar el acceso o desactivar al
+  vendedor en el panel corta la sync de inmediato, sin esperar a que el
+  token expire (los tokens no expiran solos: el celular tiene que poder
+  abrir y sincronizar después de semanas sin red).
+- El login está expuesto en internet: mismo mensaje para usuario
+  inexistente y contraseña incorrecta, `bcrypt.compare` contra un hash
+  falso cuando el usuario no existe (mismo tiempo de respuesta), y freno de
+  intentos `lib/domain/login-throttle.ts` (con test): 5 fallos en 15 min
+  por usuario → `429` con `Retry-After`. En memoria a propósito (un solo
+  proceso PM2; reiniciar olvida los contadores).
+- `lib/domain/sync-permissions.ts` (con test) define el **catálogo de
+  operaciones de push** que implementará el sub-paso 7
+  (`SYNC_OPERATION_TYPES`: `upsertCategory`, `upsertProduct`, ...,
+  `markSettlementSettled`) y `authorizeOperation`: el dueño puede todas; un
+  vendedor solo `createSellerSale`/`createSellerReturn`/`createSellerLoss`
+  y solo con su propio `sellerUuid`; un tipo desconocido se rechaza
+  incluso al dueño. Si el sub-paso 7 necesita otra operación, se agrega
+  aquí primero.
+- Verificado con el build contra la base local: login de vendedor → 201
+  con el `uuid` correcto de su vendedor y el hash guardado = SHA-256 del
+  token; `me` con token → 200, sin token o con uno inventado → 401;
+  contraseña incorrecta y usuario inexistente → mismo 401; vendedor
+  desactivado → `me` y login 401, reactivado → 200; usuario desactivado →
+  401; logout del celular 1 → su `me` 401 y el celular 2 sigue en 200; 6º
+  intento tras 5 fallos → 429, sin afectar a otro usuario; login del dueño
+  → 201 con `seller: null`. Datos de prueba borrados. `npm run test` (84)
+  + `npm run test:db` (6) + `npm run lint` + `npm run build` en verde.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
