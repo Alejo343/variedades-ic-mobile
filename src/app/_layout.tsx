@@ -5,8 +5,10 @@ import { Text, View } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { LoginScreen } from '@/components/login-screen';
 import { SaleSuccessOverlay } from '@/components/sale-success-overlay';
 import { useAppColorScheme } from '@/hooks/use-app-color-scheme';
+import { useSyncSession } from '@/hooks/use-sync-session';
 import { useDatabaseMigrations } from '@/lib/data/local/use-migrations';
 
 SplashScreen.preventAutoHideAsync();
@@ -14,6 +16,7 @@ SplashScreen.preventAutoHideAsync();
 export default function TabLayout() {
   const colorScheme = useAppColorScheme();
   const { success, error } = useDatabaseMigrations();
+  const session = useSyncSession();
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -37,7 +40,7 @@ export default function TabLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      <AppTabs />
+      {session.status === 'authenticated' ? <AppTabs /> : <LoginScreen />}
       <SaleSuccessOverlay />
     </ThemeProvider>
   );

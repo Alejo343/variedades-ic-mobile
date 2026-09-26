@@ -1212,7 +1212,7 @@ choca en la implementación):**
 | 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ✅ listo |
 | 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ✅ listo |
 | 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ✅ listo |
-| 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ⏳ pendiente |
+| 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ✅ listo |
 | 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
 | 11 | Motor de sync: push → pull, upsert por `uuid`, lápidas, stock del servidor, operaciones rechazadas visibles | móvil | ⏳ pendiente |
 | 12 | Disparadores (reconexión, volver a la app, botón) + indicador de pendientes | móvil | ⏳ pendiente |
@@ -1685,6 +1685,54 @@ choca en la implementación):**
   → `401`; como vendedor → `403`. `npx tsc --noEmit` + `npm run lint` +
   `npm run test` (87) + `npm run test:db` (38) + `npm run build` en verde.
   Datos de prueba borrados.
+- **Sub-paso 9 (login del celular)**, solo móvil. Nuevas dependencias:
+  `expo-secure-store` (token, sensible) y se reutiliza `expo-device` (ya
+  instalado) para el nombre del celular que ve el dueño en el panel.
+- `lib/sync/config.ts#SYNC_BASE_URL`: único lugar donde vive la URL del
+  servidor (producción por default; se cambia ahí mismo para probar contra
+  un servidor de desarrollo, sin variables de entorno nuevas).
+- `lib/sync/api.ts`: `loginRequest`/`logoutRequest` (nunca lanzan por un
+  error de red — sin conexión es el caso esperado, no un bug) y
+  `extractErrorMessage` (con test), el mismo parseo de los dos formatos de
+  error del servidor que ya usa el panel web en `SellerAccessCard.tsx`.
+- `lib/sync/session.ts`: store `subscribe`/`getSnapshot` (mismo patrón que
+  `theme-preference.ts`) con `login`/`logout`. El token y los datos del
+  usuario/vendedor se guardan con `expo-secure-store` (`getItem`/`setItem`
+  síncronos — sin caveat de `requireAuthentication`, que este proyecto no
+  usa). `shouldWipeOnLogin(hasLoggedInBefore)` (con test) es la única
+  regla pura: borra **solo la primera vez que el celular inicia sesión**,
+  nunca en logins posteriores (ej. tras cerrar sesión) — el marcador
+  vive en `expo-sqlite/kv-store` (no sensible), separado del token, para
+  que sobreviva un logout.
+- `lib/sync/reset-local-db.ts#wipeLocalDatabase`: mismo patrón ya usado en
+  `more/backup.tsx` para importar un respaldo — `sqliteDb.closeAsync()` +
+  `SQLite.deleteDatabaseAsync()`, porque la conexión módulo de
+  `lib/data/local/db.ts` no se puede "reabrir" en caliente. Por eso, tras
+  el primer login, la pantalla pide cerrar y volver a abrir la app en vez
+  de mostrar los tabs de una vez — al reabrir, las migraciones recrean una
+  base vacía (el sub-paso 11 la llena con el primer pull).
+- `components/login-screen.tsx` (componente, no ruta — mismo criterio que
+  `app-tabs.tsx`) se muestra en vez de los tabs mientras no haya sesión;
+  `app/_layout.tsx` decide cuál mostrar con `useSyncSession()`
+  (`hooks/use-sync-session.ts`, envuelve `useSyncExternalStore`). Sin
+  distinción de rol todavía (dueño y vendedor ven el mismo login y, tras
+  entrar, los mismos tabs) — eso es el sub-paso 14.
+- `more/settings.tsx` gana una sección "Cuenta" (nombre, usuario, rol) con
+  "Cerrar sesión" (confirmación con `Alert`, mismo patrón que "Importar
+  respaldo").
+- **Prueba native-incompatible en Vitest**: `session.test.ts` solo puede
+  probar `shouldWipeOnLogin` — importar `session.ts` sin mockear arrastra
+  `expo-secure-store`, `expo-sqlite/kv-store` y, vía `reset-local-db.ts`,
+  el propio `expo-sqlite` (código con sintaxis Flow que Vitest no puede
+  parsear). Se resolvió con `vi.mock` de los tres módulos nativos, mismo
+  patrón que ya usaba `local/products-repo.test.ts` para `./db`.
+- Verificado: `npm run test` (89) + `npx tsc --noEmit` en verde; `npm run
+  lint` con el mismo error preexistente de `use-color-scheme.web.ts`.
+  **Pendiente probar en el celular del usuario**: login con usuario y
+  contraseña reales contra la web ya desplegada localmente (o cuando esté
+  en producción), primer login → mensaje de reiniciar → tras reabrir, base
+  vacía y ya autenticado sin volver a pedir login; cerrar sesión y volver
+  a entrar → esta vez **sin** borrar nada.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
