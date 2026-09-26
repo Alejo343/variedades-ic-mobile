@@ -323,6 +323,10 @@ export const sellerLosses = sqliteTable("seller_losses", {
     .references(() => sellers.id),
   type: text("type").notNull(),
   lossDate: text("loss_date").notNull().default(sql`(current_timestamp)`),
+  // Set by the settlement that charged this loss (same as seller_sales), so a
+  // settlement can include every pending loss up to its date without counting
+  // one twice — same rule as the web (CLAUDE.md, "Fase 10").
+  settlementId: integer("settlement_id").references(() => settlements.id),
   notes: text("notes"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   syncStatus: text("sync_status").notNull().default("local"),

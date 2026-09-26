@@ -79,6 +79,9 @@ export default function NewSettlementScreen() {
           placeholderTextColor={theme.textSecondary}
           style={inputStyle}
         />
+        <ThemedText type="small" themeColor="textSecondary">
+          Incluye todas las ventas y pérdidas del vendedor hasta esta fecha que todavía no se hayan liquidado.
+        </ThemedText>
 
         {isValidPeriodDate && preview ? (
           <ThemedView type="backgroundElement" style={styles.previewBlock}>

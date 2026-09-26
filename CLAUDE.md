@@ -1630,6 +1630,36 @@ choca en la implementación):**
      X antes de que el vendedor sincronice sus ventas de ese día, esas
      ventas quedan sin liquidar, y el `UNIQUE (seller_id, period_date)`
      impide una segunda liquidación de ese día para recogerlas.
+- **Decisiones del usuario sobre esos dos puntos (sesión 2026-09-26):**
+  1. Autoriza entrar al VPS en el despliegue (sub-paso 15) a revisar
+     `SHOW TimeZone` y fijar la base de producción en `America/Bogota`
+     (vacía, así que no afecta datos).
+  2. **Resuelto**: una liquidación ahora cobra **todo lo pendiente del
+     vendedor hasta su fecha** (ventas y pérdidas con fecha `<=
+     periodDate` que ninguna liquidación anterior incluyó), no solo las
+     del día. Lo que llega tarde entra en la siguiente liquidación. Para
+     que las pérdidas no se cobraran en cada liquidación nueva, ganaron
+     `settlement_id` igual que las ventas (web `0023`, móvil `0017`, las
+     dos con relleno a mano que liga las pérdidas ya liquidadas con la
+     regla vieja: mismo vendedor y mismo día). Web: `aggregatePeriod` y
+     el nuevo `markIncludedInSettlement` en
+     `lib/db/queries/settlements.ts` los usan **tanto el panel como el
+     handler de sync** (antes el handler tenía una copia del SQL). Móvil:
+     misma regla en `local/settlements-repo.ts`. El pull manda
+     `settlementUuid` en `seller_losses`. Las dos pantallas de "nueva
+     liquidación" explican la regla bajo la fecha. Tests: web (en
+     `deliveries-settlements.integration.test.ts`) — venta de un día
+     anterior incluida, venta posterior excluida, venta y pérdida tardías
+     cobradas en la siguiente liquidación sin repetir nada; móvil (nuevo
+     `local/settlements-repo.test.ts`) — lo mismo sobre SQLite más el
+     relleno de `0017`. Web `npm run test` + `npm run test:db` (38) +
+     `lint` + `build` en verde; móvil `npm run test` (83) + `tsc` en verde
+     (lint: el error preexistente de siempre). Pendiente: probar en el
+     celular que `0017` corre y que "Liquidar" sigue funcionando.
+  - Nota: el móvil agrupa por `DATE(saleDate)` sobre su texto en UTC (el
+    día UTC, no el de Colombia) — solo afecta la vista previa local de
+    una liquidación hecha de noche; el total real lo calcula el servidor
+    al sincronizar (sub-paso 7), así que se deja así.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

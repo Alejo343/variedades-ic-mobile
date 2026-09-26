@@ -23,6 +23,17 @@ function toSettlement(row: typeof settlements.$inferSelect): Settlement {
   };
 }
 
+// A settlement charges everything the seller still owes UP TO its date: every
+// sale and loss on or before periodDate that no earlier settlement included.
+// Anything that arrived late (e.g. a seller's phone that synced after the day
+// was settled) lands in the next settlement instead of being lost, and the
+// settlementId marks keep anything from being charged twice. Same rule as the
+// web's lib/db/queries/settlements.ts (CLAUDE.md, "Fase 10").
+const pendingSales = (sellerId: number, periodDate: string) =>
+  and(eq(sellerSales.sellerId, sellerId), sql`DATE(${sellerSales.saleDate}) <= ${periodDate}`, isNull(sellerSales.settlementId));
+const pendingLosses = (sellerId: number, periodDate: string) =>
+  and(eq(sellerLosses.sellerId, sellerId), sql`DATE(${sellerLosses.lossDate}) <= ${periodDate}`, isNull(sellerLosses.settlementId));
+
 async function aggregatePeriod(dbOrTx: typeof db | Tx, sellerId: number, periodDate: string): Promise<SettlementPreview> {
   const [salesRow] = await dbOrTx
     .select({
@@ -30,21 +41,15 @@ async function aggregatePeriod(dbOrTx: typeof db | Tx, sellerId: number, periodD
       totalCommission: sql<number>`COALESCE(SUM(${sellerSales.commissionAmount}), 0)`,
     })
     .from(sellerSales)
-    .where(
-      and(
-        eq(sellerSales.sellerId, sellerId),
-        sql`DATE(${sellerSales.saleDate}) = ${periodDate}`,
-        isNull(sellerSales.settlementId),
-      ),
-    );
+    .where(pendingSales(sellerId, periodDate));
 
   const [lossRow] = await dbOrTx
     .select({
       totalLosses: sql<number>`COALESCE(SUM(${sellerLossItems.quantity} * ${sellerLossItems.unitCost}), 0)`,
     })
     .from(sellerLossItems)
-    .leftJoin(sellerLosses, eq(sellerLossItems.lossId, sellerLosses.id))
-    .where(and(eq(sellerLosses.sellerId, sellerId), sql`DATE(${sellerLosses.lossDate}) = ${periodDate}`));
+    .innerJoin(sellerLosses, eq(sellerLossItems.lossId, sellerLosses.id))
+    .where(pendingLosses(sellerId, periodDate));
 
   const totals = {
     totalSales: salesRow?.totalSales ?? 0,
@@ -91,16 +96,8 @@ export const localSettlementsRepo: SettlementsRepo = {
         })
         .returning();
 
-      await tx
-        .update(sellerSales)
-        .set({ settlementId: row.id })
-        .where(
-          and(
-            eq(sellerSales.sellerId, data.sellerId),
-            sql`DATE(${sellerSales.saleDate}) = ${data.periodDate}`,
-            isNull(sellerSales.settlementId),
-          ),
-        );
+      await tx.update(sellerSales).set({ settlementId: row.id }).where(pendingSales(data.sellerId, data.periodDate));
+      await tx.update(sellerLosses).set({ settlementId: row.id }).where(pendingLosses(data.sellerId, data.periodDate));
 
       return toSettlement(row);
     });
