@@ -1654,8 +1654,9 @@ choca en la implementación):**
      `local/settlements-repo.test.ts`) — lo mismo sobre SQLite más el
      relleno de `0017`. Web `npm run test` + `npm run test:db` (38) +
      `lint` + `build` en verde; móvil `npm run test` (83) + `tsc` en verde
-     (lint: el error preexistente de siempre). Pendiente: probar en el
-     celular que `0017` corre y que "Liquidar" sigue funcionando.
+     (lint: el error preexistente de siempre). **Verificado en vivo en el
+     celular del usuario**: `0017` corrió sin fallos y "Liquidar" funcionó
+     con la regla nueva (todo lo pendiente hasta la fecha).
   - Nota: el móvil agrupa por `DATE(saleDate)` sobre su texto en UTC (el
     día UTC, no el de Colombia) — solo afecta la vista previa local de
     una liquidación hecha de noche; el total real lo calcula el servidor
