@@ -55,3 +55,43 @@ export async function logoutRequest(token: string): Promise<void> {
     // Ignored on purpose — see comment above.
   }
 }
+
+// POST /api/sync/push (sub-paso 11) — see lib/sync/push.ts on the server for
+// the contract. `operations` must be 1-100 (the server's own cap); the push
+// engine chunks the outbox into batches of that size.
+export type PushOperation = { id: string; type: string; payload: unknown };
+export type PushResult = { id: string; status: 'applied' | 'rejected' | 'error' | 'skipped'; error?: string; duplicate?: true };
+
+export async function pushRequest(token: string, operations: PushOperation[]): Promise<ApiResult<{ results: PushResult[] }>> {
+  try {
+    const res = await fetch(`${SYNC_BASE_URL}/api/sync/push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ operations }),
+    });
+    const body = await parseJson(res);
+    if (!res.ok) return { ok: false, error: extractErrorMessage(body) ?? 'No se pudo sincronizar' };
+    return { ok: true, data: body as { results: PushResult[] } };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor. Verifica tu internet e intenta de nuevo.' };
+  }
+}
+
+// GET /api/sync/pull?since=<cursor> — see lib/sync/pull.ts on the server.
+export type PullResponse = {
+  cursor: number;
+  hasMore: boolean;
+  changes: Record<string, Record<string, unknown>[]>;
+  tombstones: { table: string; uuid: string }[];
+};
+
+export async function pullRequest(token: string, since: number): Promise<ApiResult<PullResponse>> {
+  try {
+    const res = await fetch(`${SYNC_BASE_URL}/api/sync/pull?since=${since}`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await parseJson(res);
+    if (!res.ok) return { ok: false, error: extractErrorMessage(body) ?? 'No se pudo sincronizar' };
+    return { ok: true, data: body as PullResponse };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor. Verifica tu internet e intenta de nuevo.' };
+  }
+}

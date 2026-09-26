@@ -1214,7 +1214,7 @@ choca en la implementación):**
 | 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ✅ listo |
 | 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ✅ listo |
 | 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
-| 11 | Motor de sync: push → pull, upsert por `uuid`, lápidas, stock del servidor, operaciones rechazadas visibles | móvil | ⏳ pendiente |
+| 11 | Motor de sync: push → pull, upsert por `uuid`, lápidas, stock del servidor, operaciones rechazadas visibles | móvil | ✅ listo |
 | 12 | Disparadores (reconexión, volver a la app, botón) + indicador de pendientes | móvil | ⏳ pendiente |
 | 13 | Fotos (subir antes del push, mostrar URL remota con caché) + SKU/números provisionales hasta sincronizar | móvil | ⏳ pendiente |
 | 14 | Navegación por rol (vendedor: su inventario, "Vender" = venta de vendedor, devoluciones/pérdidas, sus liquidaciones); Respaldo→Importar bloqueado con sesión activa | móvil | ⏳ pendiente |
@@ -1806,6 +1806,79 @@ choca en la implementación):**
   del sub-paso 12), así que la verificación real es que el flujo normal
   de la app (crear un producto, una venta, etc.) sigue funcionando igual
   que antes, sin errores nuevos en pantalla.
+- **Sub-paso 11 (motor de sync)**, solo móvil. Migración `0019`: tabla
+  `sync_rejections` (`opId`, `type`, `payload`, `error`, `createdAt`) —
+  a diferencia de `sync_outbox`, esta sí guarda estado: es donde vive una
+  operación rechazada hasta que el dueño la descarta, cumpliendo lo que
+  pedía el plan ("operaciones rechazadas visibles").
+- **Push** (`lib/sync/push-engine.ts#pushPendingOperations`): manda la
+  cola en lotes de 100 (el tope del propio servidor) a `POST
+  /api/sync/push`. Por resultado: `applied`/`rejected` → se borra de
+  `sync_outbox` (un rechazo además queda en `sync_rejections` con el
+  mensaje tal cual lo mandó el servidor, ya en español); `error`/`skipped`
+  → se deja todo lo demás del lote sin tocar (las operaciones siguientes
+  pueden depender de la que falló) para reintentar en la próxima
+  sincronización. Un fallo de red no lanza excepción — se refleja como
+  `summary.error`, y `pendingAfter` deja claro cuánto sigue en la cola.
+- **Pull** (`lib/sync/pull-engine.ts#pullServerChanges` +
+  `lib/sync/pull-apply.ts#applyPullPage`): repite `GET
+  /api/sync/pull?since=<cursor>` mientras `hasMore` sea `true`. Cada
+  página se aplica en **su propia transacción** y el cursor
+  (`lib/sync/cursor.ts`, en `expo-sqlite/kv-store`, no sensible) solo
+  avanza **después** de que esa transacción confirma — si la app se cierra
+  a mitad de una sincronización larga, la próxima vez retoma esa misma
+  página en vez de saltársela.
+- **`applyPullPage` upsertea por `uuid`, nunca por `id`**: cada fila que
+  llega hace `INSERT ... ON CONFLICT (uuid) DO UPDATE` (Drizzle
+  `onConflictDoUpdate`), y toma **todos** los campos que manda el
+  servidor tal cual — incluido `products.stock`, que en este dispositivo
+  ya era solo provisional desde que se fue sin conexión. Las referencias
+  (`categoryUuid`, `productUuid`, `sellerUuid`, `accountUuid`,
+  `saleUuid`, `settlementUuid`, `sourceUuid`...) se resuelven a un `id`
+  local con un `SELECT ... WHERE uuid = ?` liviano contra la misma
+  transacción — barato a esta escala, mismo criterio que ya usa el
+  servidor (`idByUuid`). Las 22 tablas se aplican en un **orden propio,
+  distinto al orden de paginación del servidor** (que es por versión, no
+  por dependencias): padres antes que hijos, y `cash_movements` al final
+  porque su `sourceUuid` puede apuntar a `direct_sales`, `settlements` o
+  `purchase_payments`, las tres ya resueltas para entonces. Las lápidas se
+  aplican al final de la página (un `DELETE ... WHERE uuid = ?` genérico);
+  borrar una fila que este dispositivo nunca tuvo no hace nada.
+- **`lib/sync/engine.ts#runSync`**: push y **siempre en ese orden** pull
+  (nunca al revés — el pull tiene que ver ya reflejado lo que este
+  dispositivo acaba de mandar). Sin sesión, no toca la red. Dos llamadas
+  a la vez comparten la misma corrida en curso en vez de pisarse (un
+  `Promise` compartido mientras hay una activa), para que tocar
+  "Sincronizar ahora" dos veces rápido no lea/borre la cola dos veces a
+  la vez.
+- **UI mínima para poder probar esto a mano** (no es el sub-paso 12
+  todavía, que es el que trae los disparadores automáticos y el badge de
+  pendientes pulido): en Más → Configuración, botón "Sincronizar ahora"
+  con su resultado en una línea, y — solo si hay alguna — la lista de
+  operaciones rechazadas con un botón "Descartar" por fila.
+- Tests: `pull-apply.test.ts` (cadena completa de dependencias en una
+  sola página + lápida + actualización idempotente + una referencia a un
+  `uuid` inexistente rechaza la página); `push-engine.test.ts` (aplicada
+  y rechazada se resuelven, un `error` detiene el resto del lote, sin
+  conexión no revienta, un `duplicate` también resuelve); `pull-engine.test.ts`
+  (dos páginas con `hasMore`, el cursor persiste, un fallo de red no
+  avanza el cursor); `engine.test.ts` (sin sesión no llama a la red, push
+  siempre antes que pull, dos llamadas simultáneas comparten la corrida).
+- **Verificación de punta a punta contra el servidor real** (no solo
+  mocks): se apuntó `SYNC_BASE_URL` a `http://localhost:3100` de forma
+  temporal, se levantó el build de la web local, y un test desechable
+  hizo: login real como dueño → pull inicial sin errores → crear una
+  categoría local (la encola) → push real, `applied > 0` y `rejected ===
+  0`, cola vacía → un "segundo dispositivo" simulado (base local vacía,
+  mismo token) hizo pull y recibió esa misma categoría con el nombre
+  correcto. Confirma que los nombres de campo de `pull-apply.ts` calcan
+  los reales del servidor, no solo lo que yo creía que mandaba. Datos y
+  sesión de prueba borrados del servidor al terminar; `config.ts` y el
+  test desechable revertidos — no queda rastro en el repo.
+- Verificado: `npm run test` (114) + `npx tsc --noEmit` en verde (`npm
+  run lint`: el mismo error preexistente de siempre). **No verificado
+  todavía en el celular real del usuario** — sí contra un servidor real,
+  pero desde una base SQLite de prueba en Node, no desde la app instalada.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

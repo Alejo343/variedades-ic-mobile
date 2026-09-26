@@ -28,6 +28,19 @@ export const syncOutbox = sqliteTable("sync_outbox", {
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
 });
 
+// An operation the server permanently rejected (sub-paso 11) — kept around
+// so the owner can actually see and act on it (the plan's "operaciones
+// rechazadas visibles"), unlike sync_outbox which drops the row the moment
+// the server answers either way. Dismissing one is just deleting its row.
+export const syncRejections = sqliteTable("sync_rejections", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  opId: text("op_id").notNull(),
+  type: text("type").notNull(),
+  payload: text("payload").notNull(),
+  error: text("error").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+});
+
 export const categories = sqliteTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   uuid: syncUuid(),

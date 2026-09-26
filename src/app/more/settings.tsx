@@ -1,4 +1,6 @@
-import { Alert, Pressable, StyleSheet } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState, useSyncExternalStore } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -7,6 +9,8 @@ import { Spacing } from '@/constants/theme';
 import { useThemePreference } from '@/hooks/use-app-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSyncSession } from '@/hooks/use-sync-session';
+import { runSync, syncEngineStore } from '@/lib/sync/engine';
+import { dismissRejection, listRejections } from '@/lib/sync/push-engine';
 import { sessionStore } from '@/lib/sync/session';
 import type { ThemePreference } from '@/lib/theme-preference';
 
@@ -17,6 +21,73 @@ const OPTIONS: { value: ThemePreference; label: string }[] = [
 ];
 
 const ROLE_LABEL = { owner: 'Dueño', seller: 'Vendedor' } as const;
+
+type Rejection = { id: number; type: string; error: string; createdAt: string };
+
+// Sub-paso 11: a bare-bones manual trigger and the rejected-operations list,
+// just enough to test the sync engine by hand. The polished version — auto
+// sync on reconnect/app open, a pending-count badge instead of a button — is
+// sub-paso 12; this screen gets folded into that later, not replaced.
+function SyncSection() {
+  const running = useSyncExternalStore(syncEngineStore.subscribe, syncEngineStore.isRunning);
+  const [message, setMessage] = useState<string | null>(null);
+  const [rejections, setRejections] = useState<Rejection[]>([]);
+
+  const reload = useCallback(() => {
+    listRejections().then(setRejections);
+  }, []);
+
+  useFocusEffect(reload);
+
+  async function handleSync() {
+    setMessage(null);
+    const result = await runSync();
+    if (result.status === 'skipped-no-session') {
+      setMessage('Inicia sesión para sincronizar.');
+    } else if (result.status === 'error') {
+      setMessage(`No se pudo completar (${result.stage === 'push' ? 'al enviar' : 'al recibir'}): ${result.error}`);
+    } else {
+      setMessage(`Listo — ${result.pushed} enviadas, ${result.rejected} rechazadas, ${result.pulledPages} página(s) recibidas.`);
+    }
+    reload();
+  }
+
+  async function handleDismiss(id: number) {
+    await dismissRejection(id);
+    reload();
+  }
+
+  return (
+    <>
+      <ThemedText type="small">Sincronización</ThemedText>
+      <Pressable onPress={handleSync} disabled={running} style={styles.syncButton}>
+        <ThemedView type="backgroundSelected" style={styles.optionButton}>
+          {running ? <ActivityIndicator /> : <ThemedText type="linkPrimary">Sincronizar ahora</ThemedText>}
+        </ThemedView>
+      </Pressable>
+      {message && <ThemedText style={styles.syncMessage}>{message}</ThemedText>}
+
+      {rejections.length > 0 && (
+        <ThemedView type="backgroundElement" style={styles.rejectionsCard}>
+          <ThemedText type="small" themeColor="textSecondary">
+            El servidor rechazó {rejections.length} operación(es):
+          </ThemedText>
+          {rejections.map((r) => (
+            <ThemedView key={r.id} style={styles.rejectionRow}>
+              <ThemedView style={styles.rejectionText}>
+                <ThemedText type="small">{r.type}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">{r.error}</ThemedText>
+              </ThemedView>
+              <Pressable onPress={() => handleDismiss(r.id)}>
+                <ThemedText type="small" themeColor="textSecondary">Descartar</ThemedText>
+              </Pressable>
+            </ThemedView>
+          ))}
+        </ThemedView>
+      )}
+    </>
+  );
+}
 
 export default function SettingsScreen() {
   const [preference, setPreference] = useThemePreference();
@@ -33,36 +104,40 @@ export default function SettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={[]}>
-        {session.status === 'authenticated' && (
-          <>
-            <ThemedText type="small">Cuenta</ThemedText>
-            <ThemedView type="backgroundElement" style={styles.accountCard}>
-              <ThemedText>{session.session.user.name}</ThemedText>
-              <ThemedText themeColor="textSecondary" type="small">
-                {session.session.user.username} · {ROLE_LABEL[session.session.user.role]}
-              </ThemedText>
-            </ThemedView>
-            <Pressable onPress={handleLogout} style={styles.logoutButton}>
-              <ThemedText style={{ color: theme.error }}>Cerrar sesión</ThemedText>
-            </Pressable>
-          </>
-        )}
-
-        <ThemedText type="small">Tema</ThemedText>
-        <ThemedView style={styles.optionRow}>
-          {OPTIONS.map((option) => (
-            <Pressable key={option.value} style={styles.optionFlex} onPress={() => setPreference(option.value)}>
-              <ThemedView
-                type={preference === option.value ? 'backgroundSelected' : 'backgroundElement'}
-                style={styles.optionButton}>
-                <ThemedText type={preference === option.value ? 'linkPrimary' : undefined}>{option.label}</ThemedText>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {session.status === 'authenticated' && (
+            <>
+              <ThemedText type="small">Cuenta</ThemedText>
+              <ThemedView type="backgroundElement" style={styles.accountCard}>
+                <ThemedText>{session.session.user.name}</ThemedText>
+                <ThemedText themeColor="textSecondary" type="small">
+                  {session.session.user.username} · {ROLE_LABEL[session.session.user.role]}
+                </ThemedText>
               </ThemedView>
-            </Pressable>
-          ))}
-        </ThemedView>
-        <ThemedText themeColor="textSecondary" type="small">
-          &quot;Sistema&quot; sigue el modo claro/oscuro configurado en el teléfono.
-        </ThemedText>
+              <Pressable onPress={handleLogout} style={styles.logoutButton}>
+                <ThemedText style={{ color: theme.error }}>Cerrar sesión</ThemedText>
+              </Pressable>
+
+              <SyncSection />
+            </>
+          )}
+
+          <ThemedText type="small">Tema</ThemedText>
+          <ThemedView style={styles.optionRow}>
+            {OPTIONS.map((option) => (
+              <Pressable key={option.value} style={styles.optionFlex} onPress={() => setPreference(option.value)}>
+                <ThemedView
+                  type={preference === option.value ? 'backgroundSelected' : 'backgroundElement'}
+                  style={styles.optionButton}>
+                  <ThemedText type={preference === option.value ? 'linkPrimary' : undefined}>{option.label}</ThemedText>
+                </ThemedView>
+              </Pressable>
+            ))}
+          </ThemedView>
+          <ThemedText themeColor="textSecondary" type="small">
+            &quot;Sistema&quot; sigue el modo claro/oscuro configurado en el teléfono.
+          </ThemedText>
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -70,7 +145,8 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, padding: Spacing.four, gap: Spacing.two },
+  safeArea: { flex: 1 },
+  scrollContent: { padding: Spacing.four, gap: Spacing.two },
   optionRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
   optionFlex: { flex: 1 },
   optionButton: {
@@ -86,5 +162,27 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     marginBottom: Spacing.four,
+  },
+  syncButton: {
+    marginBottom: Spacing.two,
+  },
+  syncMessage: {
+    marginBottom: Spacing.two,
+  },
+  rejectionsCard: {
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+    marginBottom: Spacing.four,
+    gap: Spacing.two,
+  },
+  rejectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  rejectionText: {
+    flex: 1,
+    gap: Spacing.half,
   },
 });
