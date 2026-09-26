@@ -1207,7 +1207,7 @@ choca en la implementación):**
 | 1 | `uuid` en todas las tablas sincronizables, generado donde nace el registro | web + móvil | ✅ listo |
 | 2 | `sync_version` (trigger + secuencia + advisory lock) y `sync_tombstones` | web | ✅ listo |
 | 3 | Tablas `users` (rol `owner`/`seller`, `sellerId`) + `device_sessions`; NextAuth lee `users`; dueño sembrado desde `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH` | web | ✅ listo |
-| 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ⏳ pendiente |
+| 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ✅ listo |
 | 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ⏳ pendiente |
 | 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ⏳ pendiente |
 | 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ pendiente |
@@ -1343,6 +1343,39 @@ choca en la implementación):**
   `ADMIN_PASSWORD_HASH` del VPS es el viejo (la contraseña olvidada), y es
   el que sembrará el dueño de producción la primera vez que arranque con
   `0021`; cambiarlo antes de desplegar.
+- **Sub-paso 4 (acceso de vendedores en el panel)**, solo web, sin
+  migración nueva. Tarjeta "Acceso a la app"
+  (`app/admin/sellers/_components/SellerAccessCard.tsx`) en el **detalle
+  de cada vendedor** (`/admin/sellers/[id]`), no una sección aparte de
+  "Usuarios": la relación es 1:1 y ahí el dueño ya ve el inventario del
+  vendedor. Sin acceso muestra "Crear acceso" (usuario + contraseña); con
+  acceso muestra el usuario, activar/desactivar, cambiar contraseña y la
+  lista de celulares conectados con "Revocar" por celular.
+- Rutas: `POST`/`PATCH /api/admin/sellers/[id]/user` (crear; cambiar
+  contraseña y/o activo) y `DELETE /api/admin/sellers/[id]/devices/[sessionId]`
+  (revocar = `revokedAt`, no borra la fila). La revocación se filtra por el
+  usuario de ese vendedor, así que el id de sesión de otro vendedor da 404.
+  Validación en `lib/validations.ts` (`sellerUserCreateSchema`/
+  `sellerUserUpdateSchema`, con tests): usuario normalizado con
+  `normalizeUsername`, 3-100 caracteres ASCII `[a-z0-9._@-]` (se teclea en
+  un celular), contraseña de 8+; bcrypt costo 12, igual que el hash del
+  dueño. Consultas en `lib/db/queries/users.ts`, que **nunca** devuelven
+  `password_hash`.
+- Cambiar la contraseña **no** revoca los celulares ya conectados (su
+  token sigue siendo válido) — para cortar un celular está "Revocar", y
+  para cortarlos todos "Desactivar acceso" (el sub-paso 5 revisa
+  `users.active` en cada petición de sync). Fuera de alcance por ahora:
+  que el dueño cambie su propia contraseña desde el panel.
+- Verificado con el build contra la base local, logueado como dueño: crear
+  acceso normaliza el usuario (`"  ZZ.Maria "` → `zz.maria`); segundo
+  acceso para el mismo vendedor → 409; usuario repetido en otro vendedor →
+  409; contraseña corta → 400; sin sesión → 401; cambiar contraseña deja un
+  hash que valida la nueva y no la vieja; desactivar → `active: false`;
+  un vendedor con usuario activo **no** puede entrar al panel; revocar con
+  el id de otro vendedor → 404, revocar → 200, revocar de nuevo → 404; la
+  página del vendedor muestra la tarjeta, el usuario, el celular y
+  "Revocado". Datos de prueba borrados al terminar. `npm run test` (72) +
+  `npm run test:db` (6) + `npm run lint` + `npm run build` en verde.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
