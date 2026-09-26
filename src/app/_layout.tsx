@@ -8,6 +8,7 @@ import AppTabs from '@/components/app-tabs';
 import { LoginScreen } from '@/components/login-screen';
 import { SaleSuccessOverlay } from '@/components/sale-success-overlay';
 import { useAppColorScheme } from '@/hooks/use-app-color-scheme';
+import { useAutoSync } from '@/hooks/use-auto-sync';
 import { useSyncSession } from '@/hooks/use-sync-session';
 import { useDatabaseMigrations } from '@/lib/data/local/use-migrations';
 
@@ -17,6 +18,7 @@ export default function TabLayout() {
   const colorScheme = useAppColorScheme();
   const { success, error } = useDatabaseMigrations();
   const session = useSyncSession();
+  useAutoSync();
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,

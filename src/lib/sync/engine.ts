@@ -1,5 +1,6 @@
 import { sessionStore } from './session';
 import { setLastSyncAt } from './cursor';
+import { refreshPendingCount } from './pending';
 import { pushPendingOperations } from './push-engine';
 import { pullServerChanges } from './pull-engine';
 
@@ -62,6 +63,9 @@ async function performSync(): Promise<SyncResult> {
     setLastSyncAt(new Date().toISOString());
     return { status: 'ok', pushed: pushSummary.applied, rejected: pushSummary.rejected, pulledPages: pullSummary.pages };
   } finally {
+    // Whatever the outcome — a rejection during push still resolves that
+    // operation out of the outbox, so the count can change even on failure.
+    await refreshPendingCount();
     setRunning(false);
   }
 }

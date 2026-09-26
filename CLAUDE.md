@@ -1215,7 +1215,7 @@ choca en la implementación):**
 | 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ✅ listo |
 | 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
 | 11 | Motor de sync: push → pull, upsert por `uuid`, lápidas, stock del servidor, operaciones rechazadas visibles | móvil | ✅ listo |
-| 12 | Disparadores (reconexión, volver a la app, botón) + indicador de pendientes | móvil | ⏳ pendiente |
+| 12 | Disparadores (reconexión, volver a la app, botón) + indicador de pendientes | móvil | ✅ listo |
 | 13 | Fotos (subir antes del push, mostrar URL remota con caché) + SKU/números provisionales hasta sincronizar | móvil | ⏳ pendiente |
 | 14 | Navegación por rol (vendedor: su inventario, "Vender" = venta de vendedor, devoluciones/pérdidas, sus liquidaciones); Respaldo→Importar bloqueado con sesión activa | móvil | ⏳ pendiente |
 | 15 | Desplegar la web con las migraciones + verificación end-to-end: dueño + 2 vendedores, ventas sin conexión, stock negativo, la web muestra lo mismo | ambos | ⏳ pendiente |
@@ -1879,6 +1879,41 @@ choca en la implementación):**
   run lint`: el mismo error preexistente de siempre). **No verificado
   todavía en el celular real del usuario** — sí contra un servidor real,
   pero desde una base SQLite de prueba en Node, no desde la app instalada.
+- **Sub-paso 12 (disparadores automáticos + indicador)**, solo móvil.
+  Dependencia nueva `@react-native-community/netinfo` (sin plugin de
+  config — no tocó `app.json`).
+- `lib/sync/triggers.ts` (con test): la única lógica de decisión que vale
+  la pena probar aislada de React Native. `withinThrottle` — un disparador
+  **automático** no repite si ya corrió uno hace menos de 30 s (el botón
+  manual nunca se frena, el usuario lo pidió a propósito).
+  `shouldRunOnConnectivityChange` — dispara solo en la transición de sin
+  internet a con internet, nunca en cada evento "sigue conectado" que
+  vuelve a emitir NetInfo.
+- `hooks/use-auto-sync.ts` (montado una vez en `app/_layout.tsx`, sin
+  test — es puro cableado de `AppState`/`NetInfo`, mismo criterio que el
+  resto del proyecto con código nativo): al arrancar en frío (cubre
+  "abrir la app" con una sesión ya guardada), al volver a primer plano, y
+  al recuperar internet — nunca con la app cerrada. `runSync()` ya no
+  hace nada sin sesión, así que el hook no necesita revisarlo antes de
+  llamarlo.
+- **Indicador de pendientes**: `lib/sync/pending.ts#pendingStore` (con
+  test) — un conteo en memoria, sin mecanismo reactivo propio sobre
+  `sync_outbox` (sería tener que tocar los 15 repos otra vez solo para
+  notificar un contador); se refresca donde ya importa: al final de
+  `runSync` (éxito o error — un rechazo también saca una operación de la
+  cola) y al enfocar la pantalla de Configuración. Ahí mismo se agregó
+  "N pendiente(s) · última sincronización: hace X" (con
+  `lib/format.ts#formatRelativeTime`, ya existente) encima del botón
+  "Sincronizar ahora" de la Fase 10 anterior — el mismo botón sigue
+  ahí, ya no como único disparador sino como el manual junto a los tres
+  automáticos.
+- Verificado: `npm run test` (120) + `npx tsc --noEmit` en verde (`npm
+  run lint`: el mismo error preexistente). **No verificado todavía en el
+  celular del usuario** — los disparadores automáticos dependen de
+  `AppState`/`NetInfo` reales, que no corren en Node; hace falta abrir la
+  app, cambiar de tab y volver, y probar con el WiFi para confirmarlos en
+  vivo. Además la sync real contra producción sigue bloqueada hasta el
+  despliegue (sub-paso 15).
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

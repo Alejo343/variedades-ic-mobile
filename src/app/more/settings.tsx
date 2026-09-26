@@ -9,7 +9,10 @@ import { Spacing } from '@/constants/theme';
 import { useThemePreference } from '@/hooks/use-app-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSyncSession } from '@/hooks/use-sync-session';
+import { formatRelativeTime } from '@/lib/format';
+import { getLastSyncAt } from '@/lib/sync/cursor';
 import { runSync, syncEngineStore } from '@/lib/sync/engine';
+import { pendingStore } from '@/lib/sync/pending';
 import { dismissRejection, listRejections } from '@/lib/sync/push-engine';
 import { sessionStore } from '@/lib/sync/session';
 import type { ThemePreference } from '@/lib/theme-preference';
@@ -24,17 +27,20 @@ const ROLE_LABEL = { owner: 'Dueño', seller: 'Vendedor' } as const;
 
 type Rejection = { id: number; type: string; error: string; createdAt: string };
 
-// Sub-paso 11: a bare-bones manual trigger and the rejected-operations list,
-// just enough to test the sync engine by hand. The polished version — auto
-// sync on reconnect/app open, a pending-count badge instead of a button — is
-// sub-paso 12; this screen gets folded into that later, not replaced.
+// The manual button + rejected-operations list (sub-paso 11), plus the
+// pending count and last-sync time (sub-paso 12) — hooks/use-auto-sync.ts
+// is what actually triggers automatic syncs; this section just shows where
+// things stand and still lets the user force one by hand.
 function SyncSection() {
   const running = useSyncExternalStore(syncEngineStore.subscribe, syncEngineStore.isRunning);
+  const pending = useSyncExternalStore(pendingStore.subscribe, pendingStore.getSnapshot);
   const [message, setMessage] = useState<string | null>(null);
   const [rejections, setRejections] = useState<Rejection[]>([]);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     listRejections().then(setRejections);
+    setLastSyncAt(getLastSyncAt());
   }, []);
 
   useFocusEffect(reload);
@@ -60,6 +66,10 @@ function SyncSection() {
   return (
     <>
       <ThemedText type="small">Sincronización</ThemedText>
+      <ThemedText themeColor="textSecondary" type="small" style={styles.syncStatus}>
+        {pending > 0 ? `${pending} pendiente(s)` : 'Sin pendientes'}
+        {lastSyncAt ? ` · última sincronización: ${formatRelativeTime(lastSyncAt)}` : ' · todavía no ha sincronizado'}
+      </ThemedText>
       <Pressable onPress={handleSync} disabled={running} style={styles.syncButton}>
         <ThemedView type="backgroundSelected" style={styles.optionButton}>
           {running ? <ActivityIndicator /> : <ThemedText type="linkPrimary">Sincronizar ahora</ThemedText>}
@@ -162,6 +172,9 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     marginBottom: Spacing.four,
+  },
+  syncStatus: {
+    marginBottom: Spacing.one,
   },
   syncButton: {
     marginBottom: Spacing.two,

@@ -9,6 +9,7 @@ const calls: string[] = [];
 
 vi.mock("./session", () => ({ sessionStore: { getSnapshot: () => sessionState } }));
 vi.mock("./cursor", () => ({ setLastSyncAt: () => calls.push("setLastSyncAt") }));
+vi.mock("./pending", () => ({ refreshPendingCount: async () => calls.push("refreshPendingCount") }));
 vi.mock("./push-engine", () => ({
   pushPendingOperations: async () => { calls.push("push"); return { applied: 2, rejected: 1, pendingAfter: 0 }; },
 }));
@@ -32,7 +33,7 @@ describe("runSync", async () => {
     calls.length = 0;
     const result = await runSync();
     expect(result).toEqual({ status: "ok", pushed: 2, rejected: 1, pulledPages: 3 });
-    expect(calls).toEqual(["push", "pull", "setLastSyncAt"]);
+    expect(calls).toEqual(["push", "pull", "setLastSyncAt", "refreshPendingCount"]);
   });
 
   it("dos llamadas a la vez comparten la misma corrida en vez de pisarse", async () => {
