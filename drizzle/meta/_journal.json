@@ -106,6 +106,20 @@
       "when": 1790384523087,
       "tag": "0014_freezing_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1790397582913,
+      "tag": "0015_sturdy_chronomancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1790397605107,
+      "tag": "0016_opposite_karnak",
+      "breakpoints": true
     }
   ]
 }

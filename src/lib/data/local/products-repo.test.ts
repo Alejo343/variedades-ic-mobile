@@ -1,30 +1,15 @@
-import fs from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-import { drizzle } from "drizzle-orm/sqlite-proxy";
 import { describe, expect, it, vi } from "vitest";
-import * as schema from "./schema";
+import { createMigratedTestDb } from "./test-db";
 
-// Runs the real repo against an in-memory SQLite (node:sqlite) with every
-// drizzle/*.sql migration applied, through Drizzle's sqlite-proxy driver —
-// expo-sqlite can't run under Node. Seeds a product with the old image_uri
-// right before 0013 to cover the backfill too. Caught a real bug: the
-// primaryImageUri subquery correlating against the wrong table's "id".
+// Runs the real repo against an in-memory SQLite with every migration applied
+// (see test-db.ts). Seeds a product with the old image_uri right before 0013
+// to cover the backfill too. Caught a real bug: the primaryImageUri subquery
+// correlating against the wrong table's "id".
 
 const deleted: string[] = [];
-const raw = new DatabaseSync(":memory:");
-for (const f of fs.readdirSync("drizzle").filter((f) => f.endsWith(".sql")).sort()) {
-  if (f.startsWith("0013")) {
-    raw.exec("INSERT INTO products (name, slug, sku, price, image_uri) VALUES ('Viejo','viejo','GEN-00001',1,'file:///old.jpg')");
-  }
-  for (const stmt of fs.readFileSync(`drizzle/${f}`, "utf8").split("--> statement-breakpoint")) if (stmt.trim()) raw.exec(stmt);
-}
-const proxy = drizzle(async (sql, params, method) => {
-  const stmt = raw.prepare(sql);
-  if (method === "run") { stmt.run(...(params as never[])); return { rows: [] }; }
-  stmt.setReturnArrays(true);
-  const rows = stmt.all(...(params as never[])) as unknown as unknown[][];
-  return { rows: method === "get" ? (rows[0] as never) : rows };
-}, { schema });
+const { db: proxy } = createMigratedTestDb({
+  "0013": "INSERT INTO products (name, slug, sku, price, image_uri) VALUES ('Viejo','viejo','GEN-00001',1,'file:///old.jpg')",
+});
 
 vi.mock("./db", () => ({ get db() { return proxy; } }));
 vi.mock("../../images", () => ({ deleteProductImageFile: (u: string) => deleted.push(u) }));

@@ -16,6 +16,8 @@ import m0011 from './0011_conscious_magik.sql';
 import m0012 from './0012_pale_captain_midlands.sql';
 import m0013 from './0013_bumpy_unicorn.sql';
 import m0014 from './0014_freezing_korath.sql';
+import m0015 from './0015_sturdy_chronomancer.sql';
+import m0016 from './0016_opposite_karnak.sql';
 
   export default {
     journal,
@@ -34,7 +36,9 @@ m0010,
 m0011,
 m0012,
 m0013,
-m0014
+m0014,
+m0015,
+m0016
     }
   }
   

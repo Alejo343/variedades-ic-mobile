@@ -1,11 +1,18 @@
 import { sql } from "drizzle-orm";
 import { check, integer, sqliteTable, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { newUuid } from "../../uuid";
 
 // syncStatus is reserved for a future remote-sync phase (see CLAUDE.md) —
 // not read or written by any logic yet beyond its "local" default.
 
+// Sync identity of the row (CLAUDE.md, "Fase 10"): generated wherever the row
+// is born — this device or the server — and the only id sync ever uses; the
+// integer `id` stays local to each database. Drizzle fills it on every insert.
+const syncUuid = () => text("uuid").notNull().unique().$defaultFn(newUuid);
+
 export const categories = sqliteTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   description: text("description"),
@@ -17,6 +24,7 @@ export const categories = sqliteTable("categories", {
 
 export const products = sqliteTable("products", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   description: text("description"),
@@ -46,6 +54,7 @@ export const productImages = sqliteTable(
   "product_images",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     productId: integer("product_id")
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
@@ -70,6 +79,7 @@ export const productImages = sqliteTable(
 // balance (SUM of its own movements) reflects real money, not just a tag.
 export const cashAccounts = sqliteTable("cash_accounts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   name: text("name").notNull(),
   type: text("type").notNull().default("efectivo"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
@@ -81,6 +91,7 @@ export const cashAccounts = sqliteTable("cash_accounts", {
 
 export const sellers = sqliteTable("sellers", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   name: text("name").notNull(),
   phone: text("phone"),
   city: text("city"),
@@ -100,6 +111,7 @@ export const inventoryMovements = sqliteTable(
   "inventory_movements",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     productId: integer("product_id")
       .notNull()
       .references(() => products.id),
@@ -122,6 +134,7 @@ export const cashMovements = sqliteTable(
   "cash_movements",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     type: text("type").notNull(),
     amount: integer("amount").notNull(),
     concept: text("concept").notNull(),
@@ -140,6 +153,7 @@ export const cashMovements = sqliteTable(
 
 export const directSales = sqliteTable("direct_sales", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   saleDate: text("sale_date").notNull().default(sql`(current_timestamp)`),
   totalAmount: integer("total_amount").notNull().default(0),
   accountId: integer("account_id")
@@ -154,6 +168,7 @@ export const directSaleItems = sqliteTable(
   "direct_sale_items",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     saleId: integer("sale_id")
       .notNull()
       .references(() => directSales.id),
@@ -169,6 +184,7 @@ export const directSaleItems = sqliteTable(
 
 export const distributors = sqliteTable("distributors", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   name: text("name").notNull(),
   city: text("city"),
   phone: text("phone"),
@@ -185,6 +201,7 @@ export const distributors = sqliteTable("distributors", {
 // "recibido" terminal, which alone guards against receiving twice.
 export const purchaseOrders = sqliteTable("purchase_orders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   distributorId: integer("distributor_id").references(() => distributors.id),
   status: text("status").notNull().default("pendiente"),
   purchaseType: text("purchase_type").notNull().default("contado"),
@@ -203,6 +220,7 @@ export const purchaseOrderItems = sqliteTable(
   "purchase_order_items",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     orderId: integer("order_id")
       .notNull()
       .references(() => purchaseOrders.id),
@@ -219,6 +237,7 @@ export const purchasePayments = sqliteTable(
   "purchase_payments",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     purchaseOrderId: integer("purchase_order_id")
       .notNull()
       .references(() => purchaseOrders.id),
@@ -236,6 +255,7 @@ export const purchasePayments = sqliteTable(
 
 export const sellerDeliveries = sqliteTable("seller_deliveries", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   sellerId: integer("seller_id")
     .notNull()
     .references(() => sellers.id),
@@ -249,6 +269,7 @@ export const sellerDeliveryItems = sqliteTable(
   "seller_delivery_items",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     deliveryId: integer("delivery_id")
       .notNull()
       .references(() => sellerDeliveries.id),
@@ -263,6 +284,7 @@ export const sellerDeliveryItems = sqliteTable(
 
 export const sellerReturns = sqliteTable("seller_returns", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   sellerId: integer("seller_id")
     .notNull()
     .references(() => sellers.id),
@@ -278,6 +300,7 @@ export const sellerReturnItems = sqliteTable(
   "seller_return_items",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     returnId: integer("return_id")
       .notNull()
       .references(() => sellerReturns.id),
@@ -294,6 +317,7 @@ export const sellerReturnItems = sqliteTable(
 // keeping transaction-level attributes out of the item rows.
 export const sellerLosses = sqliteTable("seller_losses", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   sellerId: integer("seller_id")
     .notNull()
     .references(() => sellers.id),
@@ -308,6 +332,7 @@ export const sellerLossItems = sqliteTable(
   "seller_loss_items",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     lossId: integer("loss_id")
       .notNull()
       .references(() => sellerLosses.id),
@@ -327,6 +352,7 @@ export const settlements = sqliteTable(
   "settlements",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     sellerId: integer("seller_id")
       .notNull()
       .references(() => sellers.id),
@@ -348,6 +374,7 @@ export const settlements = sqliteTable(
 // inventory_movements in Fase 4 once `sellers` existed.
 export const sellerSales = sqliteTable("seller_sales", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
   sellerId: integer("seller_id")
     .notNull()
     .references(() => sellers.id),
@@ -364,6 +391,7 @@ export const sellerSaleItems = sqliteTable(
   "seller_sale_items",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
     saleId: integer("sale_id")
       .notNull()
       .references(() => sellerSales.id),

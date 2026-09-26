@@ -14,6 +14,13 @@ backend ni base de datos con la web. No lo abras esperando encontrar un
 
 ## Decisión de arquitectura: 100% offline, sin servidor
 
+> **Actualización 2026-09-25**: la web ya está desplegada y se decidió
+> unificar las bases. El móvil sigue siendo offline-first, pero gana sync
+> con el servidor y login por roles — ver "Fase 10" más abajo. Lo que
+> sigue describe el diseño original (Fases 1-9); la capa de sync se
+> construye como un motor aparte (`lib/sync/*`), no como un
+> `lib/data/remote/*` que reemplace a SQLite.
+
 Dos restricciones reales llevaron a este diseño (decidido en la sesión que
 originó este repo, ver el repo web para el historial completo de esa
 conversación si hace falta contexto):
@@ -1112,6 +1119,190 @@ prueba (confirmado por el usuario).
   los plugins de `app.json`). **Para sesiones futuras**: si Expo Go se
   cierra sin error al abrir la app, correr primero `npx expo install
   --check` antes de buscar un bug en el código.
+
+## Fase 10 — Sincronización con el servidor + roles (dueño / vendedor)
+
+En construcción (desde la sesión 2026-09-25). Une el móvil con la web
+desplegada (`https://icvariedades.com`, VPS con Postgres 16 — ver sección
+"Despliegue a producción (VPS)" del `CLAUDE.md` del repo web) para que
+exista **una sola base de datos en producción**. Reemplaza la premisa
+"sin servidor, sin login" de "Decisión de arquitectura" más arriba: el
+móvil **sigue siendo offline-first** (las pantallas siguen leyendo SQLite
+local siempre), pero ahora sincroniza con el servidor cuando hay red, y
+cada persona entra con su usuario. Este es el plan maestro — la web
+también cambia (sub-pasos marcados "web"), y su `CLAUDE.md` tiene una
+sección que apunta aquí.
+
+**Decisiones tomadas con el usuario (sesión 2026-09-25):**
+
+- **Offline-first + sync en segundo plano**, no "siempre en línea" — el
+  uso sin conexión fue la razón de ser del móvil.
+- **La base unificada arranca vacía**: producción está vacía y los datos
+  del celular son de prueba — se descartan. El primer login en un celular
+  borra su base local y descarga todo del servidor. No hay reconciliación
+  de datos existentes.
+- **Varios vendedores con la app en su propio celular → dos roles**:
+  - **Dueño**: ve y hace todo, como hasta ahora.
+  - **Vendedor**: entra con su usuario (ligado a su fila de `sellers`),
+    ve solo su inventario asignado y registra solo sus ventas,
+    devoluciones y pérdidas. No ve caja, compras, cuentas por pagar,
+    utilidad ni a los otros vendedores. Su celular descarga el catálogo y
+    lo suyo, no la base completa.
+  - Solo el dueño crea/edita productos y categorías, y registra entregas
+    y liquidaciones (el vendedor solo las ve).
+- **Venta sin conexión del último producto en stock**: se **acepta** (la
+  venta ya ocurrió en la realidad); el stock queda negativo y aparece una
+  alerta para corregirlo. Las operaciones que llegan por sync no aplican
+  el fail-fast de "Stock insuficiente" — es la única excepción a esa
+  regla en todo el proyecto.
+
+**Diseño técnico (decidido al trocear, no preguntado — cambiable si algo
+choca en la implementación):**
+
+- **Identidad por `uuid`**: cada tabla sincronizable gana una columna
+  `uuid` única, generada donde nace el registro (celular o servidor). Los
+  `id` numéricos siguen existiendo pero son **locales a cada base** — la
+  sync nunca los usa, solo habla en `uuid` (incluidas las referencias:
+  "venta `3f2a…` del producto `a81c…`"). Números que el usuario ve (SKU
+  `GEN-00012`, "Venta #7") los asigna el servidor; mientras un registro no
+  se sincroniza se muestra como pendiente.
+- **Push = operaciones, no filas**: el celular guarda una cola
+  (`sync_outbox`) con operaciones ("crear venta en local con estos
+  items"), escrita en la misma transacción que el cambio local. El
+  servidor las ejecuta con su propia lógica de `lib/domain` (así nunca
+  entra algo que la web no permitiría), son idempotentes (un id de
+  operación aplicado dos veces no hace nada) y **cada operación lleva los
+  `uuid` de todas las filas que crea** (cabecera, items, movimientos de
+  inventario y de caja) para que el servidor use exactamente los mismos y
+  el pull no duplique nada.
+- **Pull = filas, el servidor manda**: el celular pide "lo que cambió
+  desde la versión X" y hace upsert por `uuid` en SQLite. El stock
+  (`products.stock`) siempre se toma del servidor; en el celular es
+  provisional hasta sincronizar. Orden fijo: primero push, después pull.
+- **Qué cambió desde X (web)**: columna `sync_version` en cada tabla,
+  asignada por trigger desde una secuencia global, con los escritores
+  serializados por un advisory lock para que las versiones se confirmen
+  en orden (volumen de un comercio pequeño, no hay costo real). Borrados
+  físicos (hoy solo `product_images`) dejan una "lápida" en
+  `sync_tombstones`.
+- **Conflictos**: catálogo editable → gana la última edición (registro
+  completo); operaciones que solo agregan filas (ventas, movimientos,
+  pagos...) → no hay conflicto; cambios de estado (pedidos, liquidaciones)
+  → el servidor valida `canTransition*` y rechaza el segundo; la
+  operación rechazada queda visible en el celular.
+- **Autenticación del móvil**: `POST /api/sync/login` con usuario y
+  contraseña devuelve un token de dispositivo de larga duración
+  (revocable, guardado como hash en el servidor y en `expo-secure-store`
+  en el celular). Con el token guardado, la app abre sin red como
+  siempre.
+- **Disparadores**: al recuperar conexión, al volver a la app y con un
+  botón manual ("N pendientes · última sincronización"). Sin sync con la
+  app cerrada (poco confiable en Android/iOS).
+- **Fuera del alcance del móvil**: `sales_orders` (pedidos por WhatsApp)
+  no se sincronizan al celular — solo sus efectos (los movimientos de
+  stock que generan).
+
+| # | Sub-paso | Lado | Estado |
+|---|----------|------|--------|
+| 1 | `uuid` en todas las tablas sincronizables, generado donde nace el registro | web + móvil | ✅ listo |
+| 2 | `sync_version` (trigger + secuencia + advisory lock) y `sync_tombstones` | web | ✅ listo |
+| 3 | Tablas `users` (rol `owner`/`seller`, `sellerId`) + `device_sessions`; NextAuth lee `users`; dueño sembrado desde `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH` | web | ⏳ pendiente |
+| 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ⏳ pendiente |
+| 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ⏳ pendiente |
+| 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ⏳ pendiente |
+| 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ pendiente |
+| 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ⏳ pendiente |
+| 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ⏳ pendiente |
+| 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
+| 11 | Motor de sync: push → pull, upsert por `uuid`, lápidas, stock del servidor, operaciones rechazadas visibles | móvil | ⏳ pendiente |
+| 12 | Disparadores (reconexión, volver a la app, botón) + indicador de pendientes | móvil | ⏳ pendiente |
+| 13 | Fotos (subir antes del push, mostrar URL remota con caché) + SKU/números provisionales hasta sincronizar | móvil | ⏳ pendiente |
+| 14 | Navegación por rol (vendedor: su inventario, "Vender" = venta de vendedor, devoluciones/pérdidas, sus liquidaciones); Respaldo→Importar bloqueado con sesión activa | móvil | ⏳ pendiente |
+| 15 | Desplegar la web con las migraciones + verificación end-to-end: dueño + 2 vendedores, ventas sin conexión, stock negativo, la web muestra lo mismo | ambos | ⏳ pendiente |
+
+**Notas de implementación:**
+
+- **Sub-paso 1 (`uuid`)**: las mismas 22 tablas en los dos lados tienen
+  `uuid` `NOT NULL UNIQUE` (en la web, todas menos `sales_orders`/
+  `sales_order_items`, que nunca se sincronizan). Web: migración
+  `drizzle/0019_mature_vertigo.sql`, un solo paso (`ADD COLUMN ... DEFAULT
+  gen_random_uuid() NOT NULL` — Postgres evalúa el default fila por fila);
+  aplicada y verificada en la base local, **todavía no en producción**
+  (se despliega junto con el resto de la fase, o antes si hace falta).
+  Móvil: helper `syncUuid()` en `schema.ts` con `$defaultFn(newUuid)`, así
+  que Drizzle lo llena en cada insert sin tocar ningún repo;
+  `lib/uuid.ts#newUuid` usa `crypto.randomUUID` global si existe (Node:
+  Vitest y `drizzle-kit`) y si no `expo-crypto` (dependencia nueva, viene en
+  Expo Go) — `require` diferido para que `schema.ts` se pueda cargar en
+  Node.
+- **Migración del móvil en dos pasos**, mismo motivo que la tríada
+  `0009`-`0011`: SQLite no permite `ADD COLUMN ... NOT NULL` sin default
+  constante. `0015_sturdy_chronomancer.sql` agrega la columna nullable +
+  índice único + relleno a mano (un v4 por fila con `randomblob`);
+  `0016_opposite_karnak.sql` la marca `NOT NULL`, lo que para SQLite
+  significa **reconstruir las 22 tablas** (generado por `drizzle-kit`, sin
+  edición; recrea también índices únicos, el índice parcial de foto
+  principal y los `CHECK`).
+- **Hallazgo al testear `0016`**: `drizzle-kit` emite `PRAGMA
+  foreign_keys=ON` a mitad de la migración. Si ese PRAGMA surtiera efecto,
+  el `DROP TABLE products` de la reconstrucción dispararía el `ON DELETE
+  CASCADE` y borraría **todas las fotos**. En el celular no pasa: el
+  migrador de Drizzle corre todo dentro de `BEGIN … COMMIT` (ahí SQLite
+  ignora ese PRAGMA) y el build Android de `expo-sqlite` no activa las
+  llaves foráneas por defecto (sin `SQLITE_DEFAULT_FOREIGN_KEYS`). El
+  arnés de test no replicaba lo primero y por eso falló — se corrigió.
+  **Regla para migraciones futuras que reconstruyan tablas**: no asumir que
+  el PRAGMA las protege; lo que las protege es la transacción.
+- El arnés de SQLite en memoria de `products-repo.test.ts` se sacó a
+  `lib/data/local/test-db.ts#createMigratedTestDb` (llaves foráneas
+  apagadas + cada migración en una transacción, igual que el dispositivo)
+  para reutilizarlo. `lib/data/local/uuid.test.ts` cubre el contrato: 22
+  tablas, relleno v4 distinto por fila en filas previas a `0015`, `NOT
+  NULL`/`UNIQUE` a nivel de base, `CHECK` conservados tras la
+  reconstrucción, y una venta en local creada por el repo real deja `uuid`
+  en cabecera, items, movimientos de inventario y de caja.
+- Verificado: móvil `npm run test` (80/80) + `npx tsc --noEmit` en verde
+  (`npm run lint`: mismo error preexistente de `use-color-scheme.web.ts`);
+  web `npm run test` (62/62) + `npm run lint` + `npm run build` en verde.
+  **Verificado en vivo en el celular del usuario**: `0015`/`0016` corrieron
+  sobre su base real sin fallos — la app abre, los productos conservan sus
+  fotos y su principal, y una venta nueva baja el stock y genera el ingreso
+  en caja.
+- **Sub-paso 2 (`sync_version`)**, solo web: migración
+  `drizzle/0020_sync_version.sql` — la parte generada agrega
+  `sync_version bigint` a las 22 tablas, la secuencia global
+  `sync_version_seq` y la tabla `sync_tombstones`; la parte **escrita a
+  mano** al final crea las funciones `sync_bump_version()` (BEFORE
+  INSERT/UPDATE) y `sync_record_tombstone()` (AFTER DELETE), las engancha
+  a las 22 tablas con un `DO` que recorre un arreglo de nombres, y rellena
+  las filas existentes con un `UPDATE` sin cambios que dispara el trigger.
+  Todo vive en Postgres: **ninguna ruta del panel cambió**, y cualquier
+  escritura (panel, sync, psql) queda versionada igual. `drizzle-kit` no
+  conoce los triggers — una tabla sincronizable nueva hay que agregarla a
+  mano al arreglo en una migración nueva. `TRUNCATE` no deja lápidas; no
+  usarlo sobre tablas sincronizables.
+- Los escritores se serializan con `pg_advisory_xact_lock(7390001)`, tomado
+  **antes** de `nextval` y soltado al hacer commit: así una versión menor
+  nunca se confirma después de una mayor, y un cursor `sync_version > X`
+  no se salta filas. Costo: dos escrituras a tablas sincronizables no
+  corren en paralelo — irrelevante al volumen de este negocio.
+- **Requisito para el sub-paso 6 (pull)**: leer las 22 tablas dentro de
+  **una sola transacción `REPEATABLE READ`** (una sola foto de la base). En
+  `READ COMMITTED` cada consulta ve una foto distinta: si un escritor
+  confirma entre la lectura de la tabla A y la de la B, el cursor
+  devuelto avanzaría más allá de filas de A que el celular nunca recibió.
+- Test nuevo contra Postgres real, `lib/db/sync-version.integration.test.ts`
+  (primer test de base de datos del repo web): las 22 tablas tienen los dos
+  triggers y ninguna fila quedó en versión 0; insert → update → delete dan
+  versiones crecientes y dejan lápida; y con dos conexiones reales, un
+  segundo escritor queda bloqueado hasta que el primero termina y recibe
+  una versión mayor. Todo en transacciones con rollback (no toca los datos
+  de desarrollo). Corre con `npm run test:db` (script nuevo, carga
+  `.env.local` con `node --env-file`); `npm run test` lo salta si no hay
+  `DATABASE_URL`, para seguir siendo solo lógica pura.
+- Verificado: web `npm run test:db` (3/3, contra la base local ya
+  migrada) + `npm run test` (62/62) + `npm run lint` + `npm run build` en
+  verde. `0020` aún **no aplicada en producción**.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
