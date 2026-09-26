@@ -1211,7 +1211,7 @@ choca en la implementación):**
 | 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ✅ listo |
 | 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ✅ listo |
 | 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ✅ listo |
-| 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ⏳ pendiente |
+| 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ✅ listo |
 | 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ⏳ pendiente |
 | 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
 | 11 | Motor de sync: push → pull, upsert por `uuid`, lápidas, stock del servidor, operaciones rechazadas visibles | móvil | ⏳ pendiente |
@@ -1661,6 +1661,30 @@ choca en la implementación):**
     día UTC, no el de Colombia) — solo afecta la vista previa local de
     una liquidación hecha de noche; el total real lo calcula el servidor
     al sincronizar (sub-paso 7), así que se deja así.
+- **Sub-paso 8**, solo web, sin migración. Dos piezas independientes:
+  - **Alerta de stock negativo**: `lib/db/queries/inventory.ts#getNegativeStock`
+    (activos con `stock < 0`) + tarjeta nueva en `/admin` (solo se muestra
+    si hay al menos uno — decisión del usuario: "que aparezca como
+    tarjeta", no solo un color en la tabla), roja, con la lista de
+    productos afectados (no solo un número, porque el siguiente paso del
+    dueño siempre es "ir a corregir estos") y un link a Inventario; cada
+    producto enlaza a su edición. La tabla de `/admin/products` también
+    resalta en rojo el stock `<= 0` (antes solo `=== 0`) con la etiqueta
+    "(negativo)".
+  - **Subida de fotos con token**: `lib/sync/upload.ts#saveProductImage`
+    saca la lógica que ya tenía `/api/admin/upload` (validar tipo/tamaño,
+    convertir a WebP con sharp) a una función compartida, para que las dos
+    rutas guarden el archivo exactamente igual. Ruta nueva
+    `POST /api/sync/upload`, con `authenticateDevice` en vez de la sesión
+    de NextAuth — **solo el dueño** puede subir (los vendedores nunca
+    editan el catálogo). Sin esto, `upsertProduct` (sub-paso 7, parte 3a)
+    rechazaría cualquier foto nueva del celular por venir como `file://`.
+- Verificado con el build contra la base local: producto con stock -3 → la
+  tarjeta aparece en `/admin` con su nombre; login del celular + subir una
+  imagen real → `201` con una URL `.webp` que sí existe en disco; sin token
+  → `401`; como vendedor → `403`. `npx tsc --noEmit` + `npm run lint` +
+  `npm run test` (87) + `npm run test:db` (38) + `npm run build` en verde.
+  Datos de prueba borrados.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
