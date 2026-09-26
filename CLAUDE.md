@@ -1210,7 +1210,7 @@ choca en la implementación):**
 | 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ✅ listo |
 | 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ✅ listo |
 | 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ✅ listo |
-| 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ en curso (parte 1/3 lista) |
+| 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ en curso (partes 1-2/3 listas) |
 | 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ⏳ pendiente |
 | 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ⏳ pendiente |
 | 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
@@ -1514,6 +1514,49 @@ choca en la implementación):**
   con `duplicate: true`, sobre inválido → 400, sin token → 401.
   `npm run test` + `npm run test:db` (16) + `npm run lint` + `npm run
   build` en verde.
+- **Parte 2 — operaciones del vendedor** (`lib/sync/operations/seller.ts`,
+  sin migración). Payloads — el contrato que el celular arma en el
+  sub-paso 10; toda fila viaja con el `uuid` que generó el celular, y las
+  fechas en UTC `"YYYY-MM-DD HH:MM:SS"`:
+  - `createSellerSale`: `{uuid, sellerUuid, saleDate, notes?, items:
+    [{uuid, productUuid, quantity, unitPrice, movementUuid}]}`. El servidor
+    calcula total y **comisión con la configuración actual del vendedor**
+    (`calculateCommission` del dominio); el valor del celular se reemplaza
+    en el siguiente pull.
+  - `createSellerReturn`: `{uuid, sellerUuid, returnDate, notes?, items:
+    [{uuid, productUuid, quantity, sellerMovementUuid,
+    principalMovementUuid}]}` — descuenta al vendedor y regresa al
+    principal (dos filas del mismo ledger + `products.stock`).
+  - `createSellerLoss`: `{uuid, sellerUuid, type, lossDate, notes?, items:
+    [{uuid, productUuid, quantity, unitCost?, movementUuid}]}`. El **costo
+    lo pone el servidor** (`products.purchase_price`) cuando la envía un
+    vendedor, porque su celular no conoce costos (el pull los manda en 0);
+    si la envía el dueño, se respeta su `unitCost`.
+- **No se reutilizan** `createSellerSale`/`Return`/`Loss` de
+  `lib/db/queries/*` (las del panel): abren su propia transacción y son
+  fail-fast. Los handlers de sync reusan el **dominio**
+  (`calculateCommission`) y aceptan dejar el inventario del vendedor
+  negativo (decisión del usuario: la venta ya ocurrió). El panel sigue
+  siendo fail-fast porque opera en línea y en tiempo real.
+- Utilidades compartidas en `lib/sync/operations/shared.ts`:
+  `idByUuid` (resuelve un `uuid` a `id` local o rechaza con "X no existe
+  en el servidor" — típico cuando dependía de otra operación rechazada),
+  `fromUtc` (inversa de la conversión del pull: UTC del celular → hora
+  local de la sesión de Postgres), `changePrincipalStock` y
+  `recordSellerMovement` (nunca rechazan un saldo negativo). Los
+  movimientos de inventario quedan con `created_at` = la fecha real de la
+  operación (no la hora del push), para que el historial respete cuándo
+  pasó cada cosa.
+- Test nuevo `lib/sync/operations/seller.integration.test.ts` con el
+  registro real: venta de 3 teniendo 2 → aplicada, saldo del vendedor
+  `-1`, stock principal intacto, total `15000` y comisión `1500` (10%),
+  filas con los `uuid` del celular, y **ida y vuelta**: el pull devuelve la
+  venta con la misma hora UTC que mandó el celular; devolución → vendedor
+  `-1`, principal `+1`; pérdida de un vendedor con `unitCost: 0` → se
+  guarda `3000` (costo del servidor), del dueño con `1234` → `1234`; un
+  producto inexistente rechaza la venta completa sin dejar nada escrito;
+  fecha con formato ISO o cantidad `0` → rechazada. `npm run test` (86) +
+  `npm run test:db` (21) + `npm run lint` + `npm run build` en verde.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
