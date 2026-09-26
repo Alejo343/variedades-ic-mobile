@@ -1210,7 +1210,7 @@ choca en la implementación):**
 | 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ✅ listo |
 | 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ✅ listo |
 | 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ✅ listo |
-| 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ en curso (partes 1-2/3 listas) |
+| 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ✅ listo |
 | 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ⏳ pendiente |
 | 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ⏳ pendiente |
 | 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
@@ -1557,6 +1557,79 @@ choca en la implementación):**
   producto inexistente rechaza la venta completa sin dejar nada escrito;
   fecha con formato ISO o cantidad `0` → rechazada. `npm run test` (86) +
   `npm run test:db` (21) + `npm run lint` + `npm run build` en verde.
+- **Parte 3 — operaciones del dueño**, en cuatro tandas, cada una con su
+  test de integración contra el registro real
+  (`lib/sync/operations/*.integration.test.ts`). Payloads (contrato para
+  el sub-paso 10 del celular):
+  - **3a catálogo** (`catalog.ts`): `upsertCategory {uuid, name, slug,
+    description?, active}`, `upsertProduct {uuid, name, slug,
+    description?, price, purchasePrice, categoryUuid|null,
+    distributorCode|null, minStock, warrantyMonths|null, active,
+    images?: [{uuid, url, alt?, displayOrder, isPrimary}]}`,
+    `upsertSeller`, `upsertDistributor`, `upsertCashAccount` (mismos
+    campos que sus tablas). Crear o sobrescribir el registro completo por
+    `uuid`; con dos ediciones del mismo registro **gana la que llega última
+    al servidor** (un solo dueño edita el catálogo; comparar horas de
+    edición habría exigido `updated_at` en cuatro tablas más y confiar en
+    el reloj de cada celular). El servidor **asigna el SKU** de un producto
+    nuevo (misma secuencia y prefijo que el panel) y **nunca toma el stock
+    del celular**; los campos que solo tiene la web (`featured`,
+    `whatsapp_text`, color de categoría) no se tocan al actualizar. `images`
+    ausente = no tocar la galería; presente = galería completa (las filas
+    que se quedan conservan su `uuid`, las quitadas dejan lápida); se
+    rechaza una foto `file://` ("todavía no se ha subido") y una galería sin
+    exactamente una principal.
+  - **3b caja, ventas en local y ajustes** (`cash-sales.ts`):
+    `createCashMovement {uuid, type, amount, concept, movementDate,
+    accountUuid, notes?}` (manual); `createDirectSale {uuid, saleDate,
+    accountUuid, notes?, cashMovementUuid, items: [{uuid, productUuid,
+    quantity, unitPrice, movementUuid}]}` — descuenta stock aunque quede
+    negativo y genera el ingreso con el mismo concepto que el panel
+    (`Venta en local #<id del servidor>`); `createInventoryAdjustment
+    {uuid, productUuid, quantityDelta ≠ 0, reason, occurredAt}` — exige
+    motivo (`validateAdjustmentReason` del dominio).
+  - **3c entregas y liquidaciones** (`deliveries-settlements.ts`):
+    `createSellerDelivery {uuid, sellerUuid, deliveryDate, notes?, items:
+    [{uuid, productUuid, quantity, unitCost, principalMovementUuid,
+    sellerMovementUuid}]}`; `createSettlement {uuid, sellerUuid,
+    periodDate}` — **el servidor calcula los totales** con sus propios
+    datos (misma agregación que el panel) y marca las ventas incluidas;
+    rechaza una segunda del mismo vendedor y día; `markSettlementSettled
+    {settlementUuid, accountUuid, settledAt, cashMovementUuid}` — valida
+    con `canTransitionSettlement` y genera el ingreso en caja.
+  - **3d compras** (`purchases.ts`): `createPurchaseOrder {uuid,
+    distributorUuid|null, purchaseType, orderDate, expectedDate|null,
+    notes?, items: [{uuid, productUuid, quantity, unitCost}]}` (total
+    calculado de los items); `transitionPurchaseOrder {purchaseOrderUuid,
+    to, occurredAt, receivedMovements?: [{itemUuid, movementUuid}]}` —
+    `canTransitionPurchaseOrder`, y recibir exige el movimiento de **todos**
+    los items y marca `stock_updated` igual que el panel;
+    `createPurchasePayment {uuid, purchaseOrderUuid, amount, paidAt,
+    accountUuid, notes?, cashMovementUuid}` — **conserva las reglas del
+    panel**: solo a crédito, no cancelado y **no más de lo pendiente**. Lo
+    de "aceptar lo que ya pasó sin conexión" se decidió para el stock de
+    productos, no para el dinero; este tope protege contra errores de
+    digitación.
+- `lib/sync/operations/index.test.ts` (unidad): el registro tiene
+  exactamente un handler por cada tipo de `SYNC_OPERATION_TYPES`.
+- Verificado de punta a punta por HTTP contra el build: login de vendedor
+  → push de una venta de 2 teniendo 1 → `applied`; reenviar el mismo lote
+  → `applied` + `duplicate` (una sola venta en la base); el pull la
+  devuelve con el mismo `uuid`, la misma hora UTC y la comisión del
+  servidor, y el saldo del vendedor sale `-1`. `npm run test` (87) +
+  `npm run test:db` (37) + `npm run lint` + `npm run build` en verde.
+- **Dos problemas que ya tenía la web, encontrados al portar las
+  liquidaciones (no los introduce la sync, pero con varios celulares
+  pesan más) — pendientes de decidir con el usuario:**
+  1. **Zona horaria del día de liquidación**: la web agrupa ventas y
+     pérdidas con `DATE(sale_date)` sobre la hora guardada por Postgres.
+     Si el Postgres del VPS está en UTC, una venta a las 8 p. m. en
+     Colombia cae en el día siguiente. Revisar `SHOW TimeZone` en el VPS
+     antes del despliegue (sub-paso 15).
+  2. **Ventas que llegan después de liquidar**: si el dueño liquida el día
+     X antes de que el vendedor sincronice sus ventas de ese día, esas
+     ventas quedan sin liquidar, y el `UNIQUE (seller_id, period_date)`
+     impide una segunda liquidación de ese día para recogerlas.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
