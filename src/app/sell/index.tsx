@@ -9,6 +9,8 @@ import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutLeft, LinearTransition, u
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
+import { SellerSaleForm } from '@/components/seller-sale-form';
+import { useMySeller } from '@/hooks/use-my-seller';
 import { useTheme } from '@/hooks/use-theme';
 import { cashAccountsRepo, categoriesRepo, directSalesRepo, productsRepo, type CashAccount, type Category, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
@@ -205,7 +207,36 @@ function AnimatedTotal({ value, color }: { value: number; color: string }) {
   );
 }
 
+// The owner keeps the direct-sale POS below; a seller's Vender tab is a
+// consignment sale against their own inventory (same form the owner uses
+// from the seller detail). Split in two components so the POS's many hooks
+// never run conditionally.
 export default function SellScreen() {
+  const { isSeller } = useMySeller();
+  return isSeller ? <SellerSellScreen /> : <OwnerSellScreen />;
+}
+
+function SellerSellScreen() {
+  const { seller, loading } = useMySeller();
+  // Bumping the key remounts the form: empties the cart and reloads the
+  // inventory after each saved sale, without leaving the tab.
+  const [formKey, setFormKey] = useState(0);
+
+  if (!seller) {
+    return (
+      <ThemedView style={{ flex: 1, padding: Spacing.four }}>
+        <SafeAreaView edges={[]}>
+          <ThemedText themeColor="textSecondary">
+            {loading ? 'Cargando…' : 'Tu inventario aparecerá después de la primera sincronización (Más → Configuración → Sincronizar ahora).'}
+          </ThemedText>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+  return <SellerSaleForm key={formKey} sellerId={seller.id} onSaved={() => setFormKey((k) => k + 1)} />;
+}
+
+function OwnerSellScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const [products, setProducts] = useState<Product[]>([]);

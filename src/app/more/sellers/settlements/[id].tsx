@@ -6,12 +6,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useMySeller } from '@/hooks/use-my-seller';
 import { cashAccountsRepo, sellersRepo, settlementsRepo, type CashAccount, type Seller, type Settlement } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 
 export default function SettlementDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const settlementId = Number(id);
+  // Only the owner settles: a seller just sees what they owe.
+  const { isSeller } = useMySeller();
 
   const [settlement, setSettlement] = useState<Settlement | null>(null);
   const [seller, setSeller] = useState<Seller | null>(null);
@@ -111,7 +114,7 @@ export default function SettlementDetailScreen() {
 
         {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
 
-        {settlement.status === 'pendiente' ? (
+        {settlement.status === 'pendiente' && !isSeller ? (
           <>
             <ThemedText type="small" style={styles.status}>
               Cuenta que recibe el pago

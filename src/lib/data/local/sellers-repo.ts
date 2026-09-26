@@ -44,6 +44,11 @@ export const localSellersRepo: SellersRepo = {
     return row ? toSeller(row) : null;
   },
 
+  async getByUuid(uuid: string) {
+    const row = await db.query.sellers.findFirst({ where: eq(sellers.uuid, uuid) });
+    return row ? toSeller(row) : null;
+  },
+
   async create(data: CreateSellerInput) {
     return db.transaction(async (tx) => {
       const [row] = await tx

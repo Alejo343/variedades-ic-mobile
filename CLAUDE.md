@@ -1213,11 +1213,11 @@ choca en la implementación):**
 | 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ✅ listo |
 | 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ✅ listo |
 | 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ✅ listo |
-| 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ⏳ pendiente |
+| 10 | Cola `sync_outbox`: cada repo local anota su operación (con todos sus `uuid`) en la misma transacción | móvil | ✅ listo |
 | 11 | Motor de sync: push → pull, upsert por `uuid`, lápidas, stock del servidor, operaciones rechazadas visibles | móvil | ✅ listo |
 | 12 | Disparadores (reconexión, volver a la app, botón) + indicador de pendientes | móvil | ✅ listo |
 | 13 | Fotos (subir antes del push, mostrar URL remota con caché) + SKU/números provisionales hasta sincronizar | móvil | ✅ listo |
-| 14 | Navegación por rol (vendedor: su inventario, "Vender" = venta de vendedor, devoluciones/pérdidas, sus liquidaciones); Respaldo→Importar bloqueado con sesión activa | móvil | ⏳ pendiente |
+| 14 | Navegación por rol (vendedor: su inventario, "Vender" = venta de vendedor, devoluciones/pérdidas, sus liquidaciones); Respaldo→Importar bloqueado con sesión activa | móvil | ✅ listo |
 | 15 | Desplegar la web con las migraciones + verificación end-to-end: dueño + 2 vendedores, ventas sin conexión, stock negativo, la web muestra lo mismo | ambos | ⏳ pendiente |
 
 **Notas de implementación:**
@@ -1999,6 +1999,35 @@ choca en la implementación):**
   cacheo de `expo-image` en la práctica son cosas que solo se confirman
   ahí; typecheck/tests no lo garantizan (mismo tipo de limitación ya
   documentada para otras piezas de `expo-file-system` en este proyecto).
+- **Sub-paso 14 (navegación por rol)**, solo móvil. `hooks/use-my-seller.ts`
+  (`useMySeller()` → `{isSeller, seller, loading}`) resuelve el vendedor de la
+  sesión por `uuid` (`SellersRepo.getByUuid`, nuevo — los ids locales son de
+  cada celular); `seller` es `null` hasta el primer pull.
+  - **Tabs**: `app-tabs.tsx` oculta Inicio y Buscar (`hidden`, que además los
+    hace inalcanzables) para un vendedor: solo ve **Vender** y **Más**. Esas
+    dos pantallas leen datos de todo el negocio que su pull nunca trae.
+  - **Vender**: `sell/index.tsx` se partió en `SellScreen` (elige por rol),
+    `OwnerSellScreen` (el POS de siempre, sin cambios) y `SellerSellScreen`
+    (venta de consignación con su propio inventario). El formulario se sacó de
+    `more/sellers/sales/new.tsx` a `components/seller-sale-form.tsx`
+    (`onSaved` distingue: el modal del dueño hace `router.back()`, el tab del
+    vendedor remonta el formulario con una `key` para dejarlo listo para la
+    siguiente venta). Ahora recarga con `useFocusEffect`, no solo al montar.
+  - **Más** (vendedor): "Mi inventario" (→ `more/sellers/[id]` de su propio
+    id, que para ese rol oculta el formulario de edición, comisión,
+    "Liquidar" y "Desactivar" y conserva Registrar venta/devolución/pérdida),
+    "Mis liquidaciones" (su pull solo trae las suyas; el detalle oculta
+    "Marcar como liquidada" — solo el dueño liquida) y Configuración.
+  - **Respaldo**: con sesión activa (siempre, la app exige login) "Importar"
+    se reemplaza por un texto: sustituir el archivo dejaría el cursor y la cola
+    de sync apuntando a datos que ya no existen. Exportar sigue igual.
+  - **Límite honesto**: esto es navegación, no seguridad. Lo que protege de
+    verdad al dueño es el servidor (el pull no manda caja/compras a un
+    vendedor y el push rechaza operaciones fuera de su rol). No verificado en
+    el celular: si `hidden` en `NativeTabs` deja bien elegido el tab inicial
+    (Vender) para un vendedor; typecheck/tests no lo garantizan.
+- Verificado: `npm run test` (128) + `npx tsc --noEmit` en verde (`npm run
+  lint`: el mismo error preexistente).
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

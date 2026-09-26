@@ -31,6 +31,9 @@ export type SellerInventoryLineWithSeller = SellerInventoryLine & { sellerId: nu
 export interface SellersRepo {
   list(): Promise<Seller[]>;
   getById(id: number): Promise<Seller | null>;
+  // Lookup by the server-issued uuid — the session only knows the seller by
+  // uuid (local ids are per-device), so the seller role resolves "me" here.
+  getByUuid(uuid: string): Promise<Seller | null>;
   create(data: CreateSellerInput): Promise<Seller>;
   update(id: number, data: UpdateSellerInput): Promise<Seller>;
   deactivate(id: number): Promise<void>;

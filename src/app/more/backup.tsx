@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useSyncSession } from '@/hooks/use-sync-session';
 import { sqliteDb } from '@/lib/data/local/db';
 
 const DB_NAME = 'variedades-ic.db';
@@ -17,6 +18,7 @@ function liveDbFile(): File {
 }
 
 export default function BackupScreen() {
+  const importBlocked = useSyncSession().status === 'authenticated';
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -95,11 +97,20 @@ export default function BackupScreen() {
           </ThemedView>
         </Pressable>
 
-        <Pressable onPress={handleImport} disabled={busy}>
-          <ThemedView type="backgroundElement" style={styles.button}>
-            <ThemedText>Importar respaldo</ThemedText>
-          </ThemedView>
-        </Pressable>
+        {importBlocked ? (
+          // Replacing the file under a live session would leave the sync
+          // cursor and outbox pointing at data that no longer exists.
+          <ThemedText themeColor="textSecondary" type="small">
+            Importar un respaldo está desactivado mientras hay una sesión iniciada: los datos se recuperan
+            sincronizando con el servidor.
+          </ThemedText>
+        ) : (
+          <Pressable onPress={handleImport} disabled={busy}>
+            <ThemedView type="backgroundElement" style={styles.button}>
+              <ThemedText>Importar respaldo</ThemedText>
+            </ThemedView>
+          </Pressable>
+        )}
 
         {message ? <ThemedText style={styles.message}>{message}</ThemedText> : null}
       </SafeAreaView>

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useMySeller } from '@/hooks/use-my-seller';
 import { useTheme } from '@/hooks/use-theme';
 import { productsRepo, sellersRepo } from '@/lib/data';
 import { sellerSchema } from '@/lib/validations';
@@ -16,6 +17,7 @@ export default function EditSellerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const sellerId = Number(id);
   const theme = useTheme();
+  const { isSeller } = useMySeller();
 
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -117,6 +119,10 @@ export default function EditSellerScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {isSeller ? (
+            <ThemedText type="default">{name}</ThemedText>
+          ) : (
+            <>
           <ThemedText type="small">Nombre</ThemedText>
           <TextInput value={name} onChangeText={setName} style={inputStyle} />
 
@@ -155,6 +161,8 @@ export default function EditSellerScreen() {
               <ThemedText type="linkPrimary">{saving ? 'Guardando…' : 'Guardar cambios'}</ThemedText>
             </ThemedView>
           </Pressable>
+            </>
+          )}
 
           <ThemedText type="smallBold" style={styles.sectionTitle}>
             Inventario actual
@@ -203,15 +211,17 @@ export default function EditSellerScreen() {
             </>
           ) : null}
 
-          <Link href={`/more/sellers/settlements/new?sellerId=${sellerId}`} asChild>
-            <Pressable>
-              <ThemedView type="backgroundElement" style={styles.submitButton}>
-                <ThemedText>Liquidar</ThemedText>
-              </ThemedView>
-            </Pressable>
-          </Link>
+          {!isSeller ? (
+            <Link href={`/more/sellers/settlements/new?sellerId=${sellerId}`} asChild>
+              <Pressable>
+                <ThemedView type="backgroundElement" style={styles.submitButton}>
+                  <ThemedText>Liquidar</ThemedText>
+                </ThemedView>
+              </Pressable>
+            </Link>
+          ) : null}
 
-          {active ? (
+          {active && !isSeller ? (
             <Pressable onPress={handleDeactivate} disabled={saving}>
               <ThemedView type="backgroundElement" style={styles.submitButton}>
                 <ThemedText>Desactivar vendedor</ThemedText>
