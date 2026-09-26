@@ -1206,7 +1206,7 @@ choca en la implementación):**
 |---|----------|------|--------|
 | 1 | `uuid` en todas las tablas sincronizables, generado donde nace el registro | web + móvil | ✅ listo |
 | 2 | `sync_version` (trigger + secuencia + advisory lock) y `sync_tombstones` | web | ✅ listo |
-| 3 | Tablas `users` (rol `owner`/`seller`, `sellerId`) + `device_sessions`; NextAuth lee `users`; dueño sembrado desde `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH` | web | ⏳ pendiente |
+| 3 | Tablas `users` (rol `owner`/`seller`, `sellerId`) + `device_sessions`; NextAuth lee `users`; dueño sembrado desde `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH` | web | ✅ listo |
 | 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ⏳ pendiente |
 | 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ⏳ pendiente |
 | 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ⏳ pendiente |
@@ -1303,6 +1303,46 @@ choca en la implementación):**
 - Verificado: web `npm run test:db` (3/3, contra la base local ya
   migrada) + `npm run test` (62/62) + `npm run lint` + `npm run build` en
   verde. `0020` aún **no aplicada en producción**.
+- **Sub-paso 3 (usuarios y roles)**, solo web: migración
+  `drizzle/0021_users_roles.sql` con `users` (`username` único, `role`,
+  `seller_id` único) y `device_sessions` (solo el SHA-256 del token, más
+  `revokedAt` para revocar un celular sin tocar los demás). Las reglas del
+  rol las hace cumplir la propia base con dos `CHECK`: `role IN
+  ('owner','seller')` y `(role = 'seller') = (seller_id IS NOT NULL)`; con
+  el `UNIQUE` de `seller_id`, cada vendedor tiene a lo sumo un usuario.
+  `users` **no** lleva `uuid`/`sync_version`: no se sincroniza como tabla,
+  el celular recibe su propio usuario en la respuesta del login.
+- Dominio `lib/domain/users.ts` (con test): `normalizeUsername` (sin
+  mayúsculas ni espacios — el usuario del dueño es su correo),
+  `canSignInToPanel` (solo un dueño activo entra al panel web; los
+  vendedores solo entran desde el celular) y `ownerSeedFromEnv`.
+- `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH` dejan de ser el login: ahora solo
+  **siembran el primer dueño, una sola vez**, en `instrumentation.ts`
+  justo después de migrar. Si ya existe un dueño, cambiar esas variables no
+  hace nada — la contraseña se cambia en `users`.
+- `lib/auth.ts#authorize` busca en `users`. El campo del formulario sigue
+  llamándose `email` (no cambió la pantalla de login). Ninguna ruta de
+  `/api/admin/*` cambió: todas exigen sesión, y ahora solo un dueño activo
+  puede tener una. **Limitación conocida**: las sesiones del panel son JWT
+  sin estado, así que desactivar a un dueño no cierra una sesión web ya
+  abierta hasta que expira.
+- Test nuevo contra Postgres, `lib/db/users.integration.test.ts`: acepta
+  dueño sin vendedor y vendedor con vendedor; rechaza vendedor sin
+  vendedor, dueño con vendedor, rol desconocido, dos usuarios para el mismo
+  vendedor y un nombre de usuario repetido.
+- Verificado: `npm run test:db` (6/6) + `npm run test` + `npm run lint` +
+  `npm run build` en verde; con el build levantado sobre la base local, la
+  siembra creó exactamente un dueño con el correo de `ADMIN_EMAIL`, un login
+  con contraseña incorrecta se rechaza y `/admin` sin sesión redirige al
+  login. El usuario no recordaba la contraseña local del dueño: se generó
+  una nueva (aleatoria), se guardó su hash en `users` de la base local y en
+  `ADMIN_PASSWORD_HASH`, y quedó en texto plano **comentada en
+  `.env.local`** (no versionado), a pedido del usuario. Login con esa
+  contraseña contra el build → entra a `/admin`; con una incorrecta →
+  rechazado. `0021` aún **no aplicada en producción** — ojo: el
+  `ADMIN_PASSWORD_HASH` del VPS es el viejo (la contraseña olvidada), y es
+  el que sembrará el dueño de producción la primera vez que arranque con
+  `0021`; cambiarlo antes de desplegar.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
