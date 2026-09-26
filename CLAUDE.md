@@ -1209,7 +1209,7 @@ choca en la implementación):**
 | 3 | Tablas `users` (rol `owner`/`seller`, `sellerId`) + `device_sessions`; NextAuth lee `users`; dueño sembrado desde `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH` | web | ✅ listo |
 | 4 | Pantalla admin: crear/desactivar usuarios vendedor ligados a un vendedor, revocar dispositivos | web | ✅ listo |
 | 5 | `POST /api/sync/login` + verificación de token bearer y permisos por rol (con tests) | web | ✅ listo |
-| 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ⏳ pendiente |
+| 6 | `GET /api/sync/pull` (cursor por versión, lápidas, filtrado por rol) | web | ✅ listo |
 | 7 | `POST /api/sync/push`: ejecutor de operaciones idempotente, permisos por rol, reusa `lib/domain`, ventas aceptan stock negativo | web | ⏳ pendiente |
 | 8 | Alerta de stock negativo en el panel + subida de fotos con token | web | ⏳ pendiente |
 | 9 | Pantalla de login + token en `expo-secure-store`; primer login borra la base local; cerrar sesión | móvil | ⏳ pendiente |
@@ -1419,6 +1419,57 @@ choca en la implementación):**
   intento tras 5 fallos → 429, sin afectar a otro usuario; login del dueño
   → 201 con `seller: null`. Datos de prueba borrados. `npm run test` (84)
   + `npm run test:db` (6) + `npm run lint` + `npm run build` en verde.
+- **Sub-paso 6 (pull)**, solo web, sin migración nueva.
+  `GET /api/sync/pull?since=<cursor>` → `{cursor, hasMore, changes:
+  {tabla: filas[]}, tombstones: [{table, uuid}]}`. El celular arranca con
+  `since=0` y repite con el `cursor` devuelto mientras `hasMore` sea
+  `true`. Lógica en `lib/sync/pull.ts#pullChanges` (recibe un cliente `pg`
+  ya dentro de la transacción); la ruta abre `BEGIN ISOLATION LEVEL
+  REPEATABLE READ READ ONLY` sobre un cliente del pool (`db.$client`).
+- **Formato de cada fila** — es el contrato que el sub-paso 11 del móvil
+  va a consumir: claves = nombres de campo del Drizzle **del móvil**; sin
+  `id` locales, cada llave foránea viaja como el `uuid` de la fila
+  referida (`categoryUuid`, `productUuid`, `sellerUuid`, `saleUuid`,
+  `accountUuid`, `settlementUuid`, ...); `cash_movements.source_id`
+  (polimórfico) viaja como `sourceUuid` resuelto según `sourceType`
+  (`direct_sale`/`settlement`/`purchase_payment`). Timestamps en UTC
+  `"YYYY-MM-DD HH:MM:SS"` (lo mismo que guarda el SQLite del celular) y
+  fechas `"YYYY-MM-DD"`. Columnas que solo existen en la web
+  (`featured`, `whatsappText`, `color`, `stockUpdated`,
+  `inventory_movements.unitCost`/`sourceId`...) no viajan. Cada tabla se
+  declara una vez en `SPECS` (select + joins + filtro de vendedor).
+- **Zona horaria**: los `timestamp` de la web no tienen zona y guardan la
+  hora local de la sesión de Postgres (`now()`); el pull los interpreta en
+  esa zona (`current_setting('TimeZone')`) y los pasa a UTC. Verificado
+  con la base local (`America/Bogota`): una fila creada a las 00:43
+  locales sale como 05:43, igual al UTC real. Supone que Node y Postgres
+  escriben en la misma zona (cierto en local y en el VPS).
+- **Páginas por versión**: el tope de cada página es la versión número 500
+  pendiente entre las 22 tablas + lápidas (contada sin filtro de rol, así
+  que la página de un vendedor puede traer menos filas, nunca saltarse
+  ninguna).
+- **Alcance del vendedor**: catálogo completo (categorías, productos,
+  fotos) + solo lo suyo (su fila de `sellers`, su ledger `owner_type =
+  'seller'`, sus entregas, ventas, devoluciones, pérdidas y
+  liquidaciones, con sus items). Nada de caja, cuentas, ventas en local,
+  distribuidores ni compras (esas tablas ni aparecen en `changes`). Costos
+  de compra en `0` (`products.purchasePrice` y el `unitCost` de las
+  entregas); el `unitCost` de sus pérdidas sí viaja, porque es lo que él
+  debe. Recibe las lápidas de las tablas que ve.
+- `npm run test:db` ahora corre todo archivo `*integration*` (antes solo
+  `lib/db`). Test nuevo `lib/sync/pull.integration.test.ts`: referencias
+  como `uuid` y sin `id`; con el cursor devuelto no trae nada más; por
+  páginas de 5 cada fila llega exactamente una vez; el vendedor ve lo suyo
+  y no lo del otro vendedor, sin caja/compras y con costos en 0; un borrado
+  llega como lápida.
+- Verificado con el build contra la base local: sync inicial completo como
+  dueño → 94 filas, las 22 tablas cuadran exactamente con `count(*)` de la
+  base y sin duplicados; un pull con el cursor final devuelve vacío;
+  `since=-1` → 400, sin token → 401; como vendedor temporal (con su propia
+  entrega) → catálogo completo, solo su ficha, su entrega y su movimiento,
+  ninguna de las 5 ventas del otro vendedor, sin tablas de caja/compras y
+  costos en 0. Datos de prueba borrados. `npm run test` (84) + `npm run
+  test:db` (11) + `npm run lint` + `npm run build` en verde.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
