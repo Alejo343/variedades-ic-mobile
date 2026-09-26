@@ -86,8 +86,8 @@ function ProductCard({ product, selected, cardWidth, onPress }: ProductCardProps
     <Pressable onPress={handlePress} style={{ width: cardWidth }}>
       <Animated.View style={animatedStyle}>
         <ThemedView type={selected ? 'backgroundSelected' : 'backgroundElement'} style={[styles.productCard, Shadow.subtle]}>
-          {product.imageUri ? (
-            <Image source={{ uri: product.imageUri }} style={styles.productImage} />
+          {product.primaryImageUri ? (
+            <Image source={{ uri: product.primaryImageUri }} style={styles.productImage} />
           ) : (
             <View style={[styles.productImage, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
               <Package color={theme.primary} size={22} />
@@ -301,7 +301,7 @@ export default function SellScreen() {
           productId: product.id,
           name: product.name,
           sku: product.sku,
-          imageUri: product.imageUri,
+          imageUri: product.primaryImageUri,
           stock: product.stock,
           quantity: '1',
           unitPrice: String(product.price),

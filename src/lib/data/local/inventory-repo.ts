@@ -2,9 +2,9 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { applyMovement, type MovementType, validateAdjustmentReason } from "../../domain/inventory-movement";
 import type { InventoryAdjustmentInput } from "../../validations";
 import type { InventoryMovement, InventoryRepo } from "../inventory-repo";
-import type { Product } from "../products-repo";
 import type { Tx } from "./db";
 import { db } from "./db";
+import { productColumns, toProduct } from "./products-repo";
 import { inventoryMovements, products } from "./schema";
 
 // Reused by other local/* repos (e.g. direct-sales-repo) that need to move
@@ -72,27 +72,6 @@ export async function recordSellerMovement(
   return { newSellerStock: result.newBalance };
 }
 
-function toProduct(row: typeof products.$inferSelect): Product {
-  return {
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    description: row.description,
-    sku: row.sku,
-    price: row.price,
-    purchasePrice: row.purchasePrice,
-    categoryId: row.categoryId,
-    distributorCode: row.distributorCode,
-    stock: row.stock,
-    minStock: row.minStock,
-    warrantyMonths: row.warrantyMonths,
-    active: row.active,
-    imageUri: row.imageUri,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
 function toMovement(row: typeof inventoryMovements.$inferSelect): InventoryMovement {
   return {
     id: row.id,
@@ -138,7 +117,7 @@ export const localInventoryRepo: InventoryRepo = {
 
   async getLowStock() {
     const rows = await db
-      .select()
+      .select(productColumns)
       .from(products)
       .where(
         and(
@@ -152,7 +131,7 @@ export const localInventoryRepo: InventoryRepo = {
   },
 
   async getOutOfStock() {
-    const rows = await db.select().from(products).where(and(eq(products.active, true), eq(products.stock, 0)));
+    const rows = await db.select(productColumns).from(products).where(and(eq(products.active, true), eq(products.stock, 0)));
     return rows.map(toProduct);
   },
 };

@@ -1,15 +1,15 @@
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ProductImageGallery } from '@/components/product-image-gallery';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
-import { pickAndPersistProductImage } from '@/lib/images';
+import type { ImageDraft } from '@/lib/domain/product-images';
 import { productSchema, toSlug } from '@/lib/validations';
 
 export default function NewProductScreen() {
@@ -26,7 +26,7 @@ export default function NewProductScreen() {
   const [stock, setStock] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [warrantyMonths, setWarrantyMonths] = useState('');
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [images, setImages] = useState<ImageDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
@@ -38,15 +38,6 @@ export default function NewProductScreen() {
   function handleNameChange(value: string) {
     setName(value);
     if (!slugTouched) setSlug(toSlug(value));
-  }
-
-  async function handlePickImage() {
-    try {
-      const uri = await pickAndPersistProductImage();
-      if (uri) setImageUri(uri);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo seleccionar la imagen');
-    }
   }
 
   async function handleSubmit() {
@@ -61,7 +52,6 @@ export default function NewProductScreen() {
       stock: Number(stock) || 0,
       minStock: Number(minStock) || 0,
       warrantyMonths: warrantyMonths ? Number(warrantyMonths) : null,
-      imageUri,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Datos inválidos');
@@ -79,7 +69,7 @@ export default function NewProductScreen() {
           return;
         }
       }
-      await productsRepo.create(parsed.data);
+      await productsRepo.create(parsed.data, images);
       router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el producto');
@@ -94,17 +84,7 @@ export default function NewProductScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Pressable onPress={handlePickImage}>
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.image} />
-            ) : (
-              <ThemedView type="backgroundElement" style={styles.imagePlaceholder}>
-                <ThemedText themeColor="textSecondary" type="small">
-                  Toca para agregar foto
-                </ThemedText>
-              </ThemedView>
-            )}
-          </Pressable>
+          <ProductImageGallery images={images} onChange={setImages} onError={setError} />
 
           <ThemedText type="small">Nombre</ThemedText>
           <TextInput
@@ -196,22 +176,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  image: {
-    width: 120,
-    height: 120,
-    borderRadius: Spacing.three,
-    alignSelf: 'center',
-    marginBottom: Spacing.three,
-  },
-  imagePlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: Spacing.three,
-    alignSelf: 'center',
-    marginBottom: Spacing.three,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   input: {
     borderWidth: 1,
     borderRadius: Spacing.two,

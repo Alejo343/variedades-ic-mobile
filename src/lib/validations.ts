@@ -19,7 +19,6 @@ export const productSchema = z.object({
   minStock: z.number().int().min(0).optional().default(0),
   warrantyMonths: z.number().int().min(0).nullable().optional(),
   active: z.boolean().optional().default(true),
-  imageUri: z.string().nullable().optional(),
 });
 
 export const inventoryAdjustmentSchema = z.object({

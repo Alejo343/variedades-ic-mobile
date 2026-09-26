@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
+import { check, integer, sqliteTable, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // syncStatus is reserved for a future remote-sync phase (see CLAUDE.md) —
 // not read or written by any logic yet beyond its "local" default.
@@ -32,11 +32,38 @@ export const products = sqliteTable("products", {
   minStock: integer("min_stock").notNull().default(0),
   warrantyMonths: integer("warranty_months"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
-  imageUri: text("image_uri"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   updatedAt: text("updated_at").notNull().default(sql`(current_timestamp)`),
   syncStatus: text("sync_status").notNull().default("local"),
 });
+
+// Same shape as the web's product_images, so both catalogs can be unified.
+// `url` is a local file:// URI here (a copy under Paths.document), not a
+// remote URL like on the web. The cascade is declared for parity, but SQLite
+// only enforces it with PRAGMA foreign_keys on — irrelevant today, since
+// products are only ever soft-deleted.
+export const productImages = sqliteTable(
+  "product_images",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    alt: text("alt"),
+    displayOrder: integer("display_order").notNull().default(0),
+    isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+    updatedAt: text("updated_at").notNull().default(sql`(current_timestamp)`),
+    syncStatus: text("sync_status").notNull().default("local"),
+  },
+  // At most one primary photo per product, enforced by the database itself.
+  (table) => [
+    uniqueIndex("product_images_one_primary")
+      .on(table.productId)
+      .where(sql`${table.isPrimary} = 1`),
+  ],
+);
 
 // Real money accounts (e.g. "Efectivo", "Transferencia") — cash_movements,
 // direct_sales and purchase_payments all reference one, so each account's

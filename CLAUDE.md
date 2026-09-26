@@ -1003,6 +1003,116 @@ contra duplicados al crear/editar un producto a mano.
   lint` en verde (mismo error preexistente de `use-color-scheme.web.ts`).
   **No verificado todavía en el celular del usuario.**
 
+## Varias fotos por producto (`product_images`)
+
+Completada (sesión 2026-09-25). Prepara la unificación futura con la
+base de datos del repo web: una auditoría encontró que el modelo de fotos era
+incompatible (el móvil guardaba una sola foto en `products.image_uri`; la web
+guarda varias en `product_images`, con orden y una principal). El móvil
+adopta el mismo modelo que la web.
+
+Decisiones tomadas con el usuario antes de construir: **`products.image_uri`
+se elimina de una vez** (opción A, en vez de dejarla un tiempo como
+obsoleta — no la escribiría nadie, así que quedaría desactualizada en cuanto
+se editara un producto y solo daría una falsa sensación de seguridad), y **no
+se exportó respaldo antes de migrar** porque los datos del dispositivo son de
+prueba (confirmado por el usuario).
+
+| # | Sub-paso | Estado |
+|---|----------|--------|
+| 1 | Schema `product_images` (mismas columnas que la web + `createdAt`/`updatedAt`/`syncStatus` reservados) + migración `0013` con backfill a mano (cada `image_uri` no vacío → una fila `is_primary = 1`) | ✅ listo |
+| 2 | Dominio `lib/domain/product-images.ts` (`normalizeImages`, `addImage`, `removeImage`, `setPrimaryImage`, `primaryImageUrl`) + test | ✅ listo |
+| 3 | `ProductsRepo`: `Product.primaryImageUri` (derivado), `getById` → `ProductWithImages` con `images[]`, `create`/`update` con `images?` transaccional; mapeo `products → Product` unificado | ✅ listo |
+| 4 | UI: `components/product-image-gallery.tsx` en crear/editar producto; miniaturas de Productos/Inicio/Vender pasan a `primaryImageUri` | ✅ listo |
+| 5 | Migración `0014`: `DROP COLUMN image_uri` | ✅ listo |
+| 6 | Verificación manual en el celular del usuario | ✅ listo |
+
+**Completo (6/6 sub-pasos).**
+
+**Notas de implementación:**
+
+- **Invariante**: una galería vacía no tiene principal; una no vacía tiene
+  exactamente una. Se garantiza en dos niveles: el dominio
+  (`normalizeImages`, que aplica `ProductsRepo` antes de guardar) y la propia
+  base de datos, con un índice único parcial
+  (`product_images_one_primary ON product_images(product_id) WHERE is_primary = 1`).
+  La web no tiene esa garantía (depende de la lógica de su formulario).
+  Quitar la principal promueve la primera foto restante.
+- **Migración en dos archivos** (`0013_bumpy_unicorn.sql` crea la tabla y
+  copia los datos; `0014_freezing_korath.sql` elimina la columna), en vez de
+  uno solo: así la copia de datos corre garantizado antes del `DROP`. Un
+  respaldo viejo importado también queda cubierto, porque las migraciones
+  corren al reabrir la app. Se verificó la cadena completa `0000`→`0014`
+  sobre SQLite real (`node:sqlite`): un producto con foto termina con una
+  fila principal, los productos con `NULL`/`''` no generan filas, la columna
+  desaparece y el índice rechaza una segunda principal.
+- **La cascada `ON DELETE` está declarada pero no se aplica**: SQLite solo
+  la cumple con `PRAGMA foreign_keys = ON`, y el proyecto nunca lo activa (eso
+  aplica a todas las FKs de la base, no solo a esta). Hoy no importa, porque
+  los productos solo se desactivan y nunca se borran. Activar el pragma
+  afecta a toda la base, así que queda como decisión aparte.
+- `ProductsRepo.list()` (y todo lo que devuelve `Product`) trae
+  `primaryImageUri` con una subconsulta con el mismo orden que la web
+  (`is_primary DESC, display_order ASC`), en vez de cargar la galería completa
+  de cada producto solo para las miniaturas. La galería completa sale solo de
+  `getById`.
+- **Bug real encontrado antes de llegar al emulador**: dentro de un `select`
+  de una sola tabla, Drizzle escribe `${products.id}` como `"id"` a secas, y
+  dentro de la subconsulta SQLite lo resolvía contra `product_images.id`.
+  Todos los productos mostraban la foto del producto 1. Se corrigió escribiendo
+  `"products"."id"` explícito (con comentario en el código). Lo encontró
+  `lib/data/local/products-repo.test.ts`, el **primer test de la capa
+  `lib/data/`** del proyecto: corre el repo real contra SQLite en memoria
+  (`node:sqlite` + driver `drizzle-orm/sqlite-proxy`, porque `expo-sqlite` no
+  corre en Node) con todas las migraciones aplicadas. Se dejó como test
+  permanente porque este tipo de error no lo detectan ni `tsc` ni los tests
+  de dominio.
+- Se eliminó el `toProduct` duplicado de `local/inventory-repo.ts` (ver la
+  nota de "Código de proveedor único" más arriba): ahora importa
+  `productColumns`/`toProduct` de `local/products-repo.ts`, así que queda un
+  solo mapeo en todo el proyecto.
+- **Guardado**: la galería se edita como borrador en la pantalla y se guarda
+  junto con el producto al tocar Guardar, en la misma transacción
+  (`replaceImages`). Las filas cuya URL se mantiene se actualizan en su lugar
+  y conservan su `id` (útil para un futuro sync); el resto se borra o se
+  inserta. Antes de reasignar la principal se limpian todas, para no chocar
+  con el índice único a mitad del proceso. `update` sin `images` no toca la
+  galería (la importación de Excel de compras sigue creando productos sin
+  fotos, sin cambios).
+- **Archivos de fotos**: `pickAndPersistProductImages` permite elegir varias
+  a la vez (`allowsMultipleSelection`) y copia cada una a `Paths.document`.
+  Al quitar una foto: si ya estaba guardada, `ProductsRepo.update` borra su
+  archivo después del commit (un guardado que falla no pierde archivos); si
+  se acababa de elegir sin guardar, la galería borra el archivo de inmediato.
+  **Limitación conocida**: si se eligen fotos y se sale de la pantalla sin
+  guardar, esos archivos quedan huérfanos en disco (solo ocupan espacio).
+- **Fuera de alcance, documentado para la unificación**: (1) el respaldo
+  (`VACUUM INTO`) sigue sin incluir los archivos de fotos, solo el `.db`, y
+  con varias fotos por producto eso pesa más; (2) `url` en el móvil es una
+  ruta local `file://` absoluta y en la web una URL remota, así que la tabla
+  es compatible pero los valores no. Para unificar habrá que subir las fotos
+  a algún lado. (3) No se pueden reordenar fotos arrastrándolas (el orden es
+  el de agregado) y `alt` queda siempre `null`.
+- Verificado con `npm run test` (75/75: 15 de dominio + 5 de integración del
+  repo) + `npx tsc --noEmit` en verde + `npm run lint` (mismo error
+  preexistente de `use-color-scheme.web.ts`). **Verificado en vivo en el
+  celular del usuario** (Expo Go): foto existente migrada como principal,
+  agregar varias fotos a la vez, cambiar la principal, quitar la principal
+  (promueve la siguiente), vaciar la galería, crear producto con varias
+  fotos, y miniaturas correctas en Productos/Inicio/Vender. Todo confirmado
+  sin fallos por el usuario.
+- **Problema de entorno encontrado al verificar (no de esta fase)**: el
+  Expo Go recién instalado desde la tienda cerraba la app de golpe al
+  abrirla, sin pantalla roja. La causa: las dependencias del proyecto se
+  habían quedado en parches viejos del SDK 57 (29 paquetes, entre ellos
+  `react-native-worklets` 0.10.0 contra el 0.10.1 nativo de Expo Go; si
+  worklets/reanimated no coinciden entre el JS y el binario nativo, la app
+  se cierra sin mostrar error). `npx expo install --fix` + `npx expo start
+  --clear` lo resolvió (también agregó `expo-image`/`expo-web-browser` a
+  los plugins de `app.json`). **Para sesiones futuras**: si Expo Go se
+  cierra sin error al abrir la app, correr primero `npx expo install
+  --check` antes de buscar un bug en el código.
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,

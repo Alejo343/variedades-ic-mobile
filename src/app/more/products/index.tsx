@@ -48,8 +48,8 @@ export default function ProductsScreen() {
             <Link href={{ pathname: '/more/products/[id]', params: { id: String(item.id) } }} asChild>
               <Pressable>
                 <ThemedView type="backgroundElement" style={styles.row}>
-                  {item.imageUri ? (
-                    <Image source={{ uri: item.imageUri }} style={styles.thumb} />
+                  {item.primaryImageUri ? (
+                    <Image source={{ uri: item.primaryImageUri }} style={styles.thumb} />
                   ) : (
                     <ThemedView type="backgroundSelected" style={styles.thumb} />
                   )}

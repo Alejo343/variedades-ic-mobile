@@ -444,9 +444,9 @@ export default function HomeScreen() {
                         type="backgroundElement"
                         style={[styles.favoriteCard, Shadow.subtle]}
                       >
-                        {product.imageUri ? (
+                        {product.primaryImageUri ? (
                           <Image
-                            source={{ uri: product.imageUri }}
+                            source={{ uri: product.primaryImageUri }}
                             style={styles.favoriteImage}
                           />
                         ) : (

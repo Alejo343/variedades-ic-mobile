@@ -51,7 +51,7 @@ export const purchaseOrdersRepo: PurchaseOrdersRepo = localPurchaseOrdersRepo;
 export const purchasePaymentsRepo: PurchasePaymentsRepo = localPurchasePaymentsRepo;
 export const reportsRepo: ReportsRepo = localReportsRepo;
 
-export type { Product, CreateProductInput, UpdateProductInput } from "./products-repo";
+export type { Product, ProductImage, ProductWithImages, CreateProductInput, UpdateProductInput } from "./products-repo";
 export type { InventoryMovement } from "./inventory-repo";
 export type { Category, CreateCategoryInput, UpdateCategoryInput } from "./categories-repo";
 export type { CashMovement } from "./cash-repo";

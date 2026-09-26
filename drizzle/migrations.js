@@ -14,6 +14,8 @@ import m0009 from './0009_bizarre_randall_flagg.sql';
 import m0010 from './0010_early_hawkeye.sql';
 import m0011 from './0011_conscious_magik.sql';
 import m0012 from './0012_pale_captain_midlands.sql';
+import m0013 from './0013_bumpy_unicorn.sql';
+import m0014 from './0014_freezing_korath.sql';
 
   export default {
     journal,
@@ -30,7 +32,9 @@ m0008,
 m0009,
 m0010,
 m0011,
-m0012
+m0012,
+m0013,
+m0014
     }
   }
   

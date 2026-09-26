@@ -1,10 +1,32 @@
-import { count, eq, sql } from "drizzle-orm";
+import { asc, count, eq, getTableColumns, sql } from "drizzle-orm";
+import { type ImageDraft, normalizeImages } from "../../domain/product-images";
 import { formatSku, getSkuPrefix } from "../../domain/sku";
-import type { CreateProductInput, Product, ProductsRepo, UpdateProductInput } from "../products-repo";
+import { deleteProductImageFile } from "../../images";
+import type { CreateProductInput, Product, ProductImage, ProductsRepo, UpdateProductInput } from "../products-repo";
+import type { Tx } from "./db";
 import { db } from "./db";
-import { categories, products } from "./schema";
+import { categories, productImages, products } from "./schema";
 
-function toProduct(row: typeof products.$inferSelect): Product {
+// Select shape for any query that returns Product: every products column plus
+// the thumbnail URL, resolved with the same subquery ordering as the web
+// (primary first, then display order). Shared with local/inventory-repo.ts so
+// there's a single products -> Product mapping in the project.
+// `products.id` is written fully qualified on purpose: in a single-table
+// select Drizzle renders `${products.id}` as a bare "id", which inside this
+// subquery would silently bind to product_images.id instead.
+export const productColumns = {
+  ...getTableColumns(products),
+  primaryImageUri: sql<string | null>`(
+    SELECT ${productImages.url} FROM ${productImages}
+    WHERE ${productImages.productId} = "products"."id"
+    ORDER BY ${productImages.isPrimary} DESC, ${productImages.displayOrder} ASC
+    LIMIT 1
+  )`,
+};
+
+type ProductRow = typeof products.$inferSelect & { primaryImageUri: string | null };
+
+export function toProduct(row: ProductRow): Product {
   return {
     id: row.id,
     name: row.name,
@@ -19,10 +41,62 @@ function toProduct(row: typeof products.$inferSelect): Product {
     minStock: row.minStock,
     warrantyMonths: row.warrantyMonths,
     active: row.active,
-    imageUri: row.imageUri,
+    primaryImageUri: row.primaryImageUri,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function toProductImage(row: typeof productImages.$inferSelect): ProductImage {
+  return {
+    id: row.id,
+    productId: row.productId,
+    url: row.url,
+    alt: row.alt,
+    displayOrder: row.displayOrder,
+    isPrimary: row.isPrimary,
+  };
+}
+
+async function getProduct(id: number): Promise<Product | null> {
+  const [row] = await db.select(productColumns).from(products).where(eq(products.id, id));
+  return row ? toProduct(row) : null;
+}
+
+// Makes the product's gallery match `drafts` exactly (order = displayOrder).
+// Rows whose URL survives are updated in place (keeping their id, which a
+// future sync can rely on); the rest are deleted or inserted. Returns the URLs
+// that were dropped, so the caller can delete their files after commit.
+async function replaceImages(tx: Tx, productId: number, drafts: ImageDraft[]): Promise<string[]> {
+  const normalized = normalizeImages(drafts);
+  const existing = await tx.select().from(productImages).where(eq(productImages.productId, productId));
+  const keptUrls = new Set(normalized.map((image) => image.url));
+  const now = new Date().toISOString();
+
+  // Clear the primary flag first so the one-primary unique index never sees
+  // two primaries mid-update.
+  await tx.update(productImages).set({ isPrimary: false }).where(eq(productImages.productId, productId));
+
+  const removed: string[] = [];
+  for (const row of existing) {
+    if (!keptUrls.has(row.url)) {
+      await tx.delete(productImages).where(eq(productImages.id, row.id));
+      removed.push(row.url);
+    }
+  }
+
+  for (const [displayOrder, image] of normalized.entries()) {
+    const match = existing.find((row) => row.url === image.url);
+    if (match) {
+      await tx
+        .update(productImages)
+        .set({ displayOrder, isPrimary: image.isPrimary, updatedAt: now })
+        .where(eq(productImages.id, match.id));
+    } else {
+      await tx.insert(productImages).values({ productId, url: image.url, displayOrder, isPrimary: image.isPrimary });
+    }
+  }
+  return removed;
 }
 
 // No concurrency risk to guard against (single device, single user, sequential
@@ -41,54 +115,69 @@ async function generateSku(categoryId: number | null | undefined): Promise<strin
 
 export const localProductsRepo: ProductsRepo = {
   async list() {
-    const rows = await db.select().from(products).orderBy(products.name);
+    const rows = await db.select(productColumns).from(products).orderBy(products.name);
     return rows.map(toProduct);
   },
 
   async getById(id: number) {
-    const row = await db.query.products.findFirst({ where: eq(products.id, id) });
-    return row ? toProduct(row) : null;
+    const product = await getProduct(id);
+    if (!product) return null;
+    const images = await db
+      .select()
+      .from(productImages)
+      .where(eq(productImages.productId, id))
+      .orderBy(asc(productImages.displayOrder));
+    return { ...product, images: images.map(toProductImage) };
   },
 
   async findByDistributorCode(code: string) {
     const normalized = code.trim().toLowerCase();
-    const row = await db.query.products.findFirst({
-      where: sql`lower(${products.distributorCode}) = ${normalized}`,
-    });
+    const [row] = await db
+      .select(productColumns)
+      .from(products)
+      .where(sql`lower(${products.distributorCode}) = ${normalized}`);
     return row ? toProduct(row) : null;
   },
 
-  async create(data: CreateProductInput) {
+  async create(data: CreateProductInput, images?: ImageDraft[]) {
     const sku = await generateSku(data.categoryId);
-    const [row] = await db
-      .insert(products)
-      .values({
-        name: data.name,
-        slug: data.slug,
-        description: data.description ?? null,
-        sku,
-        price: data.price,
-        purchasePrice: data.purchasePrice ?? 0,
-        categoryId: data.categoryId ?? null,
-        distributorCode: data.distributorCode ?? null,
-        stock: data.stock ?? 0,
-        minStock: data.minStock ?? 0,
-        warrantyMonths: data.warrantyMonths ?? null,
-        active: data.active ?? true,
-        imageUri: data.imageUri ?? null,
-      })
-      .returning();
-    return toProduct(row);
+    const id = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(products)
+        .values({
+          name: data.name,
+          slug: data.slug,
+          description: data.description ?? null,
+          sku,
+          price: data.price,
+          purchasePrice: data.purchasePrice ?? 0,
+          categoryId: data.categoryId ?? null,
+          distributorCode: data.distributorCode ?? null,
+          stock: data.stock ?? 0,
+          minStock: data.minStock ?? 0,
+          warrantyMonths: data.warrantyMonths ?? null,
+          active: data.active ?? true,
+        })
+        .returning({ id: products.id });
+      if (images) await replaceImages(tx, row.id, images);
+      return row.id;
+    });
+    return (await getProduct(id))!;
   },
 
-  async update(id: number, data: UpdateProductInput) {
-    const [row] = await db
-      .update(products)
-      .set({ ...data, updatedAt: new Date().toISOString() })
-      .where(eq(products.id, id))
-      .returning();
-    if (!row) throw new Error("Producto no encontrado");
-    return toProduct(row);
+  async update(id: number, data: UpdateProductInput, images?: ImageDraft[]) {
+    const removedUrls = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(products)
+        .set({ ...data, updatedAt: new Date().toISOString() })
+        .where(eq(products.id, id))
+        .returning({ id: products.id });
+      if (!row) throw new Error("Producto no encontrado");
+      return images ? replaceImages(tx, id, images) : [];
+    });
+    // Only after commit: a rolled-back save must not lose the photo files.
+    removedUrls.forEach(deleteProductImageFile);
+    return (await getProduct(id))!;
   },
 
   async deactivate(id: number) {

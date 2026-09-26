@@ -1,15 +1,15 @@
-import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ProductImageGallery } from '@/components/product-image-gallery';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
-import { pickAndPersistProductImage } from '@/lib/images';
+import type { ImageDraft } from '@/lib/domain/product-images';
 import { productSchema } from '@/lib/validations';
 
 export default function EditProductScreen() {
@@ -31,7 +31,8 @@ export default function EditProductScreen() {
   const [stock, setStock] = useState('0');
   const [minStock, setMinStock] = useState('0');
   const [warrantyMonths, setWarrantyMonths] = useState('');
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [images, setImages] = useState<ImageDraft[]>([]);
+  const [savedImages, setSavedImages] = useState<ImageDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
@@ -58,7 +59,9 @@ export default function EditProductScreen() {
           setStock(String(product.stock));
           setMinStock(String(product.minStock));
           setWarrantyMonths(product.warrantyMonths != null ? String(product.warrantyMonths) : '');
-          setImageUri(product.imageUri);
+          const loaded = product.images.map(({ url, isPrimary }) => ({ url, isPrimary }));
+          setImages(loaded);
+          setSavedImages(loaded);
         }
         setLoading(false);
       });
@@ -68,14 +71,7 @@ export default function EditProductScreen() {
     }, [productId]),
   );
 
-  async function handlePickImage() {
-    try {
-      const uri = await pickAndPersistProductImage();
-      if (uri) setImageUri(uri);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo seleccionar la imagen');
-    }
-  }
+  const savedUrls = useMemo(() => new Set(savedImages.map((image) => image.url)), [savedImages]);
 
   async function handleSubmit() {
     const parsed = productSchema.safeParse({
@@ -90,7 +86,6 @@ export default function EditProductScreen() {
       minStock: Number(minStock) || 0,
       warrantyMonths: warrantyMonths ? Number(warrantyMonths) : null,
       active,
-      imageUri,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Datos inválidos');
@@ -108,7 +103,7 @@ export default function EditProductScreen() {
           return;
         }
       }
-      await productsRepo.update(productId, parsed.data);
+      await productsRepo.update(productId, parsed.data, images);
       router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el producto');
@@ -144,17 +139,7 @@ export default function EditProductScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Pressable onPress={handlePickImage}>
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.image} />
-            ) : (
-              <ThemedView type="backgroundElement" style={styles.imagePlaceholder}>
-                <ThemedText themeColor="textSecondary" type="small">
-                  Toca para agregar foto
-                </ThemedText>
-              </ThemedView>
-            )}
-          </Pressable>
+          <ProductImageGallery images={images} onChange={setImages} onError={setError} savedUrls={savedUrls} />
 
           <ThemedText themeColor="textSecondary" type="small" style={styles.skuText}>
             SKU: {sku}
@@ -244,22 +229,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  image: {
-    width: 120,
-    height: 120,
-    borderRadius: Spacing.three,
-    alignSelf: 'center',
-    marginBottom: Spacing.two,
-  },
-  imagePlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: Spacing.three,
-    alignSelf: 'center',
-    marginBottom: Spacing.two,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   skuText: { textAlign: 'center', marginBottom: Spacing.three },
   input: {
     borderWidth: 1,
