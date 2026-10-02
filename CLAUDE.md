@@ -2095,10 +2095,52 @@ choca en la implementación):**
     (5 unidades) — el único número mal era el de `products.stock`, por el
     bug de arriba, no el ledger del vendedor.
   - Verificado: `npm run test` (129) + `npx tsc --noEmit` en verde (`npm
-    run lint`: el mismo error preexistente). **Pendiente**: que el
-    usuario corrija los dos productos de prueba y confirme; seguir con
-    más vendedores, ventas sin conexión, y el resto del checklist de
-    verificación de la Fase 10.
+    run lint`: el mismo error preexistente).
+  - **Bug de tooling encontrado al recargar la app tras el fix de arriba**:
+    Metro avisó `Require cycle: products-repo.ts -> inventory-repo.ts ->
+    products-repo.ts` — `products-repo.ts` importaba `recordProductMovement`
+    de `inventory-repo.ts`, que a su vez importa `productColumns`/
+    `toProduct` de `products-repo.ts`. Funcionaba (las dos llamadas están
+    dentro de funciones, no al cargar el módulo), pero no se dejó así.
+    Corregido sacando `recordProductMovement`/`recordSellerMovement` a un
+    archivo nuevo sin dependencias hacia ninguno de los dos,
+    `local/stock-movements.ts` — los 7 repos que los usaban (incluido
+    `inventory-repo.ts`) ahora importan directo de ahí. Verificado con
+    `npm run test` (129) + `npx tsc --noEmit` en verde.
+
+**Checklist pendiente para continuar la verificación de la Fase 10**
+(pensado para retomarse desde cualquier PC con este repo clonado — no
+depende de ninguna conversación anterior):
+
+1. **Corregir los dos productos de prueba ya sembrados mal en
+   producción** (`Rana` y `Gato`, ambos en `-5`): desde el celular del
+   dueño, Más → Inventario → abrir cada uno → Ajustar → `+10`, motivo
+   libre (ej. "Corrección de prueba") → sincronizar. Deben quedar en `5`
+   cada uno (10 inicial − 5 entregados). **El código ya está corregido**
+   (ver nota de arriba) — este paso es solo para arreglar los datos que
+   ya habían quedado mal con el código viejo; un producto nuevo creado
+   con stock inicial ya no tiene este problema.
+2. Con eso confirmado, seguir el resto del checklist de "Fase 10 —
+   Sincronización": un segundo vendedor, una venta sin conexión (modo
+   avión en el celular del vendedor, vender, reconectar, confirmar que
+   sincroniza), forzar una venta que deje el inventario del vendedor en
+   negativo y confirmar que **no** se bloquea (se acepta, por diseño) y
+   que aparece la tarjeta roja de stock negativo en `/admin` de la web.
+   Confirmar también una liquidación completa (vendedor con ventas +
+   pérdidas pendientes → liquidar → sube el saldo de la cuenta elegida).
+3. Acceso a producción: `https://icvariedades.com` (panel web) +
+   `ssh mivps` para el servidor (detalles de despliegue en el `CLAUDE.md`
+   del repo hermano `variedades-ic`, sección "Despliegue a producción
+   (VPS)"). Para revisar el estado del servidor sin tocar nada: `ssh
+   mivps` y consultar la base con `psql "$(grep -oP
+   "(?<=DATABASE_URL=).*" /var/www/variedades-ic/.env.local)"`.
+4. Si algo no sincroniza como se espera, el primer diagnóstico es
+   siempre: ¿llegó la operación al servidor? (`SELECT * FROM
+   sync_applied_operations ORDER BY created_at DESC LIMIT 20` en la base
+   de producción) — si no aparece ahí ni como `applied` ni como
+   `rejected`, el problema está en que el celular nunca la envió (revisar
+   "Sincronizar ahora" en Más → Configuración de ese celular), no en el
+   servidor.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
