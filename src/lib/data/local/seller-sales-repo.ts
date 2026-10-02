@@ -3,7 +3,7 @@ import { calculateCommission, type CommissionConfig } from "../../domain/commiss
 import { enqueueOperation } from "../../sync/outbox";
 import type { SellerSaleInput } from "../../validations";
 import type { SellerSale, SellerSaleItem, SellerSalesRepo } from "../seller-sales-repo";
-import { recordSellerMovement } from "./inventory-repo";
+import { recordSellerMovement } from "./stock-movements";
 import { db } from "./db";
 import { sellers, sellerSaleItems, sellerSales } from "./schema";
 

@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { enqueueOperation } from "../../sync/outbox";
 import type { SellerLossInput } from "../../validations";
 import type { SellerLoss, SellerLossItem, SellerLossesRepo } from "../seller-losses-repo";
-import { recordSellerMovement } from "./inventory-repo";
+import { recordSellerMovement } from "./stock-movements";
 import { db } from "./db";
 import { sellers, sellerLosses, sellerLossItems } from "./schema";
 

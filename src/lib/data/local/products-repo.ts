@@ -6,7 +6,7 @@ import { enqueueOperation } from "../../sync/outbox";
 import type { CreateProductInput, Product, ProductImage, ProductsRepo, UpdateProductInput } from "../products-repo";
 import type { Tx } from "./db";
 import { db } from "./db";
-import { recordProductMovement } from "./inventory-repo";
+import { recordProductMovement } from "./stock-movements";
 import { categories, productImages, products } from "./schema";
 
 // Select shape for any query that returns Product: every products column plus

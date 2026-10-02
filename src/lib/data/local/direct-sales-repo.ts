@@ -5,7 +5,7 @@ import type { DirectSale, DirectSaleItem, DirectSalesRepo } from "../direct-sale
 import { recordCashMovementTx } from "./cash-repo";
 import { db } from "./db";
 import { cashAccounts, directSaleItems, directSales } from "./schema";
-import { recordProductMovement } from "./inventory-repo";
+import { recordProductMovement } from "./stock-movements";
 
 function toItem(row: typeof directSaleItems.$inferSelect): DirectSaleItem {
   return {

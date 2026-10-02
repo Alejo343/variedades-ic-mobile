@@ -3,7 +3,7 @@ import { canTransitionPurchaseOrder, type PurchaseOrderStatus } from "../../doma
 import { enqueueOperation } from "../../sync/outbox";
 import type { PurchaseOrderInput } from "../../validations";
 import type { PurchaseOrder, PurchaseOrderItem, PurchaseOrdersRepo } from "../purchase-orders-repo";
-import { recordProductMovement } from "./inventory-repo";
+import { recordProductMovement } from "./stock-movements";
 import { db } from "./db";
 import { distributors, products, purchaseOrders, purchaseOrderItems } from "./schema";
 
