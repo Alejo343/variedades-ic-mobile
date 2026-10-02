@@ -1704,13 +1704,20 @@ choca en la implementación):**
   nunca en logins posteriores (ej. tras cerrar sesión) — el marcador
   vive en `expo-sqlite/kv-store` (no sensible), separado del token, para
   que sobreviva un logout.
-- `lib/sync/reset-local-db.ts#wipeLocalDatabase`: mismo patrón ya usado en
-  `more/backup.tsx` para importar un respaldo — `sqliteDb.closeAsync()` +
-  `SQLite.deleteDatabaseAsync()`, porque la conexión módulo de
-  `lib/data/local/db.ts` no se puede "reabrir" en caliente. Por eso, tras
-  el primer login, la pantalla pide cerrar y volver a abrir la app en vez
-  de mostrar los tabs de una vez — al reabrir, las migraciones recrean una
-  base vacía (el sub-paso 11 la llena con el primer pull).
+- **Revisión posterior (verificación en celulares reales, sesión
+  2026-10-02)**: la versión original de `wipeLocalDatabase` pedía cerrar y
+  volver a abrir la app tras el primer login — `sqliteDb.closeAsync()`
+  dejaba la conexión módulo de `lib/data/local/db.ts` sin forma de
+  "reabrirse" en caliente. Se cambió a `wipeAllTables()`
+  (`lib/data/local/db.ts`): borra las filas de todas las tablas en la
+  MISMA conexión ya abierta (sin tocar el archivo ni la conexión), así que
+  no hay nada que remontar y el primer login ya no pide reiniciar — pasa
+  directo a los tabs y el primer pull llena la base enseguida. `closeDb`/
+  `reopenDb` (también en `db.ts`) se quedan como el mecanismo que sí
+  necesita un reinicio en caliente (vía `generation`/`dbStore`, que
+  `app/_layout.tsx` usa para remontar y correr las migraciones de nuevo) —
+  lo sigue usando solo `more/backup.tsx#performImport`, que de verdad
+  reemplaza el archivo `.db` completo.
 - `components/login-screen.tsx` (componente, no ruta — mismo criterio que
   `app-tabs.tsx`) se muestra en vez de los tabs mientras no haya sesión;
   `app/_layout.tsx` decide cuál mostrar con `useSyncSession()`
@@ -2028,6 +2035,70 @@ choca en la implementación):**
     (Vender) para un vendedor; typecheck/tests no lo garantizan.
 - Verificado: `npm run test` (128) + `npx tsc --noEmit` en verde (`npm run
   lint`: el mismo error preexistente).
+- **Sub-paso 15 — en curso (sesión 2026-10-02): desplegado el servidor,
+  primera ronda de pruebas con dos celulares reales (dueño + vendedor1
+  contra producción).** Progreso: `git push` de los dos repos; en el VPS,
+  `git pull` + `npm ci` + `npm run build` + `pm2 restart` (las migraciones
+  corren solas al reiniciar, vía `instrumentation.ts`); zona horaria de
+  Postgres fijada a `America/Bogota`. **Dos problemas reales encontrados
+  al probar, ninguno del motor de sync en sí:**
+  1. **Bug de despliegue (no de código, de cómo Next.js lee `.env.local`)**:
+     al rotar `ADMIN_PASSWORD_HASH` del VPS y reiniciar, el login del
+     dueño empezó a fallar. Causa: `@next/env` (el cargador de variables
+     de Next, en build y en `next start`) expande `$NOMBRE` dentro de un
+     valor como si fuera una referencia a otra variable — un hash de
+     bcrypt como `$2b$12$Zx00…/y` se lee como tres referencias
+     indefinidas que se vacían, y solo sobrevive el `/y` final. El archivo
+     en disco queda intacto (se ve bien con `cat`); el bug es silencioso y
+     el login falla con el mismo mensaje genérico de siempre. Corrección:
+     escapar cada `$` como `\$` en `.env.local` (ya aplicado en el VPS y en
+     el `.env.local` local) + un `UPDATE users SET password_hash = …` a
+     mano para la fila que ya se había sembrado rota (`ownerSeedFromEnv`
+     no resiembra si ya existe un dueño). Documentado también en el
+     `CLAUDE.md` del repo web, sección "Despliegue a producción", con la
+     advertencia de escapar cualquier secreto futuro que pueda tener `$`.
+  2. **Bug de dominio real, encontrado al crear un producto con stock
+     inicial y entregárselo a un vendedor**: el servidor terminó con
+     `products.stock = -5` en vez de `5` (debía ser 10 inicial − 5
+     entregados). Causa: `products-repo.ts#create` escribía el stock
+     inicial como un campo suelto, sin ningún movimiento de
+     `inventory_movements` que lo respalde — funcionaba bien mientras el
+     dispositivo era la única fuente de verdad (Fases 1-9), pero
+     `upsertProduct` (sub-paso 7, parte 3a) **nunca toma el stock del
+     celular por diseño** (el servidor solo lo deriva de movimientos
+     reales), así que el producto nace en el servidor con stock 0 sin
+     importar lo que se haya escrito en el formulario — y la entrega
+     posterior descuenta de ese 0, no del 10 que el celular creía tener.
+     **Corregido** (con la aprobación del usuario sobre dos alternativas
+     presentadas): si el formulario de creación lleva un stock inicial
+     mayor a 0, `create()` inserta el producto con stock 0 y de inmediato
+     registra un movimiento `ajuste`/"Stock inicial" vía
+     `recordProductMovement` (mismo camino que un ajuste manual), que sí
+     encola `createInventoryAdjustment` — el servidor lo acepta porque es
+     un movimiento real, no un campo. El `upsertProduct` se sigue
+     encolando primero (sin tocar `stock`, igual que siempre); el ajuste
+     va justo después en la misma transacción, así que el producto ya
+     existe en el servidor cuando el ajuste intenta resolver su
+     `productUuid`. Test nuevo en `outbox-wiring.test.ts` (crear con
+     `stock: 7` → dos operaciones encoladas, `upsertProduct` sin `stock` +
+     `createInventoryAdjustment` con `quantityDelta: 7` y motivo "Stock
+     inicial"). Los dos productos de prueba ya sembrados rotos en
+     producción (`Rana`, `Gato`, ambos en `-5`) se corrigen igual, a mano,
+     desde el celular del dueño: un ajuste de `+10` en cada uno vía
+     Inventario → Ajustar (no se tocó la base de producción directo, para
+     no reintroducir el mismo problema de un número sin ledger real
+     detrás) — pendiente de que el usuario lo haga y confirme que quedan
+     en `5`.
+  - Aparte, se confirmó que el resto del ciclo sí funciona de punta a
+    punta en producción real: `createSellerDelivery` llegó, se aplicó, y
+    el pull del vendedor reflejó correctamente su inventario consignado
+    (5 unidades) — el único número mal era el de `products.stock`, por el
+    bug de arriba, no el ledger del vendedor.
+  - Verificado: `npm run test` (129) + `npx tsc --noEmit` en verde (`npm
+    run lint`: el mismo error preexistente). **Pendiente**: que el
+    usuario corrija los dos productos de prueba y confirme; seguir con
+    más vendedores, ventas sin conexión, y el resto del checklist de
+    verificación de la Fase 10.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

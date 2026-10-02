@@ -82,6 +82,30 @@ describe("cada repo local encola su operación (sub-paso 10)", async () => {
     expect(lastPayload()).toMatchObject({ uuid: catRow.uuid, active: false });
   });
 
+  it("crear un producto con stock inicial > 0 también encola un ajuste (el servidor nunca toma el stock del upsertProduct)", async () => {
+    const before = outboxCount();
+    const product = await localProductsRepo.create({ name: "Taza", slug: "taza", price: 10000, purchasePrice: 0, stock: 7, minStock: 0, active: true });
+    // Dos operaciones nuevas: upsertProduct (sin stock, como siempre) y, justo
+    // después, el ajuste que sí sincroniza el 7 inicial con un movimiento real.
+    expect(outboxCount()).toBe(before + 2);
+    const prodRow = raw.prepare("SELECT uuid, stock FROM products WHERE id = ?").get(product.id) as { uuid: string; stock: number };
+    expect(prodRow.stock).toBe(7);
+
+    const rows = raw.prepare("SELECT type, payload FROM sync_outbox ORDER BY id DESC LIMIT 2").all() as { type: string; payload: string }[];
+    const [adjustmentRow, upsertRow] = rows;
+    expect(upsertRow.type).toBe("upsertProduct");
+    expect(JSON.parse(upsertRow.payload)).not.toHaveProperty("stock");
+
+    expect(adjustmentRow.type).toBe("createInventoryAdjustment");
+    const movement = raw.prepare("SELECT uuid FROM inventory_movements ORDER BY id DESC LIMIT 1").get() as { uuid: string };
+    expect(JSON.parse(adjustmentRow.payload)).toMatchObject({
+      uuid: movement.uuid,
+      productUuid: prodRow.uuid,
+      quantityDelta: 7,
+      reason: "Stock inicial",
+    });
+  });
+
   it("ajuste de inventario: createInventoryAdjustment con el uuid del movimiento y del producto", async () => {
     await localInventoryRepo.recordAdjustment({ productId: 1, quantityDelta: 5, reason: "Conteo" });
     expect(last().type).toBe("createInventoryAdjustment");
@@ -169,8 +193,9 @@ describe("cada repo local encola su operación (sub-paso 10)", async () => {
   });
 
   it("el número total de operaciones encoladas coincide con el número de llamadas hechas arriba", async () => {
-    // 6 (catálogo) + 1 (ajuste) + 1 (caja) + 2 (ventas en local) + 1 (entrega)
-    // + 3 (venta/devolución/pérdida) + 2 (liquidación) + 4 (compras) = 20
-    expect(outboxCount()).toBe(20);
+    // 6 (catálogo) + 2 (producto con stock inicial) + 1 (ajuste) + 1 (caja)
+    // + 2 (ventas en local) + 1 (entrega) + 3 (venta/devolución/pérdida)
+    // + 2 (liquidación) + 4 (compras) = 22
+    expect(outboxCount()).toBe(22);
   });
 });

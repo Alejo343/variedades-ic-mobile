@@ -18,10 +18,7 @@ const EVER_LOGGED_IN_KEY = 'sync-ever-logged-in';
 
 export type Session = { token: string; user: SyncUser; seller: SyncSeller };
 export type SessionState = { status: 'authenticated'; session: Session } | { status: 'unauthenticated' };
-export type LoginResult =
-  | { ok: true; wipedLocalData: true; restartRequired: true }
-  | { ok: true; wipedLocalData: false; restartRequired: false }
-  | { ok: false; error: string };
+export type LoginResult = { ok: true } | { ok: false; error: string };
 
 export function shouldWipeOnLogin(hasLoggedInBefore: boolean): boolean {
   return !hasLoggedInBefore;
@@ -76,19 +73,16 @@ export const sessionStore = {
     Storage.setItemSync(EVER_LOGGED_IN_KEY, 'true');
 
     if (wipe) {
-      // The db connection this JS session holds becomes stale once the file
-      // it points to is deleted — same limitation as the backup import flow
-      // (lib/data/local's sqliteDb can't be "reopened" in place), so the app
-      // has to restart before it can read/write again. state stays
-      // unauthenticated in memory for THIS session on purpose: rendering the
-      // tabs now would try to query the now-closed connection.
+      // wipeLocalDatabase (lib/sync/reset-local-db.ts) just clears every
+      // table's rows on the already-open connection — the schema doesn't
+      // change, so it's safe to flip straight to "authenticated" below and
+      // let the sync engine's next pull repopulate everything.
       await wipeLocalDatabase();
-      return { ok: true, wipedLocalData: true, restartRequired: true };
     }
 
     state = { status: 'authenticated', session: { token, user, seller } };
     notify();
-    return { ok: true, wipedLocalData: false, restartRequired: false };
+    return { ok: true };
   },
 
   async logout(): Promise<void> {

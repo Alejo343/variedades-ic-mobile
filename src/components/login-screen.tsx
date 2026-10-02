@@ -19,7 +19,6 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [restartMessage, setRestartMessage] = useState<string | null>(null);
 
   async function handleSubmit() {
     if (!username.trim() || !password) {
@@ -35,31 +34,16 @@ export function LoginScreen() {
         setError(result.error);
         return;
       }
-      if (result.restartRequired) {
-        setRestartMessage('Todo listo. Cierra la app por completo y vuelve a abrirla para continuar.');
-      }
-      // If a restart isn't required, sessionStore already flipped to
-      // "authenticated" and app/_layout.tsx re-renders the tabs on its own —
-      // nothing else to do here.
+      // sessionStore already flipped to "authenticated" (and, on a device's
+      // first login, already swapped in a fresh local database — see
+      // db.ts#wipeAndReopenDb) — app/_layout.tsx re-renders the tabs on its
+      // own, nothing else to do here.
     } finally {
       setLoading(false);
     }
   }
 
   const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
-
-  if (restartMessage) {
-    return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-          <ThemedText type="greeting" style={styles.title}>
-            ¡Bienvenido!
-          </ThemedText>
-          <ThemedText style={styles.restartMessage}>{restartMessage}</ThemedText>
-        </SafeAreaView>
-      </ThemedView>
-    );
-  }
 
   return (
     <ThemedView style={styles.container}>
@@ -125,5 +109,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   error: { marginBottom: Spacing.two },
-  restartMessage: { textAlign: 'center', marginTop: Spacing.two },
 });

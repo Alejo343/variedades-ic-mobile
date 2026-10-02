@@ -6,6 +6,7 @@ import { enqueueOperation } from "../../sync/outbox";
 import type { CreateProductInput, Product, ProductImage, ProductsRepo, UpdateProductInput } from "../products-repo";
 import type { Tx } from "./db";
 import { db } from "./db";
+import { recordProductMovement } from "./inventory-repo";
 import { categories, productImages, products } from "./schema";
 
 // Select shape for any query that returns Product: every products column plus
@@ -181,6 +182,11 @@ export const localProductsRepo: ProductsRepo = {
   async create(data: CreateProductInput, images?: ImageDraft[]) {
     const sku = await generateSku(data.categoryId);
     const id = await db.transaction(async (tx) => {
+      // Inserted with stock 0 regardless of `data.stock` — the server's
+      // upsertProduct handler never takes stock from the phone (CLAUDE.md,
+      // "Fase 10": it's always derived from movements, never a raw field).
+      // A nonzero initial stock gets its own "ajuste" movement right below
+      // instead, so it has a real ledger entry the server actually accepts.
       const [row] = await tx
         .insert(products)
         .values({
@@ -192,7 +198,7 @@ export const localProductsRepo: ProductsRepo = {
           purchasePrice: data.purchasePrice ?? 0,
           categoryId: data.categoryId ?? null,
           distributorCode: data.distributorCode ?? null,
-          stock: data.stock ?? 0,
+          stock: 0,
           minStock: data.minStock ?? 0,
           warrantyMonths: data.warrantyMonths ?? null,
           active: data.active ?? true,
@@ -200,6 +206,24 @@ export const localProductsRepo: ProductsRepo = {
         .returning();
       if (images) await replaceImages(tx, row.id, images);
       await enqueueOperation(tx, "upsertProduct", await buildUpsertProductPayload(tx, row));
+
+      if (data.stock && data.stock > 0) {
+        const { productUuid, movementUuid, movementCreatedAt } = await recordProductMovement(tx, {
+          productId: row.id,
+          quantityDelta: data.stock,
+          type: "ajuste",
+          reason: "Stock inicial",
+          sourceType: "manual",
+        });
+        await enqueueOperation(tx, "createInventoryAdjustment", {
+          uuid: movementUuid,
+          productUuid,
+          quantityDelta: data.stock,
+          reason: "Stock inicial",
+          occurredAt: movementCreatedAt,
+        });
+      }
+
       return row.id;
     });
     return (await getProduct(id))!;

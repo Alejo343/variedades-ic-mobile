@@ -9,7 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useSyncSession } from '@/hooks/use-sync-session';
-import { sqliteDb } from '@/lib/data/local/db';
+import { closeDb, reopenDb, sqliteDb } from '@/lib/data/local/db';
 
 const DB_NAME = 'variedades-ic.db';
 
@@ -59,12 +59,16 @@ export default function BackupScreen() {
         return;
       }
 
-      await sqliteDb.closeAsync();
+      await closeDb();
       const destination = liveDbFile();
       if (destination.exists) destination.delete();
       picked.result.copy(destination);
+      // Opens a fresh connection to the just-replaced file and bumps db.ts's
+      // generation counter, which app/_layout.tsx uses to remount and re-run
+      // migrations — no need to ask the user to close and reopen the app.
+      await reopenDb();
 
-      setMessage('Respaldo importado. Cierra y vuelve a abrir la app para ver los datos restaurados.');
+      setMessage('Respaldo importado.');
     } catch (e) {
       setMessage(e instanceof Error ? `Error: ${e.message}` : 'No se pudo importar el respaldo');
     } finally {
