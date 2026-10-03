@@ -20,8 +20,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("pushPendingOperations", async () => {
-  const { pushPendingOperations } = await import("./push-engine");
+const { pushPendingOperations, retryRejection } = await import("./push-engine");
+
+describe("pushPendingOperations", () => {
 
   it("aplicada y rechazada se resuelven; rechazada queda visible con el mensaje del servidor", async () => {
     seedOutbox("op-1", "upsertCategory", { uuid: "op-1", name: "X" });
@@ -77,5 +78,41 @@ describe("pushPendingOperations", async () => {
     const summary = await pushPendingOperations("tok");
     expect(summary.applied).toBe(1);
     expect(outboxOpIds()).toEqual([]);
+  });
+});
+
+// retryRejection (bug real encontrado en vivo, sesión 2026-10-03): un
+// rechazo que ya consumió su opId original no se reenvía solo — esto lo
+// reencola bajo uno nuevo, arreglando el formato de fecha si esa fue la
+// causa (new Date().toISOString() en vez del formato de SQLite).
+describe("retryRejection", () => {
+  it("reencola corrigiendo una fecha con formato ISO y quita el rechazo", async () => {
+    const rejectedPayload = { uuid: "stl-1", accountUuid: "acc-1", settledAt: "2026-10-03T16:30:00.000Z" };
+    raw.exec(
+      `INSERT INTO sync_rejections (op_id, type, payload, error) VALUES ('old-op', 'markSettlementSettled', '${JSON.stringify(rejectedPayload)}', 'Fecha con formato inválido')`,
+    );
+    const [rejection] = raw.prepare("SELECT id FROM sync_rejections").all() as { id: number }[];
+
+    await retryRejection(rejection.id);
+
+    expect(raw.prepare("SELECT * FROM sync_rejections").all()).toEqual([]);
+    const [queued] = raw.prepare("SELECT op_id, type, payload FROM sync_outbox").all() as { op_id: string; type: string; payload: string }[];
+    expect(queued.type).toBe("markSettlementSettled");
+    expect(queued.op_id).not.toBe("old-op");
+    const payload = JSON.parse(queued.payload);
+    expect(payload).toMatchObject({ uuid: "stl-1", accountUuid: "acc-1", settledAt: "2026-10-03 16:30:00" });
+  });
+
+  it("no toca un campo que no tiene la forma ISO con milisegundos y Z", async () => {
+    const rejectedPayload = { uuid: "x", periodDate: "2026-10-03", reason: "Producto no existe en el servidor" };
+    raw.exec(
+      `INSERT INTO sync_rejections (op_id, type, payload, error) VALUES ('old-op-2', 'createSettlement', '${JSON.stringify(rejectedPayload)}', 'algo distinto')`,
+    );
+    const [rejection] = raw.prepare("SELECT id FROM sync_rejections").all() as { id: number }[];
+
+    await retryRejection(rejection.id);
+
+    const [queued] = raw.prepare("SELECT payload FROM sync_outbox").all() as { payload: string }[];
+    expect(JSON.parse(queued.payload)).toEqual(rejectedPayload);
   });
 });

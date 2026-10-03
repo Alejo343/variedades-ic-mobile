@@ -2212,10 +2212,36 @@ de uso puramente local (nunca viajaban, por eso nunca se notó).
   `occurredAt` de `markInTransit`, para que este tipo de regresión no
   vuelva a pasar desapercibido.
 - Verificado: `npm run test` (133/133) + `npx tsc --noEmit` en verde
+  (`npm run lint`: el mismo error preexistente).
+- **Hallazgo al pedirle al usuario que reintentara**: ya no se podía —
+  el intento fallido (antes del fix) ya había consumido su `opId` como
+  `rejected` y, encima, la liquidación local ya había pasado a estado
+  `"liquidada"` en el celular (el guardado local siempre ocurre aunque
+  el push después falle), así que la pantalla ya no mostraba ni el
+  selector de cuenta ni el botón — no había ninguna forma de volver a
+  intentarlo desde la UI normal. Mismo problema le pasaría a cualquier
+  operación rechazada por un bug que se corrige después.
+- **Corregido con una herramienta general, no un parche puntual**:
+  `push-engine.ts#retryRejection(id)` (nuevo) reencola el payload de un
+  rechazo bajo un `opId` nuevo — pero antes le aplica
+  `fixKnownTimestampBug`, que busca campos de texto con la forma exacta
+  `"...T...Z"` (el bug de arriba) y los reescribe con
+  `toSqliteUtcTimestamp`; cualquier otro campo, o un rechazo por un
+  motivo real distinto, vuelve intacto y fallará de nuevo igual (no es
+  un "arregla cualquier cosa"). Botón "Reintentar" nuevo en Más →
+  Configuración, junto a "Descartar" en la lista de rechazos — sincroniza
+  de una vez al tocarlo. Usado para corregir la liquidación atascada del
+  celular del dueño en esta misma sesión.
+- Test nuevo en `push-engine.test.ts`: corrige un `settledAt` con forma
+  ISO y lo reencola con un `opId` distinto al original, quitando el
+  rechazo; un campo que no tiene esa forma exacta (`periodDate`, un
+  mensaje de error cualquiera) vuelve sin tocar.
+- Verificado: `npm run test` (135/135) + `npx tsc --noEmit` en verde
   (`npm run lint`: el mismo error preexistente). **Pendiente**: que el
-  usuario reintente "Marcar como liquidada" en el celular — con el fix
-  ya en el repo pero todavía sin recargar en su celular en el momento en
-  que se escribe esto.
+  usuario, desde el celular del dueño, recargue la app, vaya a Más →
+  Configuración, toque "Reintentar" en el rechazo de la liquidación, y
+  confirme que esta vez queda `liquidada` también en el servidor (el
+  saldo de "Efectivo" debería subir en $55.000).
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

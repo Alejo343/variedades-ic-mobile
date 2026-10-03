@@ -13,7 +13,7 @@ import { formatRelativeTime } from '@/lib/format';
 import { getLastSyncAt, resetCursor } from '@/lib/sync/cursor';
 import { runSync, syncEngineStore } from '@/lib/sync/engine';
 import { pendingStore } from '@/lib/sync/pending';
-import { dismissRejection, listRejections } from '@/lib/sync/push-engine';
+import { dismissRejection, listRejections, retryRejection } from '@/lib/sync/push-engine';
 import { sessionStore } from '@/lib/sync/session';
 import type { ThemePreference } from '@/lib/theme-preference';
 
@@ -61,6 +61,14 @@ function SyncSection() {
   async function handleDismiss(id: number) {
     await dismissRejection(id);
     reload();
+  }
+
+  // Un rechazo de antes de un fix de código no se reenvía solo — su opId
+  // original ya quedó consumido. Esto lo reencola bajo uno nuevo (con el
+  // único arreglo conocido, el bug de formato de fecha) y sincroniza de una.
+  async function handleRetry(id: number) {
+    await retryRejection(id);
+    await handleSync();
   }
 
   // Herramienta de rescate (bug real encontrado en vivo, sesión 2026-10-03):
@@ -115,6 +123,9 @@ function SyncSection() {
                 <ThemedText type="small">{r.type}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">{r.error}</ThemedText>
               </ThemedView>
+              <Pressable onPress={() => handleRetry(r.id)}>
+                <ThemedText type="small" themeColor="textSecondary">Reintentar</ThemedText>
+              </Pressable>
               <Pressable onPress={() => handleDismiss(r.id)}>
                 <ThemedText type="small" themeColor="textSecondary">Descartar</ThemedText>
               </Pressable>
