@@ -161,8 +161,12 @@ describe("cada repo local encola su operación (sub-paso 10)", async () => {
 
     await localSettlementsRepo.markSettled(settlement.id, accountId);
     expect(last().type).toBe("markSettlementSettled");
-    const payload = lastPayload<{ accountUuid: string; cashMovementUuid?: string }>();
+    const payload = lastPayload<{ accountUuid: string; settledAt: string; cashMovementUuid?: string }>();
     expect(payload.accountUuid).toBe("acc-1");
+    // Bug real (sesión 2026-10-03): esto llegaba como "...T...Z"
+    // (new Date().toISOString()) y el servidor lo rechazaba — debe quedar
+    // en el mismo formato que usa el resto de la sync, "YYYY-MM-DD HH:MM:SS".
+    expect(payload.settledAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     // This seller had no pending sales left after the previous test drained
     // them into the settlement above, so amountDue could be either sign —
     // just confirm the field is present only when there is something to pay.
@@ -176,7 +180,11 @@ describe("cada repo local encola su operación (sub-paso 10)", async () => {
 
     await localPurchaseOrdersRepo.markInTransit(order.id);
     expect(last().type).toBe("transitionPurchaseOrder");
-    expect(lastPayload()).toMatchObject({ to: "en_viaje" });
+    const inTransitPayload = lastPayload<{ to: string; occurredAt: string }>();
+    expect(inTransitPayload.to).toBe("en_viaje");
+    // Mismo bug que markSettlementSettled.settledAt — occurredAt viene de
+    // updatedAt, que debe quedar en el formato de SQLite, no ISO con "T"/"Z".
+    expect(inTransitPayload.occurredAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
 
     await localPurchaseOrdersRepo.markReceived(order.id);
     expect(last().type).toBe("transitionPurchaseOrder");

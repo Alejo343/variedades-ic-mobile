@@ -1,5 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { canTransitionPurchaseOrder, type PurchaseOrderStatus } from "../../domain/order-status";
+import { toSqliteUtcTimestamp } from "../../format";
 import { enqueueOperation } from "../../sync/outbox";
 import type { PurchaseOrderInput } from "../../validations";
 import type { PurchaseOrder, PurchaseOrderItem, PurchaseOrdersRepo } from "../purchase-orders-repo";
@@ -113,9 +114,12 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
       if (!existing) throw new Error("Pedido no encontrado");
       requireTransition(existing.status as PurchaseOrderStatus, "en_viaje");
 
+      // toSqliteUtcTimestamp, no new Date().toISOString() — updatedAt feeds
+      // occurredAt below, straight into the outbox payload (same bug as
+      // settlements-repo.ts#markSettled, found live sesión 2026-10-03).
       const [row] = await tx
         .update(purchaseOrders)
-        .set({ status: "en_viaje", updatedAt: new Date().toISOString() })
+        .set({ status: "en_viaje", updatedAt: toSqliteUtcTimestamp(new Date()) })
         .where(eq(purchaseOrders.id, id))
         .returning();
       const items = await tx.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));
@@ -144,7 +148,7 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
 
       const [row] = await tx
         .update(purchaseOrders)
-        .set({ status: "recibido", updatedAt: new Date().toISOString() })
+        .set({ status: "recibido", updatedAt: toSqliteUtcTimestamp(new Date()) })
         .where(eq(purchaseOrders.id, id))
         .returning();
       await enqueueOperation(tx, "transitionPurchaseOrder", {
@@ -165,7 +169,7 @@ export const localPurchaseOrdersRepo: PurchaseOrdersRepo = {
 
       const [row] = await tx
         .update(purchaseOrders)
-        .set({ status: "cancelado", updatedAt: new Date().toISOString() })
+        .set({ status: "cancelado", updatedAt: toSqliteUtcTimestamp(new Date()) })
         .where(eq(purchaseOrders.id, id))
         .returning();
       const items = await tx.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, id));

@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { calculateSettlement } from "../../domain/settlement";
 import { canTransitionSettlement, type SettlementStatus } from "../../domain/settlement-status";
+import { toSqliteUtcTimestamp } from "../../format";
 import { enqueueOperation } from "../../sync/outbox";
 import type { SettlementInput } from "../../validations";
 import type { Settlement, SettlementPreview, SettlementsRepo } from "../settlements-repo";
@@ -124,9 +125,12 @@ export const localSettlementsRepo: SettlementsRepo = {
       const account = await tx.query.cashAccounts.findFirst({ where: eq(cashAccounts.id, accountId), columns: { uuid: true } });
       if (!account) throw new Error("Cuenta no encontrada");
 
+      // toSqliteUtcTimestamp, no new Date().toISOString() — settledAt goes
+      // straight into the outbox payload below, and the server's schema
+      // rejects the "T...Z" shape (bug found live, sesión 2026-10-03).
       const [row] = await tx
         .update(settlements)
-        .set({ status: "liquidada", settledAt: new Date().toISOString() })
+        .set({ status: "liquidada", settledAt: toSqliteUtcTimestamp(new Date()) })
         .where(eq(settlements.id, id))
         .returning();
 

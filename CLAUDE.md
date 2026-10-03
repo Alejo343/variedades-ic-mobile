@@ -2178,6 +2178,45 @@ antes.
   (131/131) + `npx tsc --noEmit` en verde (`npm run lint`: el mismo error
   preexistente).
 
+**Segundo bug real encontrado en la misma liquidación (sesión
+2026-10-03), ya corregido**: una vez arregladas las cuentas, "Marcar
+como liquidada" sí llamaba al servidor, pero este la rechazaba con
+"Fecha con formato inválido". Causa: `settlements-repo.ts#markSettled`
+armaba `settledAt` con `new Date().toISOString()`
+(`"2026-10-03T16:30:00.000Z"`), y el esquema del servidor
+(`utcTimestamp`) exige el mismo formato que ya usa el resto de la sync,
+`"YYYY-MM-DD HH:MM:SS"` (el que SQLite escribe solo en sus columnas
+`createdAt`). La distinción exacta: cualquier timestamp que viene de una
+columna `createdAt` (con default `CURRENT_TIMESTAMP`) ya tenía el
+formato correcto sin querer — el bug solo afecta a los campos armados a
+mano en JS con `new Date()` para mandarlos directo en un payload de
+sync, que antes de la Fase 10 solo se guardaban en columnas `updatedAt`
+de uso puramente local (nunca viajaban, por eso nunca se notó).
+- Se encontró un **segundo sitio con el mismo patrón, todavía sin
+  disparar** (nadie había probado una transición de pedido de compra con
+  sync activo): las tres transiciones de `purchase-orders-repo.ts`
+  (`markInTransit`/`markReceived`/`cancel`) arman `occurredAt` a partir
+  de `row.updatedAt`, escrito con el mismo `new Date().toISOString()` —
+  mismo bug en potencia, corregido a la vez.
+- **Corrección**: `lib/format.ts#toSqliteUtcTimestamp(date)` (nueva, con
+  test) — inversa de `parseSqliteDate` ya existente, formatea un `Date`
+  exactamente como SQLite escribe sus columnas `createdAt`. Los cuatro
+  sitios afectados (`markSettled`'s `settledAt` + las tres transiciones
+  de `purchase-orders-repo.ts`) la usan ahora en vez de
+  `new Date().toISOString()` — el resto de los `updatedAt: new
+  Date().toISOString()` del proyecto (categorías, productos, vendedores,
+  distribuidores, cuentas) no se tocaron porque esos nunca viajan en un
+  payload de sync, no tenían el bug.
+- `outbox-wiring.test.ts` gana una aserción de formato (regex
+  `/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/`) en `settledAt` y en el
+  `occurredAt` de `markInTransit`, para que este tipo de regresión no
+  vuelva a pasar desapercibido.
+- Verificado: `npm run test` (133/133) + `npx tsc --noEmit` en verde
+  (`npm run lint`: el mismo error preexistente). **Pendiente**: que el
+  usuario reintente "Marcar como liquidada" en el celular — con el fix
+  ya en el repo pero todavía sin recargar en su celular en el momento en
+  que se escribe esto.
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,

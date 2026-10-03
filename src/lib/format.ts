@@ -20,6 +20,19 @@ function parseSqliteDate(value: string): Date {
   return new Date(iso.endsWith('Z') ? iso : `${iso}Z`);
 }
 
+// Inverse of parseSqliteDate above — formats a Date as the same shape SQLite
+// itself writes for a CURRENT_TIMESTAMP-backed createdAt column:
+// 'YYYY-MM-DD HH:MM:SS', UTC, no timezone marker. Needed because
+// `new Date().toISOString()`'s 'T...Z' shape doesn't match the server's
+// utcTimestamp schema (CLAUDE.md, "Fase 10") — any outbox payload field
+// built from a JS-generated timestamp (not one SQLite already wrote, like
+// updatedAt before Fase 10) must go through this, or the server rejects the
+// operation with "Fecha con formato inválido" (bug found live, sesión
+// 2026-10-03: settlements-repo.ts#markSettled's settledAt).
+export function toSqliteUtcTimestamp(date: Date): string {
+  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
+}
+
 export function formatRelativeTime(value: string): string {
   const diffMs = Date.now() - parseSqliteDate(value).getTime();
   const diffMin = Math.floor(diffMs / 60000);
