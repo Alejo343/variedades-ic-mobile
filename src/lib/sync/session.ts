@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Storage } from 'expo-sqlite/kv-store';
 import { loginRequest, logoutRequest, type SyncSeller, type SyncUser } from './api';
+import { resetCursor } from './cursor';
 import { wipeLocalDatabase } from './reset-local-db';
 
 // Session store for the phone's sync login (sub-paso 9). Same
@@ -76,8 +77,13 @@ export const sessionStore = {
       // wipeLocalDatabase (lib/sync/reset-local-db.ts) just clears every
       // table's rows on the already-open connection — the schema doesn't
       // change, so it's safe to flip straight to "authenticated" below and
-      // let the sync engine's next pull repopulate everything.
+      // let the sync engine's next pull repopulate everything. resetCursor
+      // is what actually makes that repopulation start from zero — without
+      // it, a stale cursor from any earlier sync (even a partial or failed
+      // one) would make the next pull skip every row below it (bug found
+      // live, see cursor.ts).
       await wipeLocalDatabase();
+      resetCursor();
     }
 
     state = { status: 'authenticated', session: { token, user, seller } };

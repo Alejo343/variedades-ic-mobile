@@ -2142,6 +2142,42 @@ depende de ninguna conversación anterior):
    "Sincronizar ahora" en Más → Configuración de ese celular), no en el
    servidor.
 
+**Bug real encontrado durante el checklist (sesión 2026-10-03), ya
+corregido**: al liquidar, "Marcar como liquidada" no hacía nada —
+`accountId` seguía en `null` porque el picker de cuentas (Efectivo/
+Transferencia) aparecía vacío en el celular del dueño. Causa, nada que
+ver con la pantalla de liquidación en sí: las `cash_accounts` del
+servidor (con `sync_version` 1 y 2, de las más bajas de todo el sistema)
+nunca habían llegado a ese dispositivo. El cursor de sync
+(`lib/sync/cursor.ts`, en `expo-sqlite/kv-store`) **sobrevivía** al
+borrado del primer login (`wipeAllTables()` solo limpia las tablas de
+Drizzle, nunca toca kv-store) — si ese celular ya había hecho cualquier
+sync antes (aunque fuera parcial, contra otro servidor, o de una sesión
+de pruebas previa), su cursor quedó en un número alto, y el pull
+siguiente arrancaba desde ahí, saltándose de entrada cualquier fila de
+versión menor. No es exclusivo de `cash_accounts` — le puede pasar a
+cualquier tabla, en cualquier dispositivo que borre sus datos locales
+(primer login, o importar un respaldo) después de haber sincronizado
+antes.
+- **Corregido**: `cursor.ts#resetCursor()` (nuevo) se llama ahora en los
+  dos puntos donde los datos locales se reemplazan por completo —
+  `session.ts#login` (el wipe del primer login) y
+  `more/backup.tsx#performImport` (importar un respaldo) — así el
+  siguiente pull siempre arranca desde cero cuando corresponde, en vez de
+  confiar en un cursor que puede ser viejo.
+- **Herramienta de rescate agregada**, para este caso y cualquier futuro
+  parecido sin tener que cerrar sesión: botón "Forzar resincronización
+  completa" en Más → Configuración, debajo de "Sincronizar ahora" —
+  llama `resetCursor()` + `runSync()`. No destructivo (el pull hace
+  upsert por `uuid`, nunca duplica lo que ya está), solo puede tardar más
+  por traer todo de nuevo. Usado para corregir el celular del dueño en
+  esta misma sesión.
+- Test nuevo `cursor.test.ts` (`resetCursor` vuelve el cursor a 0 sin
+  importar en qué quedó) + `session.test.ts` (el primer login llama a
+  `resetCursor` exactamente una vez). Verificado con `npm run test`
+  (131/131) + `npx tsc --noEmit` en verde (`npm run lint`: el mismo error
+  preexistente).
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,

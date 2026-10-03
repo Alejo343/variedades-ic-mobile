@@ -10,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useSyncSession } from '@/hooks/use-sync-session';
 import { closeDb, reopenDb, sqliteDb } from '@/lib/data/local/db';
+import { resetCursor } from '@/lib/sync/cursor';
 
 const DB_NAME = 'variedades-ic.db';
 
@@ -67,6 +68,11 @@ export default function BackupScreen() {
       // generation counter, which app/_layout.tsx uses to remount and re-run
       // migrations — no need to ask the user to close and reopen the app.
       await reopenDb();
+      // The restored file's data has nothing to do with wherever this
+      // device's sync cursor was pointing — without resetting it, the next
+      // pull would skip everything below that stale point (same bug as
+      // session.ts's first-login wipe, see cursor.ts).
+      resetCursor();
 
       setMessage('Respaldo importado.');
     } catch (e) {

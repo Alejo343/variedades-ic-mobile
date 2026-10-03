@@ -27,6 +27,19 @@ export function setCursor(value: number): void {
   }
 }
 
+// Bug real encontrado en vivo (sesión 2026-10-03): el cursor vive en
+// kv-store, que NINGÚN flujo que reemplaza los datos locales (el wipe del
+// primer login, importar un respaldo) toca — así que un dispositivo que ya
+// había sincronizado antes (aunque fuera parcial o contra otro servidor)
+// arrancaba el siguiente pull desde ese cursor viejo, saltándose de
+// entrada cualquier fila con una versión menor (p. ej. las cuentas de caja,
+// sembradas con las versiones más bajas de todo el sistema). Debe llamarse
+// SIEMPRE que los datos locales se reemplacen por completo, para que el
+// siguiente pull vuelva a traer todo desde cero.
+export function resetCursor(): void {
+  setCursor(0);
+}
+
 export function getLastSyncAt(): string | null {
   try {
     return Storage.getItemSync(LAST_SYNC_KEY);

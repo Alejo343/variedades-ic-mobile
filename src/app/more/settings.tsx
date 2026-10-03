@@ -10,7 +10,7 @@ import { useThemePreference } from '@/hooks/use-app-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSyncSession } from '@/hooks/use-sync-session';
 import { formatRelativeTime } from '@/lib/format';
-import { getLastSyncAt } from '@/lib/sync/cursor';
+import { getLastSyncAt, resetCursor } from '@/lib/sync/cursor';
 import { runSync, syncEngineStore } from '@/lib/sync/engine';
 import { pendingStore } from '@/lib/sync/pending';
 import { dismissRejection, listRejections } from '@/lib/sync/push-engine';
@@ -63,6 +63,28 @@ function SyncSection() {
     reload();
   }
 
+  // Herramienta de rescate (bug real encontrado en vivo, sesión 2026-10-03):
+  // un dispositivo que ya había sincronizado antes (aunque fuera parcial)
+  // conserva su cursor aunque se borren los datos locales — esto fuerza un
+  // pull completo desde cero sin tocar nada local (upsert por uuid, no
+  // destructivo), para cuando algo que debería haber llegado no llegó.
+  function handleForceResync() {
+    Alert.alert(
+      'Resincronización completa',
+      'Vuelve a descargar todos los datos del servidor desde cero. No borra nada de este celular — solo puede tardar más de lo normal.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Resincronizar',
+          onPress: async () => {
+            resetCursor();
+            await handleSync();
+          },
+        },
+      ],
+    );
+  }
+
   return (
     <>
       <ThemedText type="small">Sincronización</ThemedText>
@@ -73,6 +95,11 @@ function SyncSection() {
       <Pressable onPress={handleSync} disabled={running} style={styles.syncButton}>
         <ThemedView type="backgroundSelected" style={styles.optionButton}>
           {running ? <ActivityIndicator /> : <ThemedText type="linkPrimary">Sincronizar ahora</ThemedText>}
+        </ThemedView>
+      </Pressable>
+      <Pressable onPress={handleForceResync} disabled={running} style={styles.syncButton}>
+        <ThemedView type="backgroundElement" style={styles.optionButton}>
+          <ThemedText>Forzar resincronización completa</ThemedText>
         </ThemedView>
       </Pressable>
       {message && <ThemedText style={styles.syncMessage}>{message}</ThemedText>}
