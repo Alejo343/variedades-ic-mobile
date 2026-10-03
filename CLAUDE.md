@@ -2237,11 +2237,35 @@ de uso puramente local (nunca viajaban, por eso nunca se notó).
   rechazo; un campo que no tiene esa forma exacta (`periodDate`, un
   mensaje de error cualquiera) vuelve sin tocar.
 - Verificado: `npm run test` (135/135) + `npx tsc --noEmit` en verde
+  (`npm run lint`: el mismo error preexistente).
+- **El usuario ya había descartado el rechazo antes de ver el botón
+  "Reintentar"** — sin la fila en `sync_rejections`, ese botón ya no
+  tenía nada que reencolar. "Sincronizar ahora" tampoco hacía nada: la
+  liquidación ya estaba `"liquidada"` localmente (ese guardado ocurre
+  siempre, incluso si el push después falla) y no quedaba ninguna
+  operación pendiente en la cola para esa liquidación en absoluto.
+- **Corregido con una tercera herramienta de recuperación, más
+  específica**: `SettlementsRepo#resyncSettled(id)` (nuevo) reconstruye
+  el mensaje `markSettlementSettled` desde los datos que YA existen en
+  el dispositivo (la propia liquidación, el movimiento de caja que
+  `markSettled` ya había insertado localmente con `sourceType:
+  'settlement'`, y la cuenta de ese movimiento) y lo reencola bajo un
+  `opId` nuevo — corrige de paso el `settledAt` guardado si todavía
+  tiene la forma `"...T...Z"` vieja. Botón nuevo en la pantalla de
+  detalle de la liquidación ("¿No se refleja en la web? Reenviar
+  sincronización"), visible solo cuando el estado ya es `"liquidada"` —
+  reenviar una que el servidor ya tiene es inofensivo, se rechaza limpio
+  (sin transición válida de `liquidada` a `liquidada`).
+- Dos tests nuevos en `settlements-repo.test.ts`: reencola con los
+  mismos datos tras borrar a mano la operación original de la cola
+  (simulando el rechazo ya descartado); falla con un mensaje claro si la
+  liquidación todavía no está en estado `liquidada`.
+- Verificado: `npm run test` (137/137) + `npx tsc --noEmit` en verde
   (`npm run lint`: el mismo error preexistente). **Pendiente**: que el
-  usuario, desde el celular del dueño, recargue la app, vaya a Más →
-  Configuración, toque "Reintentar" en el rechazo de la liquidación, y
-  confirme que esta vez queda `liquidada` también en el servidor (el
-  saldo de "Efectivo" debería subir en $55.000).
+  usuario, desde el celular del dueño, recargue la app, abra la
+  liquidación (ya "liquidada" localmente) y toque "Reenviar
+  sincronización", luego "Sincronizar ahora" en Configuración — y
+  confirme que el saldo de "Efectivo" sube $55.000 en el servidor.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

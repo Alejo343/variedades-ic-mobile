@@ -8,7 +8,7 @@ import type { Settlement, SettlementPreview, SettlementsRepo } from "../settleme
 import { recordCashMovementTx } from "./cash-repo";
 import { db } from "./db";
 import type { Tx } from "./db";
-import { cashAccounts, sellerLossItems, sellerLosses, sellers, sellerSales, settlements } from "./schema";
+import { cashAccounts, cashMovements, sellerLossItems, sellerLosses, sellers, sellerSales, settlements } from "./schema";
 
 function toSettlement(row: typeof settlements.$inferSelect): Settlement {
   return {
@@ -155,6 +155,41 @@ export const localSettlementsRepo: SettlementsRepo = {
       });
 
       return toSettlement(row);
+    });
+  },
+
+  async resyncSettled(id: number) {
+    await db.transaction(async (tx) => {
+      const settlement = await tx.query.settlements.findFirst({ where: eq(settlements.id, id) });
+      if (!settlement) throw new Error("Liquidación no encontrada");
+      if (settlement.status !== "liquidada") throw new Error("Esta liquidación no está liquidada todavía");
+
+      // Normalizes it in passing: a settlement written by the buggy
+      // version of markSettled still has settledAt in "...T...Z" shape,
+      // stuck that way until something rewrites it.
+      const settledAt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(settlement.settledAt ?? "")
+        ? (settlement.settledAt as string)
+        : toSqliteUtcTimestamp(new Date(settlement.settledAt ?? Date.now()));
+      if (settledAt !== settlement.settledAt) {
+        await tx.update(settlements).set({ settledAt }).where(eq(settlements.id, id));
+      }
+
+      const movement = await tx.query.cashMovements.findFirst({
+        where: and(eq(cashMovements.sourceType, "settlement"), eq(cashMovements.sourceId, id)),
+      });
+      const account = movement
+        ? await tx.query.cashAccounts.findFirst({ where: eq(cashAccounts.id, movement.accountId), columns: { uuid: true } })
+        : null;
+      // accountUuid is required by the server's schema — fail clearly here
+      // instead of sending undefined and getting a less useful rejection.
+      if (!account) throw new Error("No se encontró la cuenta de esta liquidación — no se puede reenviar");
+
+      await enqueueOperation(tx, "markSettlementSettled", {
+        settlementUuid: settlement.uuid,
+        accountUuid: account.uuid,
+        settledAt,
+        cashMovementUuid: movement?.uuid,
+      });
     });
   },
 };

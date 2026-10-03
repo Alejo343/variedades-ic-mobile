@@ -60,6 +60,24 @@ export default function SettlementDetailScreen() {
     }
   }
 
+  // Recuperación (bug real, sesión 2026-10-03): si el primer intento de
+  // marcar como liquidada se rechazó por algo ya corregido (ej. el formato
+  // de fecha) y el rechazo ya se descartó, no queda nada en la cola para
+  // reintentar — el estado local ya pasó a "liquidada" de todas formas. Esto
+  // reconstruye y reencola la misma operación desde los datos que ya existen.
+  async function handleResync() {
+    setSaving(true);
+    setError(null);
+    try {
+      await settlementsRepo.resyncSettled(settlementId);
+      setError('Reenviada — ve a Configuración y toca "Sincronizar ahora".');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo reenviar');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading || !settlement) {
     return (
       <ThemedView style={styles.container}>
@@ -135,6 +153,16 @@ export default function SettlementDetailScreen() {
               </ThemedView>
             </Pressable>
           </>
+        ) : null}
+
+        {settlement.status === 'liquidada' && !isSeller ? (
+          <Pressable onPress={handleResync} disabled={saving}>
+            <ThemedView type="backgroundElement" style={styles.submitButton}>
+              <ThemedText themeColor="textSecondary">
+                {saving ? 'Reenviando…' : '¿No se refleja en la web? Reenviar sincronización'}
+              </ThemedText>
+            </ThemedView>
+          </Pressable>
         ) : null}
       </SafeAreaView>
     </ThemedView>

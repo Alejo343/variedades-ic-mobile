@@ -59,4 +59,39 @@ describe("localSettlementsRepo: todo lo pendiente hasta la fecha", async () => {
     expect(count(`SELECT count(*) AS n FROM seller_sales WHERE settlement_id IS NULL`)).toBe(1); // only the day-22 sale
     expect(count(`SELECT count(*) AS n FROM seller_losses WHERE settlement_id IS NULL`)).toBe(0);
   });
+
+  // resyncSettled (bug real, sesión 2026-10-03): recupera una liquidación ya
+  // "liquidada" localmente cuyo primer intento de sincronizar nunca llegó al
+  // servidor (rechazada por algo ya corregido, y el rechazo ya se descartó —
+  // no queda nada en la cola para reintentar por su cuenta).
+  it("resyncSettled reencola markSettlementSettled desde los datos ya existentes", async () => {
+    sale("2026-09-25 10:00:00", 4000, 400);
+    await repo.create({ sellerId: 1, periodDate: "2026-09-25" });
+    const [created] = raw.prepare(`SELECT id, uuid FROM settlements WHERE period_date = '2026-09-25'`).all() as { id: number; uuid: string }[];
+
+    const settled = await repo.markSettled(created.id, 1);
+    expect(settled.status).toBe("liquidada");
+
+    // Simula que el push original se rechazó (algo ya corregido) y el
+    // rechazo se descartó — nada queda en la cola para esa operación.
+    raw.exec(`DELETE FROM sync_outbox WHERE type = 'markSettlementSettled'`);
+    expect(count(`SELECT count(*) AS n FROM sync_outbox WHERE type = 'markSettlementSettled'`)).toBe(0);
+
+    await repo.resyncSettled(created.id);
+
+    const rows = raw.prepare(`SELECT op_id, payload FROM sync_outbox WHERE type = 'markSettlementSettled'`).all() as { op_id: string; payload: string }[];
+    expect(rows).toHaveLength(1);
+    const payload = JSON.parse(rows[0].payload);
+    expect(payload.settlementUuid).toBe(created.uuid);
+    expect(payload.accountUuid).toBeTruthy();
+    expect(payload.settledAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(payload.cashMovementUuid).toBeTruthy();
+  });
+
+  it("resyncSettled falla claro si la liquidación todavía no está liquidada", async () => {
+    sale("2026-09-26 10:00:00", 1000, 100);
+    await repo.create({ sellerId: 1, periodDate: "2026-09-26" });
+    const [created] = raw.prepare(`SELECT id FROM settlements WHERE period_date = '2026-09-26'`).all() as { id: number }[];
+    await expect(repo.resyncSettled(created.id)).rejects.toThrow("no está liquidada todavía");
+  });
 });
