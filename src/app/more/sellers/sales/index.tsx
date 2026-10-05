@@ -1,4 +1,3 @@
-import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,16 +7,16 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { sellersRepo, sellerSalesRepo, type SellerSale } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 export default function SellerSalesScreen() {
   const [sales, setSales] = useState<SellerSale[]>([]);
   const [sellerNames, setSellerNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([sellerSalesRepo.list(), sellersRepo.list()]).then(([rows, sellers]) => {
         if (cancelled) return;
         setSales(rows);

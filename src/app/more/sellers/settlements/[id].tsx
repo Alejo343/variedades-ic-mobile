@@ -1,4 +1,4 @@
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { Spacing } from '@/constants/theme';
 import { useMySeller } from '@/hooks/use-my-seller';
 import { cashAccountsRepo, sellersRepo, settlementsRepo, type CashAccount, type Seller, type Settlement } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 export default function SettlementDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -24,10 +25,9 @@ export default function SettlementDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([settlementsRepo.getById(settlementId), cashAccountsRepo.list()]).then(([found, accountRows]) => {
         if (cancelled) return;
         setSettlement(found);

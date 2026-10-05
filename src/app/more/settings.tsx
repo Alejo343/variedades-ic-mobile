@@ -1,4 +1,3 @@
-import { useFocusEffect } from 'expo-router';
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +15,7 @@ import { pendingStore } from '@/lib/sync/pending';
 import { dismissRejection, listRejections, retryRejection } from '@/lib/sync/push-engine';
 import { sessionStore } from '@/lib/sync/session';
 import type { ThemePreference } from '@/lib/theme-preference';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 const OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'light', label: 'Claro' },
@@ -43,7 +43,7 @@ function SyncSection() {
     setLastSyncAt(getLastSyncAt());
   }, []);
 
-  useFocusEffect(reload);
+  useDataFocusEffect(reload);
 
   async function handleSync() {
     setMessage(null);

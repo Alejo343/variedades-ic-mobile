@@ -1,4 +1,4 @@
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { distributorsRepo, purchaseOrdersRepo, type PurchaseOrder } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 const STATUS_LABELS: Record<PurchaseOrder['status'], string> = {
   pendiente: 'pendiente',
@@ -21,10 +22,9 @@ export default function PurchasesScreen() {
   const [distributorNames, setDistributorNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([purchaseOrdersRepo.list(), distributorsRepo.list()]).then(([rows, distributors]) => {
         if (cancelled) return;
         setOrders(rows);

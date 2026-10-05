@@ -1,4 +1,3 @@
-import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { sellerLossesRepo, sellersRepo, type SellerLoss } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 const TYPE_LABELS: Record<SellerLoss['type'], string> = {
   perdida: 'Pérdida',
@@ -20,10 +20,9 @@ export default function SellerLossesScreen() {
   const [sellerNames, setSellerNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([sellerLossesRepo.list(), sellersRepo.list()]).then(([rows, sellers]) => {
         if (cancelled) return;
         setLosses(rows);

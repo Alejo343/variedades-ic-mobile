@@ -1,5 +1,6 @@
 import { sessionStore } from './session';
 import { setLastSyncAt } from './cursor';
+import { bumpDataVersion } from './data-version';
 import { refreshPendingCount } from './pending';
 import { uploadPendingProductPhotos } from './photo-upload';
 import { pushPendingOperations } from './push-engine';
@@ -58,15 +59,22 @@ async function performSync(): Promise<SyncResult> {
   if (session.status !== 'authenticated') return { status: 'skipped-no-session' };
 
   setRunning(true);
+  // Whether open screens need to reload once this round ends (data-version.ts):
+  // the pull applied rows/tombstones, or the push resolved operations (that
+  // changes "(pendiente)" labels even when the pull brings nothing new).
+  let dataChanged = false;
   try {
     const photoSummary = await uploadPendingProductPhotos(session.session.token);
 
     const pushSummary = await pushPendingOperations(session.session.token);
+    if (pushSummary.applied + pushSummary.rejected > 0) dataChanged = true;
     if (pushSummary.error) {
       return { status: 'error', stage: 'push', error: pushSummary.error, pushed: pushSummary.applied, rejected: pushSummary.rejected };
     }
 
     const pullSummary = await pullServerChanges(session.session.token);
+    // Pages applied before a failing one are already committed, so they count.
+    if (pullSummary.changed > 0) dataChanged = true;
     if (pullSummary.error) {
       return { status: 'error', stage: 'pull', error: pullSummary.error, pushed: pushSummary.applied, rejected: pushSummary.rejected };
     }
@@ -83,6 +91,7 @@ async function performSync(): Promise<SyncResult> {
     // Whatever the outcome — a rejection during push still resolves that
     // operation out of the outbox, so the count can change even on failure.
     await refreshPendingCount();
+    if (dataChanged) bumpDataVersion();
     setRunning(false);
   }
 }

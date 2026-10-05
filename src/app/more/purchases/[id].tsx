@@ -1,4 +1,4 @@
-import { Link, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Link, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +19,7 @@ import {
   type PurchasePayment,
 } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 const STATUS_LABELS: Record<PurchaseOrder['status'], string> = {
   pendiente: 'pendiente',
@@ -41,10 +42,9 @@ export default function PurchaseOrderDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([purchaseOrdersRepo.getById(orderId), productsRepo.list(), cashAccountsRepo.list()]).then(([found, products, accounts]) => {
         if (cancelled) return;
         setOrder(found);

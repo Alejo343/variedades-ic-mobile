@@ -1,6 +1,7 @@
 import { asc, count } from 'drizzle-orm';
 import { db, type Tx } from '@/lib/data/local/db';
 import { syncOutbox } from '@/lib/data/local/schema';
+import { notifyLocalWrite } from './local-writes';
 import type { SyncOperationType } from './operation-types';
 
 // The queue every write repo feeds (sub-paso 10, see CLAUDE.md "Fase 10").
@@ -15,6 +16,9 @@ export type OutboxRow = { id: number; opId: string; type: SyncOperationType; pay
 
 export async function enqueueOperation(dbOrTx: typeof db | Tx, type: SyncOperationType, payload: unknown): Promise<void> {
   await dbOrTx.insert(syncOutbox).values({ type, payload: JSON.stringify(payload) });
+  // Lets the auto-sync push this shortly (debounced — we're still inside the
+  // caller's transaction here). See local-writes.ts.
+  notifyLocalWrite();
 }
 
 function toRow(row: typeof syncOutbox.$inferSelect): OutboxRow {

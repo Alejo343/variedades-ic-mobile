@@ -1,5 +1,4 @@
 import { Image } from 'expo-image';
-import { useFocusEffect } from 'expo-router';
 import { Minus, Package, Plus, Search, Tag, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
@@ -17,6 +16,7 @@ import { formatCOP } from '@/lib/format';
 import { resolveImageUri } from '@/lib/sync/image-url';
 import { triggerSaleSuccessOverlay } from '@/lib/success-overlay';
 import { directSaleSchema } from '@/lib/validations';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 type CartItem = {
   productId: number;
@@ -270,7 +270,7 @@ function OwnerSellScreen() {
     });
   }
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
       productsRepo.list().then((rows) => {

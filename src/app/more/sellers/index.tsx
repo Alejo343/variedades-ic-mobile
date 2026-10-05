@@ -1,4 +1,4 @@
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { sellersRepo, type Seller } from '@/lib/data';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 function formatCommission(seller: Seller): string {
   if (seller.commissionType === 'percentage') {
@@ -19,10 +20,9 @@ export default function SellersScreen() {
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       sellersRepo.list().then((rows) => {
         if (!cancelled) {
           setSellers(rows);

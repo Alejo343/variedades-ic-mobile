@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,16 +11,16 @@ import { productsRepo, type Product } from '@/lib/data';
 import { formatCOP, stockLabel } from '@/lib/format';
 import { resolveImageUri } from '@/lib/sync/image-url';
 import { pendingUuidsForType } from '@/lib/sync/outbox';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 export default function ProductsScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [pendingUuids, setPendingUuids] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([productsRepo.list(), pendingUuidsForType('upsertProduct')]).then(([rows, pending]) => {
         if (!cancelled) {
           setProducts(rows);

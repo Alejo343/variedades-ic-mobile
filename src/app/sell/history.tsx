@@ -1,4 +1,3 @@
-import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,16 +7,16 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { cashAccountsRepo, directSalesRepo, type DirectSale } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 export default function SalesHistoryScreen() {
   const [sales, setSales] = useState<DirectSale[]>([]);
   const [accountNames, setAccountNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([directSalesRepo.list(), cashAccountsRepo.list()]).then(([rows, accounts]) => {
         if (!cancelled) {
           setSales(rows);

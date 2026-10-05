@@ -1,4 +1,4 @@
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { inventoryRepo, productsRepo, type InventoryMovement, type Product } from '@/lib/data';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 export default function InventoryScreen() {
   const [lowStock, setLowStock] = useState<Product[]>([]);
@@ -15,10 +16,9 @@ export default function InventoryScreen() {
   const [productNames, setProductNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([
         inventoryRepo.getLowStock(),
         inventoryRepo.getOutOfStock(),

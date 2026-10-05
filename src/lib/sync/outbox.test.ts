@@ -20,12 +20,22 @@ const testDb = proxy as unknown as AnyDb;
 
 describe("enqueueOperation", async () => {
   const { enqueueOperation, listOutbox, getOutboxCount, pendingUuidsForType } = await import("./outbox");
+  const { onLocalWrite } = await import("./local-writes");
+
+  it("avisa de la escritura local (para que la sync automática la suba enseguida)", async () => {
+    let heard = 0;
+    const unsubscribe = onLocalWrite(() => heard++);
+    await enqueueOperation(testDb, "upsertCategory", { uuid: "notify" });
+    unsubscribe();
+    await enqueueOperation(testDb, "upsertCategory", { uuid: "notify-2" });
+    expect(heard).toBe(1);
+  });
 
   it("agrega una fila con opId propio y el payload intacto", async () => {
     const payload = { uuid: "abc", name: "ZZ", items: [{ uuid: "x", quantity: 2 }] };
     await enqueueOperation(testDb, "upsertCategory", payload);
 
-    const rows = await listOutbox();
+    const rows = (await listOutbox()).filter((r) => r.type === "upsertCategory" && (r.payload as { uuid: string }).uuid === "abc");
     expect(rows).toHaveLength(1);
     expect(rows[0].type).toBe("upsertCategory");
     expect(rows[0].payload).toEqual(payload);

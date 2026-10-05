@@ -39,6 +39,8 @@ export default function EditProductScreen() {
   const [conflict, setConflict] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Edit form: plain useFocusEffect on purpose, not useDataFocusEffect — a
+  // background sync must not overwrite what the user is typing.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;

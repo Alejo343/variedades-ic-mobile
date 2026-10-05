@@ -1,4 +1,3 @@
-import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +10,7 @@ import { calculateCommission, type CommissionConfig } from '@/lib/domain/commiss
 import { productsRepo, sellersRepo, sellerSalesRepo, type Seller } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 import { sellerSaleSchema } from '@/lib/validations';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 type InventoryOption = { productId: number; name: string; sku: string; available: number; defaultPrice: number };
 type CartItem = { productId: number; name: string; sku: string; available: number; quantity: string; unitPrice: string };
@@ -31,7 +31,7 @@ export function SellerSaleForm({ sellerId, onSaved }: { sellerId: number; onSave
 
   // Reloads on focus: the Vender tab stays mounted, so a sync that changed the
   // seller's inventory while another tab was open must show up on return.
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
       sellersRepo.getById(sellerId).then((found) => {

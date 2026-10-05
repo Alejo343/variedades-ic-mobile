@@ -1,5 +1,5 @@
 import { Image } from "expo-image";
-import { Link, useFocusEffect } from "expo-router";
+import { Link } from "expo-router";
 import {
   ChartColumn,
   ChevronRight,
@@ -43,6 +43,7 @@ import {
   todayLocalDateString,
 } from "@/lib/format";
 import { resolveImageUri } from "@/lib/sync/image-url";
+import { useDataFocusEffect } from "@/hooks/use-data-focus-effect";
 
 type ActivityKind = "sale" | "purchase" | "adjustment" | "settlement";
 
@@ -79,10 +80,9 @@ export default function HomeScreen() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [favorites, setFavorites] = useState<FavoriteProduct[]>([]);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
 
       Promise.all([
         cashRepo.list(),

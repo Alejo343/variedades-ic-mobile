@@ -9,6 +9,7 @@ import { Spacing } from '@/constants/theme';
 import { useMySeller } from '@/hooks/use-my-seller';
 import { useTheme } from '@/hooks/use-theme';
 import { productsRepo, sellersRepo } from '@/lib/data';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { sellerSchema } from '@/lib/validations';
 
 type InventoryLine = { productId: number; name: string; sku: string; quantity: number };
@@ -31,6 +32,8 @@ export default function EditSellerScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Prefills the edit form: focus only, never on a background sync — that
+  // would overwrite what the owner is typing (see use-data-focus-effect.ts).
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -48,6 +51,18 @@ export default function EditSellerScreen() {
         }
         setLoading(false);
       });
+      return () => {
+        cancelled = true;
+      };
+    }, [sellerId]),
+  );
+
+  // The inventory section is read-only, so unlike the form above it also
+  // reloads when a background sync changes it (a delivery the owner just
+  // made, a sale from another device) — the seller's "Mi inventario".
+  useDataFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
       Promise.all([sellersRepo.getInventory(sellerId), productsRepo.list()]).then(([lines, products]) => {
         if (cancelled) return;
         const productById = Object.fromEntries(products.map((p) => [p.id, p]));

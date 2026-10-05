@@ -36,7 +36,7 @@ describe("pullServerChanges", async () => {
     }));
 
     const summary = await pullServerChanges("tok");
-    expect(summary).toEqual({ pages: 2 });
+    expect(summary).toEqual({ pages: 2, changed: 2 });
     expect(getCursor()).toBe(20);
     expect(raw.prepare("SELECT count(*) AS n FROM categories WHERE uuid IN ('cat-a', 'cat-b')").get()).toEqual({ n: 2 });
   });

@@ -2267,6 +2267,66 @@ de uso puramente local (nunca viajaban, por eso nunca se notó).
   sincronización", luego "Sincronizar ahora" en Configuración — y
   confirme que el saldo de "Efectivo" sube $55.000 en el servidor.
 
+## Sync reactiva (sin tener que tocar "Sincronizar ahora")
+
+Sesión 2026-10-04. El usuario reportó que la app solo traía productos y
+cambios del servidor al tocar el botón. La revisión encontró tres huecos en
+los disparadores del sub-paso 12 (no en el motor de sync):
+
+1. **Tras el login no se sincronizaba nada**: `useAutoSync` disparaba una
+   vez al montar; sin sesión, `runSync()` no hacía nada pero el freno de
+   30 s quedaba "gastado", y el cambio a autenticado no disparaba nada. Tras
+   el primer login (base recién borrada) la app quedaba vacía hasta tocar el
+   botón o salir y volver.
+2. **Las pantallas no se enteraban del fin de una sync**: cargan con
+   `useFocusEffect` (solo al enfocar); una sync automática con la pantalla
+   abierta guardaba los datos pero la pantalla seguía mostrando los viejos.
+3. **Con la app abierta nunca se revisaba el servidor**, y una venta local
+   esperaba al siguiente disparador para subir.
+
+Arreglo (A + B + C, sin tocar servidor, schema, dominio ni repos):
+
+- `lib/sync/scheduler.ts` (con test, timers falsos): decide cuándo correr.
+  `auto()` (arranque, primer plano, reconexión, tick periódico) con freno de
+  30 s, y sin sesión **no gasta el freno**; `immediate()` al pasar a
+  autenticado (login), siempre; `localWrite()` con debounce de 2 s (agrupa
+  ráfagas y deja que la transacción del repo confirme primero), sin freno, y
+  si ya hay una corrida en curso reintenta al terminar en vez de colgarse de
+  ella (esa corrida leyó la cola antes de la escritura nueva).
+- `hooks/use-auto-sync.ts` solo cablea: `sessionStore.subscribe` →
+  `immediate()`, `AppState`/`NetInfo` → `auto()`, `setInterval` de 60 s →
+  `auto()` (solo con la app activa), `onLocalWrite` → `localWrite()`.
+- `lib/sync/local-writes.ts`: `enqueueOperation` (`outbox.ts`) avisa cada vez
+  que encola algo — un solo punto, ningún repo cambió.
+- `lib/sync/data-version.ts`: contador que `engine.ts` sube al final de una
+  corrida **solo si cambió algo** (el pull aplicó filas/lápidas — nuevo
+  `PullSummary.changed` — o el push resolvió operaciones, que cambia los
+  "(pendiente)"). Un pull periódico vacío no hace recargar nada.
+- `hooks/use-data-focus-effect.ts#useDataFocusEffect`: reemplazo directo de
+  `useFocusEffect` que además re-ejecuta el cargador de una pantalla
+  **enfocada** cuando sube la versión. Aplicado a las 23 pantallas/hooks que
+  muestran datos (listados, detalles, reportes, Inicio, Buscar, Vender, el
+  formulario de venta del vendedor, `useMySeller`, Configuración). En esas
+  pantallas se quitó el `setLoading(true)` del cargador: una recarga en
+  segundo plano actualiza en silencio, sin "Cargando…" ni perder el scroll.
+- **Se dejó `useFocusEffect` a propósito** en los formularios de edición que
+  precargan campos desde la base (`products/[id]`, `categories/[id]`,
+  `cash/accounts/[id]`, `distributors/[id]`): recargarlos a mitad de una
+  edición pisaría lo que el usuario escribe. `sellers/[id]` se partió en dos:
+  el formulario solo al enfocar, el inventario reactivo ("Mi inventario"
+  del vendedor).
+- Se descartó `useLiveQuery` de Drizzle: obliga a armar consultas de Drizzle
+  en las pantallas (rompe la regla de capas) y no cubre las pantallas que
+  combinan varios repos en memoria.
+- Latencia resultante: un cambio hecho en la web llega a un celular abierto
+  en ≤ 60 s (tick periódico); para segundos haría falta push del servidor
+  (SSE/WebSocket), fuera de alcance por ahora.
+- Verificado: `npm run test` (154) + `npx tsc --noEmit` en verde (`npm run
+  lint`: el mismo error preexistente). **Pendiente verificar en el
+  celular**: login nuevo trae los productos sin tocar nada; un cambio de
+  precio en la web aparece en Productos/Vender abiertos en ≤ 1 min; una
+  venta del vendedor aparece en la web unos segundos después.
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,

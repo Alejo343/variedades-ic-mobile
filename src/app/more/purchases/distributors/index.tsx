@@ -1,4 +1,4 @@
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,15 +7,15 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { distributorsRepo, type Distributor } from '@/lib/data';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 export default function DistributorsScreen() {
   const [distributors, setDistributors] = useState<Distributor[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       distributorsRepo.list().then((rows) => {
         if (!cancelled) {
           setDistributors(rows);

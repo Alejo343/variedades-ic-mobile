@@ -1,4 +1,3 @@
-import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,16 +6,16 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { sellerReturnsRepo, sellersRepo, type SellerReturn } from '@/lib/data';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 export default function SellerReturnsScreen() {
   const [returns, setReturns] = useState<SellerReturn[]>([]);
   const [sellerNames, setSellerNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
 
-  useFocusEffect(
+  useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       Promise.all([sellerReturnsRepo.list(), sellersRepo.list()]).then(([rows, sellers]) => {
         if (cancelled) return;
         setReturns(rows);
