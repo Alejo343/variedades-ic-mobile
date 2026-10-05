@@ -879,6 +879,31 @@ arriba de "Total"; al tocarlo aparecen filas de "Subtotal" y "Descuento"
 - Verificado con `npm run test` (44/44) + `npx tsc --noEmit` + `npm run
   lint` en verde. **No verificado todavía en el celular del usuario.**
 
+### Rollout — pantalla de Reportes (rediseño completo)
+
+Sesión 2026-10-04. `more/reports.tsx` reescrita con el lenguaje visual de
+Inicio, sin tocar `lib/data` (mismas consultas que antes):
+
+- Los dos `TextInput` de fecha `YYYY-MM-DD` se reemplazaron por cápsulas de
+  período (Hoy / 7 días / Este mes / Mes anterior / Este año / Todo; por
+  defecto "Este mes"). La lógica vive en `lib/report-periods.ts` (pura, con
+  test): fechas del calendario **local** del dispositivo, extremos inclusivos.
+- Cuatro pestañas fijas arriba (`stickyHeaderIndices`): **Resumen** (utilidad
+  bruta con % de margen + 4 KPIs + reparto por canal + pendientes),
+  **Ventas** (total, ticket promedio, canal, método de pago, ranking de
+  vendedores), **Dinero** (saldo por cuenta, flujo del período, cuentas por
+  pagar, compras por distribuidor) e **Inventario** (valor a costo, alertas,
+  inventario por vendedor agrupado, más devueltos).
+- Cada sección muestra a qué aplica el filtro: el rango del período, "Hoy"
+  (reportes de estado) o "Histórico" — misma distinción estado/flujo de la
+  Fase 9, ahora visible.
+- Barras hechas con `View` (sin librería de gráficos). Los colores del
+  reparto local/vendedores (`#16A34A`/`#3B82F6`) son fijos en los dos temas:
+  pasaron el validador de paleta contra ambas superficies; el `#22C55E` del
+  modo oscuro no.
+- Verificado con `npm run test` (162) + `npx tsc --noEmit` en verde.
+  **No verificado todavía en el celular del usuario.**
+
 ## Importación de compras desde Excel (.xlsx)
 
 Construida en la sesión 2026-08-01. El cliente de IC Variedades arma cada
