@@ -2427,6 +2427,28 @@ configuración.
   `0024`/`0025` aplicadas solo en la base local de desarrollo.
   **Pendiente**: desplegar la web y verificar en los celulares.
 
+## Acceso de vendedores desde la app
+
+Sesión 2026-10-07. Un vendedor inicia sesión con un **usuario y contraseña**
+que le crea el dueño (no con su nombre). Hasta esta sesión eso solo se podía
+hacer en el panel web; ahora la ficha del vendedor en el celular del dueño
+(Más → Vendedores → el vendedor) tiene la sección **"Acceso a la app"**:
+crear el acceso, cambiar la contraseña y activar/desactivar.
+
+- **Solo con internet, a propósito**: una contraseña nunca vive en un celular,
+  así que no pasa por `sync_outbox`. Llama directo a
+  `/api/sync/sellers/[sellerUuid]/access` (`lib/sync/api.ts`,
+  `components/seller-access-card.tsx`). Sin conexión muestra el error y un
+  botón "Reintentar".
+- Un vendedor recién creado en el celular necesita llegar primero al servidor
+  (la sync reactiva lo sube en segundos). Si todavía no está, el servidor
+  responde "Sincroniza y vuelve a intentar".
+- `Seller` ahora expone `uuid` (el servidor nombra al vendedor por uuid).
+- Revocar celulares específicos sigue siendo solo desde el panel web.
+- Verificado: móvil `npm run test` (174, incluye `seller-access-api.test.ts`) +
+  `tsc`; web `test:db` (50) + `lint` + `build`. **No verificado todavía en el
+  celular** (requiere desplegar la web).
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,

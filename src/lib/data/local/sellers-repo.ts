@@ -7,6 +7,7 @@ import { inventoryMovements, sellers } from "./schema";
 function toSeller(row: typeof sellers.$inferSelect): Seller {
   return {
     id: row.id,
+    uuid: row.uuid,
     name: row.name,
     phone: row.phone,
     city: row.city,

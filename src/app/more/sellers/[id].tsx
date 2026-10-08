@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SellerAccessCard } from '@/components/seller-access-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -32,6 +33,7 @@ export default function EditSellerScreen() {
   const [active, setActive] = useState(true);
   // The saved mode (not the one being edited) decides which actions show.
   const [savedMode, setSavedMode] = useState<SellerInventoryMode>('consignment');
+  const [sellerUuid, setSellerUuid] = useState<string | null>(null);
   const [inventory, setInventory] = useState<InventoryLine[]>([]);
   // Store sellers: commissions still unpaid up to today, and past payments.
   const [pendingCommission, setPendingCommission] = useState<CommissionPaymentPreview | null>(null);
@@ -55,6 +57,7 @@ export default function EditSellerScreen() {
           setCommissionType(seller.commissionType);
           setInventoryMode(seller.inventoryMode);
           setSavedMode(seller.inventoryMode);
+          setSellerUuid(seller.uuid);
           setCommissionValue(String(seller.commissionValue));
           setNotes(seller.notes ?? '');
           setActive(seller.active);
@@ -332,6 +335,8 @@ export default function EditSellerScreen() {
               </ThemedView>
             </Pressable>
           ) : null}
+
+          {!isSeller && sellerUuid ? <SellerAccessCard sellerUuid={sellerUuid} /> : null}
         </ScrollView>
       </SafeAreaView>
     </ThemedView>

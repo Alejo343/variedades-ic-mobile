@@ -2,6 +2,8 @@ import type { SellerInput, SellerInventoryMode } from "../validations";
 
 export type Seller = {
   id: number;
+  // Same on every device and the server — what the sync API names it by.
+  uuid: string;
   name: string;
   phone: string | null;
   city: string | null;

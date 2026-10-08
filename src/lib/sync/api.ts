@@ -95,3 +95,40 @@ export async function pullRequest(token: string, since: number): Promise<ApiResu
     return { ok: false, error: 'Sin conexión con el servidor. Verifica tu internet e intenta de nuevo.' };
   }
 }
+
+// /api/sync/sellers/[sellerUuid]/access — the owner managing a seller's app
+// login (username + password) from the phone. Online only: a password never
+// lives on a phone, so there's nothing to queue for later.
+export type SellerAccess = { username: string; active: boolean } | null;
+
+async function accessRequest<T>(token: string, sellerUuid: string, method: 'GET' | 'POST' | 'PATCH', body?: unknown): Promise<ApiResult<T>> {
+  try {
+    const res = await fetch(`${SYNC_BASE_URL}/api/sync/sellers/${sellerUuid}/access`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const json = await parseJson(res);
+    if (!res.ok) return { ok: false, error: extractErrorMessage(json) ?? 'No se pudo completar la operación' };
+    return { ok: true, data: json as T };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor. Necesitas internet para gestionar el acceso.' };
+  }
+}
+
+export async function getSellerAccessRequest(token: string, sellerUuid: string): Promise<ApiResult<SellerAccess>> {
+  const result = await accessRequest<{ user: SellerAccess }>(token, sellerUuid, 'GET');
+  return result.ok ? { ok: true, data: result.data.user } : result;
+}
+
+export async function createSellerAccessRequest(token: string, sellerUuid: string, username: string, password: string): Promise<ApiResult<SellerAccess>> {
+  return accessRequest<SellerAccess>(token, sellerUuid, 'POST', { username, password });
+}
+
+export async function updateSellerAccessRequest(
+  token: string,
+  sellerUuid: string,
+  changes: { password?: string; active?: boolean },
+): Promise<ApiResult<SellerAccess>> {
+  return accessRequest<SellerAccess>(token, sellerUuid, 'PATCH', changes);
+}
