@@ -1,5 +1,5 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { toSqliteUtcTimestamp } from "../../format";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { endOfLocalDayUtc, toSqliteUtcTimestamp } from "../../format";
 import { enqueueOperation } from "../../sync/outbox";
 import type { CommissionPayment, CommissionPaymentsRepo, CreateCommissionPaymentInput } from "../commission-payments-repo";
 import { recordCashMovementTx } from "./cash-repo";
@@ -7,11 +7,15 @@ import { db, type Tx } from "./db";
 import { cashAccounts, commissionPayments, directSales, sellers } from "./schema";
 
 // Same rule as the server (lib/db/queries/commission-payments.ts): every
-// in-store sale of the seller on or before periodDate not yet paid. Like the
-// settlements preview, DATE() runs on the UTC text — the server recomputes the
-// real total in its own time zone when the operation syncs.
+// in-store sale of the seller on or before periodDate (a LOCAL calendar day)
+// not yet paid. saleDate is UTC text, so the cutoff is the end of that local
+// day converted to UTC — see format.ts#endOfLocalDayUtc.
 const pendingSales = (sellerId: number, periodDate: string) =>
-  and(eq(directSales.sellerId, sellerId), sql`DATE(${directSales.saleDate}) <= ${periodDate}`, isNull(directSales.commissionPaymentId));
+  and(
+    eq(directSales.sellerId, sellerId),
+    lt(directSales.saleDate, endOfLocalDayUtc(periodDate)),
+    isNull(directSales.commissionPaymentId),
+  );
 
 async function pending(dbOrTx: typeof db | Tx, sellerId: number, periodDate: string) {
   const [row] = await dbOrTx

@@ -6,16 +6,17 @@ import type {
   ReportsRepo,
   SalesReport,
 } from "../reports-repo";
+import { endOfLocalDayUtc, startOfLocalDayUtc } from "../../format";
 import { db } from "./db";
 import { directSaleItems, directSales, products, purchaseOrders, sellerSaleItems, sellerSales } from "./schema";
 
-// from/to are 'YYYY-MM-DD' — DATE(column) strips the time part of the stored
-// timestamp so the range compares like-for-like, same pattern as
-// settlements-repo's DATE(...) = periodDate exact-match.
+// from/to are LOCAL calendar days 'YYYY-MM-DD' (inclusive); the columns are
+// UTC text, so both ends become UTC instants (format.ts) instead of DATE(col),
+// which would push evening sales into the next day.
 function dateRangeCondition(column: AnyColumn, from?: string, to?: string): SQL | undefined {
   const conditions: SQL[] = [];
-  if (from) conditions.push(sql`DATE(${column}) >= ${from}`);
-  if (to) conditions.push(sql`DATE(${column}) <= ${to}`);
+  if (from) conditions.push(sql`${column} >= ${startOfLocalDayUtc(from)}`);
+  if (to) conditions.push(sql`${column} < ${endOfLocalDayUtc(to)}`);
   if (conditions.length === 0) return undefined;
   return and(...conditions);
 }

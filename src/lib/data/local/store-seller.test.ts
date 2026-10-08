@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { toSqliteUtcTimestamp, todayLocalDateString } from "../../format";
 import { createMigratedTestDb } from "./test-db";
 
 // A 'store' seller sells the principal inventory: their sale is a direct_sale
@@ -49,7 +50,7 @@ describe("vendedor de tienda", async () => {
     const later = await localDirectSalesRepo.create({ accountId, sellerId: storeId, items: [{ productId, quantity: 1, unitPrice: 5000 }] });
     raw.exec(`UPDATE direct_sales SET sale_date = '2099-01-01 10:00:00' WHERE id = ${later.id}`);
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocalDateString();
     expect(await localCommissionPaymentsRepo.preview(storeId, today)).toEqual({ saleCount: 1, totalCommission: 1500 });
 
     const payment = await localCommissionPaymentsRepo.create({ sellerId: storeId, periodDate: today, accountId });
@@ -66,6 +67,13 @@ describe("vendedor de tienda", async () => {
     expect(laterRow.p).toBeNull();
     await expect(localCommissionPaymentsRepo.create({ sellerId: storeId, periodDate: today, accountId })).rejects.toThrow(/No hay comisiones pendientes/);
     expect(await localCommissionPaymentsRepo.listForSeller(storeId)).toHaveLength(1);
+  });
+
+  it("una venta a las 23:50 hora local cuenta para ese día, aunque en UTC ya sea el siguiente", async () => {
+    const sale = await localDirectSalesRepo.create({ accountId, sellerId: storeId, items: [{ productId, quantity: 1, unitPrice: 5000 }] });
+    raw.exec(`UPDATE direct_sales SET sale_date = '${toSqliteUtcTimestamp(new Date(2030, 0, 15, 23, 50))}' WHERE id = ${sale.id}`);
+    expect(await localCommissionPaymentsRepo.preview(storeId, "2030-01-14")).toEqual({ saleCount: 0, totalCommission: 0 });
+    expect((await localCommissionPaymentsRepo.preview(storeId, "2030-01-15")).saleCount).toBe(1);
   });
 
   it("la venta del dueño no lleva vendedor ni comisión", async () => {

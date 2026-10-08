@@ -272,6 +272,13 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
     });
   }
 
+  // Also called right after a sale: the screen stays mounted, so without it
+  // the cards keep showing the stock from before the sale until the next focus.
+  const loadProducts = useCallback(async () => {
+    const rows = await productsRepo.list();
+    setProducts(rows.filter((p) => p.active));
+  }, []);
+
   useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -377,6 +384,7 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
     setSaving(true);
     try {
       await directSalesRepo.create(parsed.data);
+      await loadProducts();
       const origin = await measureCheckoutOrigin();
       if (origin) triggerSaleSuccessOverlay(origin);
       setCart([]);

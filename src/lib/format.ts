@@ -54,3 +54,20 @@ export function todayLocalDateString(): string {
   const day = String(now.getDate()).padStart(2, '0');
   return `${now.getFullYear()}-${month}-${day}`;
 }
+
+// First instant AFTER the local calendar day `localDate` ('YYYY-MM-DD'), as a
+// SQLite UTC timestamp. "Everything up to that day" is then `col < this`.
+// Comparing DATE(col) against the local date is wrong: the column is UTC, so a
+// sale at 23:50 in Colombia (04:50 UTC next day) would fall outside "today"
+// (bug found live, sesión 2026-10-07, pending commissions showing 0).
+export function endOfLocalDayUtc(localDate: string): string {
+  const [year, month, day] = localDate.split('-').map(Number);
+  return toSqliteUtcTimestamp(new Date(year, month - 1, day + 1));
+}
+
+// First instant of the local calendar day `localDate`, as a SQLite UTC
+// timestamp — the lower bound to pair with endOfLocalDayUtc.
+export function startOfLocalDayUtc(localDate: string): string {
+  const [year, month, day] = localDate.split('-').map(Number);
+  return toSqliteUtcTimestamp(new Date(year, month - 1, day));
+}

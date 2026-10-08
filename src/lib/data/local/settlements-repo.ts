@@ -1,7 +1,7 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { calculateSettlement } from "../../domain/settlement";
 import { canTransitionSettlement, type SettlementStatus } from "../../domain/settlement-status";
-import { toSqliteUtcTimestamp } from "../../format";
+import { endOfLocalDayUtc, toSqliteUtcTimestamp } from "../../format";
 import { enqueueOperation } from "../../sync/outbox";
 import type { SettlementInput } from "../../validations";
 import type { Settlement, SettlementPreview, SettlementsRepo } from "../settlements-repo";
@@ -32,9 +32,9 @@ function toSettlement(row: typeof settlements.$inferSelect): Settlement {
 // settlementId marks keep anything from being charged twice — same rule as
 // the web's lib/db/queries/settlements.ts (CLAUDE.md, "Fase 10").
 const pendingSales = (sellerId: number, periodDate: string) =>
-  and(eq(sellerSales.sellerId, sellerId), sql`DATE(${sellerSales.saleDate}) <= ${periodDate}`, isNull(sellerSales.settlementId));
+  and(eq(sellerSales.sellerId, sellerId), lt(sellerSales.saleDate, endOfLocalDayUtc(periodDate)), isNull(sellerSales.settlementId));
 const pendingLosses = (sellerId: number, periodDate: string) =>
-  and(eq(sellerLosses.sellerId, sellerId), sql`DATE(${sellerLosses.lossDate}) <= ${periodDate}`, isNull(sellerLosses.settlementId));
+  and(eq(sellerLosses.sellerId, sellerId), lt(sellerLosses.lossDate, endOfLocalDayUtc(periodDate)), isNull(sellerLosses.settlementId));
 
 async function aggregatePeriod(dbOrTx: typeof db | Tx, sellerId: number, periodDate: string): Promise<SettlementPreview> {
   const [salesRow] = await dbOrTx

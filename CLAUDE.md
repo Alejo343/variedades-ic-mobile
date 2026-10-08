@@ -2424,8 +2424,10 @@ configuración.
   + `build`; móvil `npm run test` (170, incluye `local/store-seller.test.ts`,
   `scope-rules.test.ts` y el caso nuevo de `engine.test.ts`) + `tsc` (lint: el
   error preexistente). Tras el pago de comisiones: web `test:db` 48, móvil 171.
-  `0024`/`0025` aplicadas solo en la base local de desarrollo.
-  **Pendiente**: desplegar la web y verificar en los celulares.
+  `0024`/`0025` desplegadas en producción el 2026-10-07. **Verificado en vivo
+  en los celulares (2026-10-08)**: vendedora de tienda vendiendo del inventario
+  principal, el dinero entrando a caja, comisiones pendientes y pago de
+  comisiones, todo confirmado por el usuario.
 
 ## Acceso de vendedores desde la app
 
@@ -2446,8 +2448,26 @@ crear el acceso, cambiar la contraseña y activar/desactivar.
 - `Seller` ahora expone `uuid` (el servidor nombra al vendedor por uuid).
 - Revocar celulares específicos sigue siendo solo desde el panel web.
 - Verificado: móvil `npm run test` (174, incluye `seller-access-api.test.ts`) +
-  `tsc`; web `test:db` (50) + `lint` + `build`. **No verificado todavía en el
-  celular** (requiere desplegar la web).
+  `tsc`; web `test:db` (50) + `lint` + `build`. Desplegado y **verificado en
+  vivo** por el usuario (2026-10-08).
+
+## Corte por día local en vez de `DATE()` sobre UTC
+
+Bug real encontrado en vivo (sesión 2026-10-07): las fechas del celular son
+texto UTC, y varias consultas comparaban `DATE(columna)` contra una fecha
+**local** ('YYYY-MM-DD'). Una venta a las 11:50 p. m. en Colombia (04:50 UTC
+del día siguiente) quedaba fuera de "hoy": la ficha de Ella mostraba
+"Pendiente por pagar $0" mientras la web mostraba sus 2 ventas. Se corrigió
+con `format.ts#startOfLocalDayUtc`/`endOfLocalDayUtc` (convierten el día local
+a sus límites en UTC: `col >= inicio`, `col < fin`) en los pagos de comisiones,
+la vista previa de liquidaciones, los filtros de período de Reportes y el flujo
+de Caja del período. Tests en `format.test.ts` y `store-seller.test.ts` (también
+pasan con `TZ=America/Bogota`). Verificado en vivo (2026-10-08). En la misma
+sesión: el POS de Vender ahora recarga los productos justo después de cobrar
+(`sell/index.tsx#loadProducts`). Antes el stock de las tarjetas no se
+actualizaba hasta salir y volver a la pantalla. **Regla para código nuevo**: nunca `DATE(col)`
+contra una fecha local; usar esos dos helpers. Reemplaza la nota de la Fase 10
+que aceptaba esta diferencia en la vista previa de liquidaciones.
 
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 

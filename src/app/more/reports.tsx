@@ -44,7 +44,7 @@ import {
   type PurchasesReport,
   type SalesReport,
 } from '@/lib/data';
-import { formatCOP } from '@/lib/format';
+import { formatCOP, endOfLocalDayUtc, startOfLocalDayUtc } from '@/lib/format';
 import { formatRangeLabel, periodRange, REPORT_PERIODS, type ReportPeriod } from '@/lib/report-periods';
 
 // Channel colors for the local-vs-sellers split. Fixed in both themes (not
@@ -143,10 +143,12 @@ export default function ReportsScreen() {
           const productNames: Record<number, string> = Object.fromEntries(products.map((p) => [p.id, p.name]));
           const sellerNames: Record<number, string> = Object.fromEntries(sellers.map((s) => [s.id, s.name]));
 
+          // movementDate is UTC text: compare against the local day's UTC bounds.
+          const fromUtc = from ? startOfLocalDayUtc(from) : null;
+          const toUtc = to ? endOfLocalDayUtc(to) : null;
           const cashInRange = cashMovements.filter((m) => {
-            const day = m.movementDate.slice(0, 10);
-            if (from && day < from) return false;
-            if (to && day > to) return false;
+            if (fromUtc && m.movementDate < fromUtc) return false;
+            if (toUtc && m.movementDate >= toUtc) return false;
             return true;
           });
           const cashPeriod = { income: 0, expense: 0 };
