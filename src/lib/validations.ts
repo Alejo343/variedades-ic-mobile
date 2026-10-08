@@ -51,8 +51,12 @@ export const directSaleItemSchema = z.object({
 export const directSaleSchema = z.object({
   items: z.array(directSaleItemSchema).min(1, "Debe incluir al menos un producto"),
   accountId: z.number().int(),
+  // A 'store' seller selling from their own phone (absent = the owner).
+  sellerId: z.number().int().optional(),
   notes: z.string().optional(),
 });
+
+export const sellerInventoryModeSchema = z.enum(["consignment", "store"]);
 
 export const sellerSchema = z.object({
   name: z.string().min(1, "El nombre es requerido"),
@@ -60,6 +64,7 @@ export const sellerSchema = z.object({
   city: z.string().optional(),
   commissionType: z.enum(["percentage", "fixed_per_unit"]),
   commissionValue: z.number().int().min(0, "El valor de comisión debe ser mayor o igual a 0"),
+  inventoryMode: sellerInventoryModeSchema.optional(),
   active: z.boolean().optional().default(true),
   notes: z.string().optional(),
 });
@@ -153,6 +158,7 @@ export type CashMovementInput = z.infer<typeof cashMovementSchema>;
 export type DirectSaleItemInput = z.infer<typeof directSaleItemSchema>;
 export type DirectSaleInput = z.infer<typeof directSaleSchema>;
 export type SellerInput = z.infer<typeof sellerSchema>;
+export type SellerInventoryMode = z.infer<typeof sellerInventoryModeSchema>;
 export type SellerDeliveryItemInput = z.infer<typeof sellerDeliveryItemSchema>;
 export type SellerDeliveryInput = z.infer<typeof sellerDeliverySchema>;
 export type SellerSaleItemInput = z.infer<typeof sellerSaleItemSchema>;

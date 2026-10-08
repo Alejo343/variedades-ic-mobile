@@ -14,6 +14,11 @@ export type DirectSale = {
   saleDate: string;
   totalAmount: number;
   accountId: number;
+  // Set when a 'store' seller made the sale (null = the owner).
+  sellerId: number | null;
+  commissionAmount: number;
+  // Set once a commission payment covered this sale (null = still pending).
+  commissionPaymentId: number | null;
   notes: string | null;
   createdAt: string;
   items: DirectSaleItem[];

@@ -21,6 +21,8 @@ import m0016 from './0016_opposite_karnak.sql';
 import m0017 from './0017_same_lionheart.sql';
 import m0018 from './0018_tiny_clea.sql';
 import m0019 from './0019_orange_black_cat.sql';
+import m0020 from './0020_spotty_morbius.sql';
+import m0021 from './0021_organic_avengers.sql';
 
   export default {
     journal,
@@ -44,7 +46,9 @@ m0015,
 m0016,
 m0017,
 m0018,
-m0019
+m0019,
+m0020,
+m0021
     }
   }
   

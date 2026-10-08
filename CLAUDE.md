@@ -2352,6 +2352,81 @@ Arreglo (A + B + C, sin tocar servidor, schema, dominio ni repos):
   precio en la web aparece en Productos/Vender abiertos en ≤ 1 min; una
   venta del vendedor aparece en la web unos segundos después.
 
+## Vendedor de tienda (`sellers.inventory_mode`)
+
+Sesión 2026-10-07. Hasta aquí todo vendedor era de **consignación** (vende
+solo lo que se le entrega y liquida después). Se agregó un segundo tipo para
+quien atiende en la tienda junto al dueño. Decisiones del usuario: un vendedor
+es **de un tipo u otro**; la venta de un vendedor de tienda **entra a caja de
+inmediato** (cuenta elegida, sin liquidación); y **gana comisión** con su
+configuración.
+
+- **Diseño**: la venta de un vendedor de tienda **es una venta en local**
+  (`direct_sales`) con el vendedor anotado. Reutiliza todo lo de la Fase 2
+  (descuenta `products.stock`, ingreso en caja, el mismo POS). Columnas nuevas
+  en los dos lados: `sellers.inventory_mode` (`'consignment'|'store'`, default
+  `'consignment'`), `direct_sales.seller_id` (nullable) y
+  `direct_sales.commission_amount`. Web: migración `0024_store_sellers.sql`;
+  móvil: `0020_spotty_morbius.sql` (solo `ADD COLUMN`; sin `CHECK` en SQLite
+  para no reconstruir la tabla, lo validan Zod y el servidor).
+- **Servidor**: un vendedor puede enviar `createDirectSale` solo con su propio
+  `sellerUuid` (`sync-permissions.ts`), y el handler verifica **en la base**
+  que sea `store` (uno de consignación recibe `rejected`); calcula la comisión
+  con `calculateCommission`. El pull, para un vendedor `store`, agrega
+  `cash_accounts` (solo nombres; `cash_movements` sigue oculto) y sus propias
+  `direct_sales`/`direct_sale_items` (`storeSellerFilter` en `pull.ts`).
+  `upsertSeller` acepta `inventoryMode` opcional (sin el campo conserva el
+  modo actual, para versiones viejas de la app).
+- **Reglas en los dos lados**: no se le hace una entrega a un vendedor `store`,
+  y un vendedor no pasa a `store` si su ledger de consignación no está en cero
+  (tendría unidades que ninguna pantalla muestra) — primero se registra la
+  devolución.
+- **Cambio de alcance del pull**: el cursor solo avanza, así que cuando un
+  vendedor pasa a `store` las cuentas de caja (versiones viejas) nunca le
+  llegarían. `lib/sync/scope.ts` guarda el último alcance (`owner`,
+  `seller:consignment`, `seller:store`) y `engine.ts`, si cambió tras un pull,
+  reinicia el cursor y vuelve a traer todo una vez (upsert por `uuid`, no
+  duplica).
+- **Móvil, UI**: el tab Vender de un vendedor `store` abre el mismo POS del
+  dueño (`sell/index.tsx#DirectSaleScreen` con `sellerId`); Más muestra "Mis
+  ventas" (`/sell/history` filtrado) + Configuración. El dueño elige el tipo al
+  crear/editar el vendedor; la ficha de uno `store` oculta inventario, entregas
+  y "Liquidar". El historial de ventas muestra quién vendió y la comisión.
+  Reportes: el ranking de vendedores suma sus ventas en local y hay una tarjeta
+  "Comisiones de vendedores de tienda" del período.
+- **Panel web**: selector de tipo en el formulario del vendedor; la ficha de
+  uno `store` muestra sus ventas en local y su comisión acumulada (sin
+  inventario, entregas ni liquidaciones); el listado de ventas en local tiene
+  la columna "Vendió"; Reportes usa `getAllSellersSalesSummary` (suma los dos
+  tipos de venta).
+- **Pago de la comisión** (agregado en la misma sesión, a pedido del usuario,
+  porque un gasto manual no deja saber qué ya se pagó): tabla nueva
+  `commission_payments` (`sellerId`, `periodDate`, `saleCount`,
+  `totalCommission`, `accountId`, `paidAt`) + `direct_sales.commission_payment_id`.
+  Misma regla que las liquidaciones: un pago cubre **todas las ventas del
+  vendedor hasta la fecha que ningún pago anterior cubrió** (lo que llegue tarde
+  entra en el siguiente; nada se paga dos veces). Se paga al crearse: genera un
+  `gasto` en la cuenta elegida (`sourceType: 'commission_payment'`). Sin
+  comisiones pendientes se rechaza. Web: migración `0025` (con los triggers de
+  `sync_version` agregados a mano — ya son 23 tablas sincronizables), lógica
+  compartida panel/sync en `lib/db/queries/commission-payments.ts#payCommissions`,
+  operación `createCommissionPayment {uuid, sellerUuid, periodDate, accountUuid,
+  paidAt, cashMovementUuid, notes?}` (solo dueño; el servidor recalcula el
+  total), el vendedor de tienda recibe sus propios pagos por el pull. Móvil:
+  migración `0021`, `commission-payments-repo.ts`, pantalla
+  `more/sellers/commissions/new.tsx`. **Dónde está**: en la ficha del vendedor
+  de tienda (celular: Más → Vendedores → el vendedor, sección "Comisiones" con
+  lo pendiente, "Pagar comisiones" y los pagos hechos; panel: tarjeta "Pagar
+  comisiones" en `/admin/sellers/[id]`). El vendedor de tienda ve la misma
+  sección, sin el botón, en Más → "Mis comisiones".
+- Verificado: web `npm run test` + `npm run test:db` (47, incluye
+  `store-seller.integration.test.ts` y el pull de vendedor de tienda) + `lint`
+  + `build`; móvil `npm run test` (170, incluye `local/store-seller.test.ts`,
+  `scope-rules.test.ts` y el caso nuevo de `engine.test.ts`) + `tsc` (lint: el
+  error preexistente). Tras el pago de comisiones: web `test:db` 48, móvil 171.
+  `0024`/`0025` aplicadas solo en la base local de desarrollo.
+  **Pendiente**: desplegar la web y verificar en los celulares.
+
 ## Roadmap — Fases 2-9 (diseñado, sin construir)
 
 Mismo orden y dependencias que el pivote del repo web (ver su `CLAUDE.md`,

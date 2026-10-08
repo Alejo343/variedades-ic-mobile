@@ -1,10 +1,12 @@
 import { sessionStore } from './session';
-import { setLastSyncAt } from './cursor';
+import { resetCursor, setLastSyncAt } from './cursor';
 import { bumpDataVersion } from './data-version';
 import { refreshPendingCount } from './pending';
 import { uploadPendingProductPhotos } from './photo-upload';
 import { pushPendingOperations } from './push-engine';
 import { pullServerChanges } from './pull-engine';
+import { getStoredScope, readCurrentScope, setStoredScope } from './scope';
+import { scopeNeedsFullPull } from './scope-rules';
 
 // Orchestrates one sync round: upload any pending photos, THEN push
 // everything pending, THEN pull — always in that order, so the pull sees a
@@ -72,12 +74,26 @@ async function performSync(): Promise<SyncResult> {
       return { status: 'error', stage: 'push', error: pushSummary.error, pushed: pushSummary.applied, rejected: pushSummary.rejected };
     }
 
-    const pullSummary = await pullServerChanges(session.session.token);
+    let pullSummary = await pullServerChanges(session.session.token);
     // Pages applied before a failing one are already committed, so they count.
     if (pullSummary.changed > 0) dataChanged = true;
     if (pullSummary.error) {
       return { status: 'error', stage: 'pull', error: pullSummary.error, pushed: pushSummary.applied, rejected: pushSummary.rejected };
     }
+
+    // The pull itself may have just brought the change (e.g. the owner made
+    // this seller a store seller): rows that became visible have old versions
+    // the cursor already passed, so pull again from zero (scope.ts).
+    const scope = await readCurrentScope(session.session);
+    if (scopeNeedsFullPull(getStoredScope(), scope)) {
+      resetCursor();
+      pullSummary = await pullServerChanges(session.session.token);
+      if (pullSummary.changed > 0) dataChanged = true;
+      if (pullSummary.error) {
+        return { status: 'error', stage: 'pull', error: pullSummary.error, pushed: pushSummary.applied, rejected: pushSummary.rejected };
+      }
+    }
+    if (scope) setStoredScope(scope);
 
     setLastSyncAt(new Date().toISOString());
     return {

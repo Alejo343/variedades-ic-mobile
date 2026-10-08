@@ -12,7 +12,14 @@ let pullResult: { pages: number; changed: number; error?: string } = { pages: 3,
 const calls: string[] = [];
 
 vi.mock("./session", () => ({ sessionStore: { getSnapshot: () => sessionState } }));
-vi.mock("./cursor", () => ({ setLastSyncAt: () => calls.push("setLastSyncAt") }));
+vi.mock("./cursor", () => ({ setLastSyncAt: () => calls.push("setLastSyncAt"), resetCursor: () => calls.push("resetCursor") }));
+let storedScope: string | null = null;
+let currentScope: string | null = "owner";
+vi.mock("./scope", () => ({
+  readCurrentScope: async () => currentScope,
+  getStoredScope: () => storedScope,
+  setStoredScope: (scope: string) => { storedScope = scope; },
+}));
 vi.mock("./data-version", () => ({ bumpDataVersion: () => calls.push("bumpDataVersion") }));
 vi.mock("./pending", () => ({ refreshPendingCount: async () => calls.push("refreshPendingCount") }));
 vi.mock("./photo-upload", () => ({
@@ -92,6 +99,25 @@ describe("runSync", async () => {
     expect(calls).toContain("bumpDataVersion");
     pushResult = { applied: 2, rejected: 1, pendingAfter: 0 };
     pullResult = { pages: 3, changed: 5 };
+  });
+
+  it("si el alcance del pull cambió (vendedor pasó a tienda), vuelve a traer todo desde cero una vez", async () => {
+    sessionState = { status: "authenticated", session: { token: "tok" } };
+    photoError = undefined;
+    storedScope = "seller:consignment";
+    currentScope = "seller:store";
+    calls.length = 0;
+    await runSync();
+    expect(calls.filter((c) => !["refreshPendingCount", "bumpDataVersion", "setLastSyncAt"].includes(c))).toEqual([
+      "photos", "push", "pull", "resetCursor", "pull",
+    ]);
+    expect(storedScope).toBe("seller:store");
+
+    calls.length = 0;
+    await runSync();
+    expect(calls).not.toContain("resetCursor"); // same scope now: a normal pull
+    currentScope = "owner";
+    storedScope = null;
   });
 
   it("dos llamadas a la vez comparten la misma corrida en vez de pisarse", async () => {

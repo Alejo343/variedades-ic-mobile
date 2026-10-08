@@ -1,11 +1,11 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, isNotNull, sql } from "drizzle-orm";
 import { calculateCommission, type CommissionConfig } from "../../domain/commission";
 import { enqueueOperation } from "../../sync/outbox";
 import type { SellerSaleInput } from "../../validations";
 import type { SellerSale, SellerSaleItem, SellerSalesRepo } from "../seller-sales-repo";
 import { recordSellerMovement } from "./stock-movements";
 import { db } from "./db";
-import { sellers, sellerSaleItems, sellerSales } from "./schema";
+import { directSales, sellers, sellerSaleItems, sellerSales } from "./schema";
 
 function toSale(row: typeof sellerSales.$inferSelect): Omit<SellerSale, "items"> {
   return {
@@ -117,15 +117,37 @@ export const localSellerSalesRepo: SellerSalesRepo = {
   },
 
   async getSummaryBySeller() {
-    const rows = await db
-      .select({
-        sellerId: sellerSales.sellerId,
-        count: sql<number>`COUNT(*)`,
-        totalAmount: sql<number>`COALESCE(SUM(${sellerSales.totalAmount}), 0)`,
-        totalCommission: sql<number>`COALESCE(SUM(${sellerSales.commissionAmount}), 0)`,
-      })
-      .from(sellerSales)
-      .groupBy(sellerSales.sellerId);
-    return rows;
+    const [consignment, store] = await Promise.all([
+      db
+        .select({
+          sellerId: sellerSales.sellerId,
+          count: sql<number>`COUNT(*)`,
+          totalAmount: sql<number>`COALESCE(SUM(${sellerSales.totalAmount}), 0)`,
+          totalCommission: sql<number>`COALESCE(SUM(${sellerSales.commissionAmount}), 0)`,
+        })
+        .from(sellerSales)
+        .groupBy(sellerSales.sellerId),
+      db
+        .select({
+          sellerId: directSales.sellerId,
+          count: sql<number>`COUNT(*)`,
+          totalAmount: sql<number>`COALESCE(SUM(${directSales.totalAmount}), 0)`,
+          totalCommission: sql<number>`COALESCE(SUM(${directSales.commissionAmount}), 0)`,
+        })
+        .from(directSales)
+        .where(isNotNull(directSales.sellerId))
+        .groupBy(directSales.sellerId),
+    ]);
+
+    const bySeller = new Map(consignment.map((row) => [row.sellerId, { ...row }]));
+    for (const row of store) {
+      const sellerId = row.sellerId!;
+      const line = bySeller.get(sellerId) ?? { sellerId, count: 0, totalAmount: 0, totalCommission: 0 };
+      line.count += row.count;
+      line.totalAmount += row.totalAmount;
+      line.totalCommission += row.totalCommission;
+      bySeller.set(sellerId, line);
+    }
+    return [...bySeller.values()];
   },
 };

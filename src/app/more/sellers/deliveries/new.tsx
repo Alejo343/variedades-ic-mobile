@@ -25,7 +25,7 @@ export default function NewSellerDeliveryScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    sellersRepo.list().then((rows) => setSellers(rows.filter((s) => s.active)));
+    sellersRepo.list().then((rows) => setSellers(rows.filter((s) => s.active && s.inventoryMode !== 'store')));
     productsRepo.list().then((rows) => setProducts(rows.filter((p) => p.active)));
   }, []);
 

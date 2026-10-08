@@ -1,4 +1,4 @@
-import type { SellerInput } from "../validations";
+import type { SellerInput, SellerInventoryMode } from "../validations";
 
 export type Seller = {
   id: number;
@@ -7,6 +7,7 @@ export type Seller = {
   city: string | null;
   commissionType: "percentage" | "fixed_per_unit";
   commissionValue: number;
+  inventoryMode: SellerInventoryMode;
   active: boolean;
   notes: string | null;
   createdAt: string;

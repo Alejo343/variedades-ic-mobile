@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { enqueueOperation } from "../../sync/outbox";
 import type { CreateSellerInput, Seller, SellerInventoryLineWithSeller, SellersRepo, UpdateSellerInput } from "../sellers-repo";
-import { db } from "./db";
+import { db, type Tx } from "./db";
 import { inventoryMovements, sellers } from "./schema";
 
 function toSeller(row: typeof sellers.$inferSelect): Seller {
@@ -12,6 +12,7 @@ function toSeller(row: typeof sellers.$inferSelect): Seller {
     city: row.city,
     commissionType: row.commissionType as Seller["commissionType"],
     commissionValue: row.commissionValue,
+    inventoryMode: row.inventoryMode as Seller["inventoryMode"],
     active: row.active,
     notes: row.notes,
     createdAt: row.createdAt,
@@ -28,9 +29,24 @@ function toUpsertPayload(row: typeof sellers.$inferSelect) {
     city: row.city,
     commissionType: row.commissionType,
     commissionValue: row.commissionValue,
+    inventoryMode: row.inventoryMode,
     active: row.active,
     notes: row.notes,
   };
+}
+
+// Same rule as the server: a seller only becomes a 'store' seller with an
+// empty consignment ledger, or those units would be stranded where no screen
+// shows them.
+async function hasConsignedStock(tx: Tx, sellerId: number) {
+  const rows = await tx
+    .select({ productId: inventoryMovements.productId })
+    .from(inventoryMovements)
+    .where(and(eq(inventoryMovements.ownerType, "seller"), eq(inventoryMovements.sellerId, sellerId)))
+    .groupBy(inventoryMovements.productId)
+    .having(sql`SUM(${inventoryMovements.quantityDelta}) <> 0`)
+    .limit(1);
+  return rows.length > 0;
 }
 
 export const localSellersRepo: SellersRepo = {
@@ -59,6 +75,7 @@ export const localSellersRepo: SellersRepo = {
           city: data.city ?? null,
           commissionType: data.commissionType,
           commissionValue: data.commissionValue,
+          inventoryMode: data.inventoryMode ?? "consignment",
           active: data.active ?? true,
           notes: data.notes ?? null,
         })
@@ -70,6 +87,14 @@ export const localSellersRepo: SellersRepo = {
 
   async update(id: number, data: UpdateSellerInput) {
     return db.transaction(async (tx) => {
+      if (data.inventoryMode === "store") {
+        const current = await tx.query.sellers.findFirst({ where: eq(sellers.id, id), columns: { inventoryMode: true } });
+        if (current && current.inventoryMode !== "store" && (await hasConsignedStock(tx, id))) {
+          throw new Error(
+            "Este vendedor todavía tiene inventario en consignación. Registra la devolución antes de pasarlo a vendedor de tienda.",
+          );
+        }
+      }
       const [row] = await tx
         .update(sellers)
         .set({ ...data, updatedAt: new Date().toISOString() })

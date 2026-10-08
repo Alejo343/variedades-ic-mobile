@@ -17,6 +17,7 @@ export default function SellersLayout() {
       <Stack.Screen name="settlements/index" options={{ title: 'Liquidaciones' }} />
       <Stack.Screen name="settlements/new" options={{ title: 'Nueva liquidación', presentation: 'modal' }} />
       <Stack.Screen name="settlements/[id]" options={{ title: 'Liquidación' }} />
+      <Stack.Screen name="commissions/new" options={{ title: 'Pagar comisiones', presentation: 'modal' }} />
     </Stack>
   );
 }

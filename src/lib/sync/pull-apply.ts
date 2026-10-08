@@ -5,6 +5,7 @@ import {
   cashAccounts,
   cashMovements,
   categories,
+  commissionPayments,
   directSaleItems,
   directSales,
   distributors,
@@ -57,7 +58,15 @@ async function localIdNullable(tx: Tx, table: UuidTable, uuid: string | null | u
 // Upserts by `uuid` (the row's sync identity) and returns its local id,
 // whichever branch ran — every table here has both columns, same shape the
 // generic helpers above rely on.
-async function upsert(tx: Tx, table: UuidTable, uuid: string, values: Row): Promise<number> {
+// A field the server didn't send (an older server that predates it) must
+// never overwrite the local value with a default — dropped here, so an insert
+// takes the column default and an update leaves the column as it is.
+function sentFields(values: Row): Row {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
+}
+
+async function upsert(tx: Tx, table: UuidTable, uuid: string, allValues: Row): Promise<number> {
+  const values = sentFields(allValues);
   const [row] = await tx
     .insert(table)
     .values({ uuid, ...values })
@@ -73,7 +82,7 @@ async function upsert(tx: Tx, table: UuidTable, uuid: string, values: Row): Prom
 // by then.
 const TABLE_ORDER = [
   'categories', 'sellers', 'distributors', 'cash_accounts', 'products', 'product_images',
-  'direct_sales', 'direct_sale_items', 'purchase_orders', 'purchase_order_items', 'purchase_payments',
+  'commission_payments', 'direct_sales', 'direct_sale_items', 'purchase_orders', 'purchase_order_items', 'purchase_payments',
   'seller_deliveries', 'seller_delivery_items', 'seller_returns', 'seller_return_items',
   'settlements', 'seller_losses', 'seller_loss_items', 'seller_sales', 'seller_sale_items',
   'inventory_movements', 'cash_movements',
@@ -88,7 +97,7 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
     case 'sellers':
       await upsert(tx, sellers, uuid, {
         name: row.name, phone: row.phone, city: row.city, commissionType: row.commissionType,
-        commissionValue: row.commissionValue, active: row.active, notes: row.notes,
+        commissionValue: row.commissionValue, inventoryMode: row.inventoryMode, active: row.active, notes: row.notes,
       });
       return;
     case 'distributors':
@@ -111,9 +120,26 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       await upsert(tx, productImages, uuid, { productId, url: row.url, alt: row.alt, displayOrder: row.displayOrder, isPrimary: row.isPrimary });
       return;
     }
+    case 'commission_payments': {
+      const sellerId = await localId(tx, sellers, row.sellerUuid as string);
+      const accountId = await localId(tx, cashAccounts, row.accountUuid as string);
+      await upsert(tx, commissionPayments, uuid, {
+        sellerId, periodDate: row.periodDate, saleCount: row.saleCount, totalCommission: row.totalCommission,
+        accountId, paidAt: row.paidAt, notes: row.notes,
+      });
+      return;
+    }
     case 'direct_sales': {
       const accountId = await localId(tx, cashAccounts, row.accountUuid as string);
-      await upsert(tx, directSales, uuid, { saleDate: row.saleDate, totalAmount: row.totalAmount, accountId, notes: row.notes });
+      const commissionPaymentId =
+        row.commissionPaymentUuid === undefined
+          ? undefined
+          : await localIdNullable(tx, commissionPayments, row.commissionPaymentUuid as string | null);
+      const sellerId = row.sellerUuid === undefined ? undefined : await localIdNullable(tx, sellers, row.sellerUuid as string | null);
+      await upsert(tx, directSales, uuid, {
+        saleDate: row.saleDate, totalAmount: row.totalAmount, accountId, sellerId,
+        commissionAmount: row.commissionAmount, commissionPaymentId, notes: row.notes,
+      });
       return;
     }
     case 'direct_sale_items': {
@@ -212,7 +238,9 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       const accountId = await localId(tx, cashAccounts, row.accountUuid as string);
       // sourceUuid is polymorphic — which table it points into depends on
       // sourceType, and only these three ever set it on the server's pull.
-      const sourceTables = { direct_sale: directSales, settlement: settlements, purchase_payment: purchasePayments } as const;
+      const sourceTables = {
+        direct_sale: directSales, settlement: settlements, purchase_payment: purchasePayments, commission_payment: commissionPayments,
+      } as const;
       const sourceTable = sourceTables[row.sourceType as keyof typeof sourceTables];
       const sourceId = sourceTable ? await localIdNullable(tx, sourceTable, row.sourceUuid as string | null) : null;
       await upsert(tx, cashMovements, uuid, {
@@ -230,7 +258,7 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
 
 const TOMBSTONE_TABLES: Record<string, UuidTable> = {
   categories, sellers, distributors, cash_accounts: cashAccounts, products, product_images: productImages,
-  direct_sales: directSales, direct_sale_items: directSaleItems, purchase_orders: purchaseOrders,
+  commission_payments: commissionPayments, direct_sales: directSales, direct_sale_items: directSaleItems, purchase_orders: purchaseOrders,
   purchase_order_items: purchaseOrderItems, purchase_payments: purchasePayments,
   seller_deliveries: sellerDeliveries, seller_delivery_items: sellerDeliveryItems,
   seller_returns: sellerReturns, seller_return_items: sellerReturnItems,

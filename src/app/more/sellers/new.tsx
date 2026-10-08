@@ -8,7 +8,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { sellersRepo } from '@/lib/data';
-import { sellerSchema } from '@/lib/validations';
+import { sellerSchema, type SellerInventoryMode } from '@/lib/validations';
 
 export default function NewSellerScreen() {
   const theme = useTheme();
@@ -16,6 +16,7 @@ export default function NewSellerScreen() {
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
   const [commissionType, setCommissionType] = useState<'percentage' | 'fixed_per_unit'>('percentage');
+  const [inventoryMode, setInventoryMode] = useState<SellerInventoryMode>('consignment');
   const [commissionValue, setCommissionValue] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +29,7 @@ export default function NewSellerScreen() {
       city: city || undefined,
       commissionType,
       commissionValue: Number(commissionValue),
+      inventoryMode,
       notes: notes || undefined,
     });
     if (!parsed.success) {
@@ -66,6 +68,25 @@ export default function NewSellerScreen() {
 
           <ThemedText type="small">Ciudad (opcional)</ThemedText>
           <TextInput value={city} onChangeText={setCity} style={inputStyle} />
+
+          <ThemedText type="small">Tipo de vendedor</ThemedText>
+          <ThemedView style={styles.typeRow}>
+            <Pressable style={styles.typeFlex} onPress={() => setInventoryMode('consignment')}>
+              <ThemedView type={inventoryMode === 'consignment' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
+                <ThemedText type={inventoryMode === 'consignment' ? 'linkPrimary' : undefined}>Consignación</ThemedText>
+              </ThemedView>
+            </Pressable>
+            <Pressable style={styles.typeFlex} onPress={() => setInventoryMode('store')}>
+              <ThemedView type={inventoryMode === 'store' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
+                <ThemedText type={inventoryMode === 'store' ? 'linkPrimary' : undefined}>Tienda principal</ThemedText>
+              </ThemedView>
+            </Pressable>
+          </ThemedView>
+          <ThemedText type="small" themeColor="textSecondary">
+            {inventoryMode === 'store'
+              ? 'Vende del inventario principal y el dinero entra a caja al momento. No recibe entregas ni se liquida.'
+              : 'Vende solo la mercancía que se le entrega y entrega el dinero al liquidar.'}
+          </ThemedText>
 
           <ThemedText type="small">Tipo de comisión</ThemedText>
           <ThemedView style={styles.typeRow}>

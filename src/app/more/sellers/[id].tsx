@@ -8,9 +8,10 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useMySeller } from '@/hooks/use-my-seller';
 import { useTheme } from '@/hooks/use-theme';
-import { productsRepo, sellersRepo } from '@/lib/data';
+import { cashAccountsRepo, commissionPaymentsRepo, productsRepo, sellersRepo, type CommissionPayment, type CommissionPaymentPreview } from '@/lib/data';
+import { formatCOP, todayLocalDateString } from '@/lib/format';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
-import { sellerSchema } from '@/lib/validations';
+import { sellerSchema, type SellerInventoryMode } from '@/lib/validations';
 
 type InventoryLine = { productId: number; name: string; sku: string; quantity: number };
 
@@ -25,10 +26,17 @@ export default function EditSellerScreen() {
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
   const [commissionType, setCommissionType] = useState<'percentage' | 'fixed_per_unit'>('percentage');
+  const [inventoryMode, setInventoryMode] = useState<SellerInventoryMode>('consignment');
   const [commissionValue, setCommissionValue] = useState('');
   const [notes, setNotes] = useState('');
   const [active, setActive] = useState(true);
+  // The saved mode (not the one being edited) decides which actions show.
+  const [savedMode, setSavedMode] = useState<SellerInventoryMode>('consignment');
   const [inventory, setInventory] = useState<InventoryLine[]>([]);
+  // Store sellers: commissions still unpaid up to today, and past payments.
+  const [pendingCommission, setPendingCommission] = useState<CommissionPaymentPreview | null>(null);
+  const [commissionPayments, setCommissionPayments] = useState<CommissionPayment[]>([]);
+  const [accountNames, setAccountNames] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -45,6 +53,8 @@ export default function EditSellerScreen() {
           setPhone(seller.phone ?? '');
           setCity(seller.city ?? '');
           setCommissionType(seller.commissionType);
+          setInventoryMode(seller.inventoryMode);
+          setSavedMode(seller.inventoryMode);
           setCommissionValue(String(seller.commissionValue));
           setNotes(seller.notes ?? '');
           setActive(seller.active);
@@ -63,6 +73,16 @@ export default function EditSellerScreen() {
   useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
+      Promise.all([
+        commissionPaymentsRepo.preview(sellerId, todayLocalDateString()),
+        commissionPaymentsRepo.listForSeller(sellerId),
+        cashAccountsRepo.list(),
+      ]).then(([pending, payments, accounts]) => {
+        if (cancelled) return;
+        setPendingCommission(pending);
+        setCommissionPayments(payments);
+        setAccountNames(Object.fromEntries(accounts.map((a) => [a.id, a.name])));
+      });
       Promise.all([sellersRepo.getInventory(sellerId), productsRepo.list()]).then(([lines, products]) => {
         if (cancelled) return;
         const productById = Object.fromEntries(products.map((p) => [p.id, p]));
@@ -88,6 +108,7 @@ export default function EditSellerScreen() {
       city: city || undefined,
       commissionType,
       commissionValue: Number(commissionValue),
+      inventoryMode,
       notes: notes || undefined,
       active,
     });
@@ -147,6 +168,25 @@ export default function EditSellerScreen() {
           <ThemedText type="small">Ciudad (opcional)</ThemedText>
           <TextInput value={city} onChangeText={setCity} style={inputStyle} />
 
+          <ThemedText type="small">Tipo de vendedor</ThemedText>
+          <ThemedView style={styles.typeRow}>
+            <Pressable style={styles.typeFlex} onPress={() => setInventoryMode('consignment')}>
+              <ThemedView type={inventoryMode === 'consignment' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
+                <ThemedText type={inventoryMode === 'consignment' ? 'linkPrimary' : undefined}>Consignación</ThemedText>
+              </ThemedView>
+            </Pressable>
+            <Pressable style={styles.typeFlex} onPress={() => setInventoryMode('store')}>
+              <ThemedView type={inventoryMode === 'store' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
+                <ThemedText type={inventoryMode === 'store' ? 'linkPrimary' : undefined}>Tienda principal</ThemedText>
+              </ThemedView>
+            </Pressable>
+          </ThemedView>
+          <ThemedText type="small" themeColor="textSecondary">
+            {inventoryMode === 'store'
+              ? 'Vende del inventario principal y el dinero entra a caja al momento. No recibe entregas ni se liquida.'
+              : 'Vende solo la mercancía que se le entrega y entrega el dinero al liquidar.'}
+          </ThemedText>
+
           <ThemedText type="small">Tipo de comisión</ThemedText>
           <ThemedView style={styles.typeRow}>
             <Pressable style={styles.typeFlex} onPress={() => setCommissionType('percentage')}>
@@ -179,6 +219,53 @@ export default function EditSellerScreen() {
             </>
           )}
 
+          {savedMode === 'store' ? (
+            <>
+              <ThemedText themeColor="textSecondary" type="small" style={styles.sectionTitle}>
+                Vendedor de tienda: vende del inventario principal desde Vender y sus ventas entran a caja al momento.
+              </ThemedText>
+
+              <ThemedText type="smallBold" style={styles.sectionTitle}>
+                Comisiones
+              </ThemedText>
+              <ThemedView type="backgroundElement" style={styles.inventoryRow}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Pendiente por pagar
+                </ThemedText>
+                <ThemedText type="subtitle">{formatCOP(pendingCommission?.totalCommission ?? 0)}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {pendingCommission?.saleCount ?? 0} {pendingCommission?.saleCount === 1 ? 'venta' : 'ventas'}
+                </ThemedText>
+              </ThemedView>
+
+              {!isSeller && (pendingCommission?.totalCommission ?? 0) > 0 ? (
+                <Link href={`/more/sellers/commissions/new?sellerId=${sellerId}`} asChild>
+                  <Pressable>
+                    <ThemedView type="backgroundSelected" style={styles.submitButton}>
+                      <ThemedText type="linkPrimary">Pagar comisiones</ThemedText>
+                    </ThemedView>
+                  </Pressable>
+                </Link>
+              ) : null}
+
+              {commissionPayments.length > 0 ? (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.sectionTitle}>
+                  Pagos realizados
+                </ThemedText>
+              ) : null}
+              {commissionPayments.map((payment) => (
+                <ThemedView key={payment.id} type="backgroundElement" style={styles.inventoryRow}>
+                  <ThemedText type="small">
+                    {formatCOP(payment.totalCommission)} · hasta {payment.periodDate}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {payment.saleCount} {payment.saleCount === 1 ? 'venta' : 'ventas'} · {accountNames[payment.accountId] ?? 'Cuenta'}
+                  </ThemedText>
+                </ThemedView>
+              ))}
+            </>
+          ) : (
+            <>
           <ThemedText type="smallBold" style={styles.sectionTitle}>
             Inventario actual
           </ThemedText>
@@ -235,6 +322,8 @@ export default function EditSellerScreen() {
               </Pressable>
             </Link>
           ) : null}
+            </>
+          )}
 
           {active && !isSeller ? (
             <Pressable onPress={handleDeactivate} disabled={saving}>

@@ -470,6 +470,17 @@ function SalesTab({ data, rangeLabel }: { data: ReportsData; rangeLabel: string 
         </Card>
       </Section>
 
+      {sales.storeSellerCommission > 0 ? (
+        <Section title="Comisiones de vendedores de tienda" scope={rangeLabel}>
+          <Card>
+            <ThemedText type="cardTitle">{formatCOP(sales.storeSellerCommission)}</ThemedText>
+            <ThemedText type="secondary" themeColor="textSecondary">
+              Ganadas en ventas en local de este período. Se pagan desde la ficha de cada vendedor (Pagar comisiones).
+            </ThemedText>
+          </Card>
+        </Section>
+      ) : null}
+
       <Section title="Ranking de vendedores" scope="Histórico">
         <Card>
           {data.sellerSales.length === 0 ? (

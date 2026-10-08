@@ -33,5 +33,7 @@ export interface SellerSalesRepo {
   list(): Promise<SellerSale[]>;
   listForSeller(sellerId: number): Promise<SellerSale[]>;
   create(data: SellerSaleInput): Promise<SellerSale>;
+  // Every sale made by each seller: consignment sales plus a store seller's
+  // in-store sales (direct_sales tagged with them).
   getSummaryBySeller(): Promise<SellerSalesSummaryLine[]>;
 }

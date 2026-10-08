@@ -17,6 +17,9 @@ export type SalesReport = {
   // don't (see CLAUDE.md "Cuentas de caja"), so this breaks down the local
   // channel only, not the grand total.
   localByAccount: AccountTotal[];
+  // Commission earned by 'store' sellers on their in-store sales in the period
+  // (part of the local channel). Consignment commissions are settled instead.
+  storeSellerCommission: number;
 };
 
 export type ProfitReport = { revenue: number; cogs: number; profit: number };

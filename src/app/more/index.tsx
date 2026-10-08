@@ -22,16 +22,23 @@ const OWNER_MENU_ITEMS = [
 export default function MoreScreen() {
   const { isSeller, seller } = useMySeller();
 
-  // A seller's menu is only their own stuff: inventory (with sale / return /
-  // loss actions), settlements, settings. Their inventory hub is the seller
-  // detail screen, which hides the owner-only controls for this role.
-  const items: { label: string; href: string }[] = isSeller
-    ? [
-        ...(seller ? [{ label: 'Mi inventario', href: `/more/sellers/${seller.id}` }] : []),
-        { label: 'Mis liquidaciones', href: '/more/sellers/settlements' },
-        { label: 'Configuración', href: '/more/settings' },
-      ]
-    : [...OWNER_MENU_ITEMS];
+  // A seller's menu is only their own stuff. Consignment: inventory (with
+  // sale / return / loss actions — the seller detail screen, which hides the
+  // owner-only controls for this role) and settlements. Store: they sell the
+  // principal inventory from Vender and never settle, so only their sales.
+  const items: { label: string; href: string }[] = !isSeller
+    ? [...OWNER_MENU_ITEMS]
+    : seller?.inventoryMode === 'store'
+      ? [
+          { label: 'Mis ventas', href: '/sell/history' },
+          ...(seller ? [{ label: 'Mis comisiones', href: `/more/sellers/${seller.id}` }] : []),
+          { label: 'Configuración', href: '/more/settings' },
+        ]
+      : [
+          ...(seller ? [{ label: 'Mi inventario', href: `/more/sellers/${seller.id}` }] : []),
+          { label: 'Mis liquidaciones', href: '/more/sellers/settlements' },
+          { label: 'Configuración', href: '/more/settings' },
+        ];
 
   return (
     <ThemedView style={styles.container}>

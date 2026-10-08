@@ -1,10 +1,11 @@
 import { desc, eq } from "drizzle-orm";
+import { calculateCommission, type CommissionConfig } from "../../domain/commission";
 import { enqueueOperation } from "../../sync/outbox";
 import type { DirectSaleInput } from "../../validations";
 import type { DirectSale, DirectSaleItem, DirectSalesRepo } from "../direct-sales-repo";
 import { recordCashMovementTx } from "./cash-repo";
 import { db } from "./db";
-import { cashAccounts, directSaleItems, directSales } from "./schema";
+import { cashAccounts, directSaleItems, directSales, sellers } from "./schema";
 import { recordProductMovement } from "./stock-movements";
 
 function toItem(row: typeof directSaleItems.$inferSelect): DirectSaleItem {
@@ -29,6 +30,9 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         saleDate: sale.saleDate,
         totalAmount: sale.totalAmount,
         accountId: sale.accountId,
+        sellerId: sale.sellerId,
+        commissionAmount: sale.commissionAmount,
+        commissionPaymentId: sale.commissionPaymentId,
         notes: sale.notes,
         createdAt: sale.createdAt,
         items: items.map(toItem),
@@ -42,12 +46,22 @@ export const localDirectSalesRepo: DirectSalesRepo = {
       const account = await tx.query.cashAccounts.findFirst({ where: eq(cashAccounts.id, data.accountId), columns: { uuid: true } });
       if (!account) throw new Error("Cuenta no encontrada");
 
+      // A 'store' seller sells the principal inventory; a consignment seller
+      // never records a direct sale (they sell their own stock instead).
+      const seller =
+        data.sellerId === undefined ? undefined : await tx.query.sellers.findFirst({ where: eq(sellers.id, data.sellerId) });
+      if (data.sellerId !== undefined && !seller) throw new Error("Vendedor no encontrado");
+      if (seller && seller.inventoryMode !== "store") {
+        throw new Error("Este vendedor es de consignación: solo puede vender su propio inventario");
+      }
+
       const [sale] = await tx
         .insert(directSales)
-        .values({ totalAmount: 0, accountId: data.accountId, notes: data.notes ?? null })
+        .values({ totalAmount: 0, accountId: data.accountId, sellerId: seller?.id ?? null, notes: data.notes ?? null })
         .returning();
 
       let totalAmount = 0;
+      let totalQuantity = 0;
       const items: DirectSaleItem[] = [];
       const outboxItems: { uuid: string; productUuid: string; quantity: number; unitPrice: number; movementUuid: string }[] = [];
 
@@ -63,6 +77,7 @@ export const localDirectSalesRepo: DirectSalesRepo = {
 
         const subtotal = item.quantity * item.unitPrice;
         totalAmount += subtotal;
+        totalQuantity += item.quantity;
 
         const [row] = await tx
           .insert(directSaleItems)
@@ -72,7 +87,20 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         outboxItems.push({ uuid: row.uuid, productUuid, quantity: item.quantity, unitPrice: item.unitPrice, movementUuid });
       }
 
-      const [updated] = await tx.update(directSales).set({ totalAmount }).where(eq(directSales.id, sale.id)).returning();
+      // Local estimate only: the server recomputes the commission with the
+      // seller's current config and the next pull replaces this value.
+      const commissionAmount = seller
+        ? calculateCommission(
+            { type: seller.commissionType as CommissionConfig["type"], value: seller.commissionValue },
+            totalAmount,
+            totalQuantity,
+          )
+        : 0;
+      const [updated] = await tx
+        .update(directSales)
+        .set({ totalAmount, commissionAmount })
+        .where(eq(directSales.id, sale.id))
+        .returning();
 
       // cashMovementUuid stays absent when there's no income to record (a
       // free/zero-total sale) — the web's createDirectSale only requires it
@@ -94,6 +122,7 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         uuid: updated.uuid,
         saleDate: updated.saleDate,
         accountUuid: account.uuid,
+        sellerUuid: seller?.uuid,
         notes: updated.notes,
         cashMovementUuid,
         items: outboxItems,
@@ -104,6 +133,9 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         saleDate: updated.saleDate,
         totalAmount: updated.totalAmount,
         accountId: updated.accountId,
+        sellerId: updated.sellerId,
+        commissionAmount: updated.commissionAmount,
+        commissionPaymentId: updated.commissionPaymentId,
         notes: updated.notes,
         createdAt: updated.createdAt,
         items,

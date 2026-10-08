@@ -52,8 +52,11 @@ export const localSellerDeliveriesRepo: SellerDeliveriesRepo = {
 
   async create(data: SellerDeliveryInput) {
     return db.transaction(async (tx) => {
-      const seller = await tx.query.sellers.findFirst({ where: eq(sellers.id, data.sellerId), columns: { uuid: true } });
+      const seller = await tx.query.sellers.findFirst({ where: eq(sellers.id, data.sellerId), columns: { uuid: true, inventoryMode: true } });
       if (!seller) throw new Error("Vendedor no encontrado");
+      if (seller.inventoryMode === "store") {
+        throw new Error("Un vendedor de tienda vende del inventario principal: no se le entrega mercancía.");
+      }
 
       const [delivery] = await tx.insert(sellerDeliveries).values({ sellerId: data.sellerId, notes: data.notes ?? null }).returning();
 

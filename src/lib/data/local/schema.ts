@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, integer, sqliteTable, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { type AnySQLiteColumn, check, integer, sqliteTable, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { newUuid } from "../../uuid";
 
 // syncStatus is reserved for a future remote-sync phase (see CLAUDE.md) —
@@ -128,6 +128,12 @@ export const sellers = sqliteTable("sellers", {
   city: text("city"),
   commissionType: text("commission_type").notNull(),
   commissionValue: integer("commission_value").notNull(),
+  // 'consignment': sells only their own consigned stock and settles later.
+  // 'store': works at the main store — sells the principal inventory and the
+  // money goes straight to a cash account (a direct_sale tagged with them).
+  // No CHECK here (adding one would rebuild the table); validations.ts and the
+  // server's CHECK guard the values.
+  inventoryMode: text("inventory_mode").notNull().default("consignment"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   notes: text("notes"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
@@ -190,6 +196,11 @@ export const directSales = sqliteTable("direct_sales", {
   accountId: integer("account_id")
     .notNull()
     .references(() => cashAccounts.id),
+  // Set when a 'store' seller made the sale (null = the owner).
+  sellerId: integer("seller_id").references(() => sellers.id),
+  commissionAmount: integer("commission_amount").notNull().default(0),
+  // The commission payment that paid this sale's commission (null = pending).
+  commissionPaymentId: integer("commission_payment_id").references((): AnySQLiteColumn => commissionPayments.id),
   notes: text("notes"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   syncStatus: text("sync_status").notNull().default("local"),
@@ -383,6 +394,27 @@ export const sellerLossItems = sqliteTable(
 // periodDate is a plain 'YYYY-MM-DD' string (no time) — settlements-repo
 // compares it against saleDate/lossDate (full timestamps) via SQLite's
 // DATE(...) to extract just the date part.
+// The owner paying a 'store' seller the commissions of their in-store sales:
+// everything still unpaid up to periodDate (same rule as settlements). Paid on
+// creation — an expense in the chosen account (sourceType 'commission_payment').
+export const commissionPayments = sqliteTable("commission_payments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  uuid: syncUuid(),
+  sellerId: integer("seller_id")
+    .notNull()
+    .references(() => sellers.id),
+  periodDate: text("period_date").notNull(),
+  saleCount: integer("sale_count").notNull(),
+  totalCommission: integer("total_commission").notNull(),
+  accountId: integer("account_id")
+    .notNull()
+    .references(() => cashAccounts.id),
+  paidAt: text("paid_at").notNull().default(sql`(current_timestamp)`),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+  syncStatus: text("sync_status").notNull().default("local"),
+});
+
 export const settlements = sqliteTable(
   "settlements",
   {

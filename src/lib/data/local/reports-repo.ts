@@ -60,7 +60,11 @@ export const localReportsRepo: ReportsRepo = {
 
     const [[local], [seller], localByAccount] = await Promise.all([
       db
-        .select({ count: sql<number>`COUNT(*)`, total: sql<number>`COALESCE(SUM(${directSales.totalAmount}), 0)` })
+        .select({
+          count: sql<number>`COUNT(*)`,
+          total: sql<number>`COALESCE(SUM(${directSales.totalAmount}), 0)`,
+          commission: sql<number>`COALESCE(SUM(${directSales.commissionAmount}), 0)`,
+        })
         .from(directSales)
         .where(localCond),
       db
@@ -88,6 +92,7 @@ export const localReportsRepo: ReportsRepo = {
       totalAmount: byChannel.local.total + byChannel.seller.total,
       byChannel,
       localByAccount,
+      storeSellerCommission: local?.commission ?? 0,
     };
   },
 

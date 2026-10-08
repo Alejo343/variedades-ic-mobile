@@ -207,13 +207,14 @@ function AnimatedTotal({ value, color }: { value: number; color: string }) {
   );
 }
 
-// The owner keeps the direct-sale POS below; a seller's Vender tab is a
-// consignment sale against their own inventory (same form the owner uses
-// from the seller detail). Split in two components so the POS's many hooks
-// never run conditionally.
+// The owner and a 'store' seller use the direct-sale POS below (principal
+// inventory, money into a cash account — a store seller's sale is tagged with
+// them); a consignment seller's Vender tab is a sale against their own
+// inventory (same form the owner uses from the seller detail). Split in
+// components so the POS's many hooks never run conditionally.
 export default function SellScreen() {
   const { isSeller } = useMySeller();
-  return isSeller ? <SellerSellScreen /> : <OwnerSellScreen />;
+  return isSeller ? <SellerSellScreen /> : <DirectSaleScreen />;
 }
 
 function SellerSellScreen() {
@@ -233,10 +234,11 @@ function SellerSellScreen() {
       </ThemedView>
     );
   }
+  if (seller.inventoryMode === 'store') return <DirectSaleScreen sellerId={seller.id} />;
   return <SellerSaleForm key={formKey} sellerId={seller.id} onSaved={() => setFormKey((k) => k + 1)} />;
 }
 
-function OwnerSellScreen() {
+function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const [products, setProducts] = useState<Product[]>([]);
@@ -364,6 +366,7 @@ function OwnerSellScreen() {
     const parsed = directSaleSchema.safeParse({
       items: applyDiscount(cart, subtotal, grandTotal),
       accountId,
+      sellerId,
       notes: notes || undefined,
     });
     if (!parsed.success) {
