@@ -996,6 +996,34 @@ desactivado (antes no había forma desde la app).
 - Verificado con `npm run test` (180) + `npx tsc --noEmit` en verde. **No
   verificado todavía en el celular.**
 
+### Rollout — Productos, Inventario y Ajustar stock
+
+Sesión 2026-10-08.
+
+- **Productos** (`more/products/index.tsx`): buscador (nombre, SKU o código
+  del proveedor), filtros Activos / Stock bajo / Agotados / Inactivos con
+  conteo, filas con foto, SKU · categoría, precio e insignia de stock por
+  color; "Categorías" pasó al encabezado y "Nuevo producto" es un botón
+  flotante.
+- **Inventario** (`more/inventory/index.tsx`): valor del inventario a costo,
+  tarjetas Agotados / Stock bajo, lista "Para reponer" (barra de stock contra
+  el mínimo, abre el producto) y movimientos recientes con ícono y nombre por
+  tipo. "Ajustar stock" fijo abajo. **Se quitó el botón "Respaldo"** de esta
+  pantalla: ya está en el menú Más.
+- **Ajustar stock** (`more/inventory/adjust.tsx`): producto con foto y stock
+  actual, Sumar / Restar + cantidad, vista previa "pasa de X a Y", motivos
+  rápidos. Bloquea solo las restas que no alcanzan; sumar a un stock negativo
+  (que deja la sync) se permite, es como se corrige.
+- **Dos bugs corregidos en `local/inventory-repo.ts`** (test nuevo
+  `local/inventory-repo.test.ts`): `getRecentMovements` mezclaba el ledger de
+  los vendedores (una entrega salía como −3 y +3, una venta de vendedor como
+  si saliera de la tienda) — ahora solo `owner_type = 'principal'`; y
+  `getOutOfStock` contaba solo `stock = 0` — ahora `<= 0`, porque la sync
+  acepta stock negativo. Lo segundo también corrige la alerta de Agotados de
+  Inicio.
+- Verificado con `npm run test` (182) + `npx tsc --noEmit` en verde. **No
+  verificado todavía en el celular.**
+
 ## Importación de compras desde Excel (.xlsx)
 
 Construida en la sesión 2026-08-01. El cliente de IC Variedades arma cada
