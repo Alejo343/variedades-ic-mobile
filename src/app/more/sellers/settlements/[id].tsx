@@ -1,19 +1,21 @@
-import { useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
-import { useMySeller } from '@/hooks/use-my-seller';
-import { cashAccountsRepo, sellersRepo, settlementsRepo, type CashAccount, type Seller, type Settlement } from '@/lib/data';
-import { formatCOP } from '@/lib/format';
+import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
+import { useMySeller } from '@/hooks/use-my-seller';
+import { useTheme } from '@/hooks/use-theme';
+import { cashAccountsRepo, sellersRepo, settlementsRepo, type CashAccount, type Seller, type Settlement } from '@/lib/data';
+import { formatCOP, formatDateTime } from '@/lib/format';
 
 export default function SettlementDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const settlementId = Number(id);
+  const theme = useTheme();
   // Only the owner settles: a seller just sees what they owe.
   const { isSeller } = useMySeller();
 
@@ -23,6 +25,7 @@ export default function SettlementDetailScreen() {
   const [accountId, setAccountId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useDataFocusEffect(
@@ -50,6 +53,7 @@ export default function SettlementDetailScreen() {
   async function handleMarkSettled() {
     if (accountId === null) return;
     setSaving(true);
+    setError(null);
     try {
       const updated = await settlementsRepo.markSettled(settlementId, accountId);
       setSettlement(updated);
@@ -68,9 +72,10 @@ export default function SettlementDetailScreen() {
   async function handleResync() {
     setSaving(true);
     setError(null);
+    setNotice(null);
     try {
       await settlementsRepo.resyncSettled(settlementId);
-      setError('Reenviada — ve a Configuración y toca "Sincronizar ahora".');
+      setNotice('Reenviada — ve a Configuración y toca "Sincronizar ahora".');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo reenviar');
     } finally {
@@ -80,119 +85,127 @@ export default function SettlementDetailScreen() {
 
   if (loading || !settlement) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <ThemedText themeColor="textSecondary">{loading ? 'Cargando…' : 'Liquidación no encontrada'}</ThemedText>
-        </SafeAreaView>
+      <ThemedView style={[styles.container, styles.padded]}>
+        <ThemedText themeColor="textSecondary">{loading ? 'Cargando…' : 'Liquidación no encontrada'}</ThemedText>
       </ThemedView>
     );
   }
 
+  const settled = settlement.status === 'liquidada';
+  const statusColor = settled ? theme.primary : theme.warning;
+
   return (
     <ThemedView style={styles.container}>
+      {isSeller ? <Stack.Screen options={{ title: 'Mi liquidación' }} /> : null}
       <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ThemedText type="small">Vendedor</ThemedText>
-        <ThemedText type="default" style={styles.value}>
-          {seller?.name ?? `Vendedor #${settlement.sellerId}`}
-        </ThemedText>
-
-        <ThemedText type="small">Período</ThemedText>
-        <ThemedText type="default" style={styles.value}>
-          {settlement.periodDate}
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.totalsBlock}>
-          <ThemedView style={styles.totalsRow}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Ventas
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+            <View style={styles.heroHeader}>
+              <ThemedText type="secondary" themeColor="textSecondary" style={styles.flex}>
+                {isSeller ? 'Lo que entregas' : `A entregar · ${seller?.name ?? `Vendedor #${settlement.sellerId}`}`}
+              </ThemedText>
+              <View style={[styles.chip, { backgroundColor: withAlpha(statusColor, 0.12) }]}>
+                <ThemedText type="caption" style={{ color: statusColor }}>
+                  {settled ? 'Liquidada' : 'Pendiente'}
+                </ThemedText>
+              </View>
+            </View>
+            <ThemedText type="bigNumber" style={{ color: theme.primary }} adjustsFontSizeToFit numberOfLines={1}>
+              {formatCOP(settlement.amountDue)}
             </ThemedText>
-            <ThemedText type="small">{formatCOP(settlement.totalSales)}</ThemedText>
-          </ThemedView>
-          <ThemedView style={styles.totalsRow}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Comisión
+            <ThemedText type="secondary" themeColor="textSecondary">
+              Ventas hasta el {settlement.periodDate}
+              {settled && settlement.settledAt ? ` · cerrada el ${formatDateTime(settlement.settledAt)}` : ''}
             </ThemedText>
-            <ThemedText type="small">-{formatCOP(settlement.totalCommission)}</ThemedText>
           </ThemedView>
-          <ThemedView style={styles.totalsRow}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Pérdidas
+
+          <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+            <Line label="Ventas" value={formatCOP(settlement.totalSales)} />
+            <Line label={isSeller ? 'Tu comisión' : 'Comisión del vendedor'} value={`−${formatCOP(settlement.totalCommission)}`} color={theme.primary} />
+            <Line label="Pérdidas a cargo" value={`+${formatCOP(settlement.totalLosses)}`} color={settlement.totalLosses > 0 ? theme.error : undefined} />
+            <View style={[styles.divider, { backgroundColor: theme.border }]} />
+            <View style={styles.line}>
+              <ThemedText type="cardTitle">A entregar</ThemedText>
+              <ThemedText type="cardTitle">{formatCOP(settlement.amountDue)}</ThemedText>
+            </View>
+          </ThemedView>
+
+          {isSeller ? (
+            <ThemedText type="caption" themeColor="textSecondary">
+              Se calcula como tus ventas menos tu comisión, más el costo de la mercancía perdida o dañada.
             </ThemedText>
-            <ThemedText type="small">+{formatCOP(settlement.totalLosses)}</ThemedText>
-          </ThemedView>
-          <ThemedView style={styles.totalsRow}>
-            <ThemedText type="smallBold">A entregar</ThemedText>
-            <ThemedText type="linkPrimary">{formatCOP(settlement.amountDue)}</ThemedText>
-          </ThemedView>
-        </ThemedView>
+          ) : null}
 
-        <ThemedText type="small" style={styles.status}>
-          Estado: {settlement.status === 'liquidada' ? `liquidada (${settlement.settledAt ?? ''})` : 'pendiente'}
-        </ThemedText>
+          {error ? <ThemedText style={{ color: theme.error }}>{error}</ThemedText> : null}
+          {notice ? <ThemedText themeColor="textSecondary">{notice}</ThemedText> : null}
 
-        {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-
-        {settlement.status === 'pendiente' && !isSeller ? (
-          <>
-            <ThemedText type="small" style={styles.status}>
-              Cuenta que recibe el pago
-            </ThemedText>
-            <ThemedView style={styles.typeRow}>
-              {accounts.map((account) => (
-                <Pressable key={account.id} style={styles.typeFlex} onPress={() => setAccountId(account.id)}>
-                  <ThemedView type={accountId === account.id ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
-                    <ThemedText type={accountId === account.id ? 'linkPrimary' : undefined}>{account.name}</ThemedText>
-                  </ThemedView>
-                </Pressable>
-              ))}
+          {!settled && !isSeller ? (
+            <ThemedView type="backgroundElement" style={[styles.card, styles.actionCard, Shadow.subtle]}>
+              <ThemedText type="smallBold">Cuenta que recibe el pago</ThemedText>
+              <View style={styles.accountRow}>
+                {accounts.map((account) => {
+                  const selected = accountId === account.id;
+                  return (
+                    <Pressable key={account.id} style={styles.flex} onPress={() => setAccountId(account.id)}>
+                      <ThemedView type={selected ? 'backgroundSelected' : 'background'} style={styles.accountButton}>
+                        <ThemedText type={selected ? 'linkPrimary' : undefined}>{account.name}</ThemedText>
+                      </ThemedView>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Pressable onPress={handleMarkSettled} disabled={saving || accountId === null}>
+                <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (saving || accountId === null) && styles.disabled]}>
+                  <ThemedText type="cardTitle" style={styles.primaryLabel}>
+                    {saving ? 'Liquidando…' : 'Marcar como liquidada'}
+                  </ThemedText>
+                </View>
+              </Pressable>
             </ThemedView>
+          ) : null}
 
-            <Pressable onPress={handleMarkSettled} disabled={saving || accountId === null}>
-              <ThemedView type="backgroundSelected" style={styles.submitButton}>
-                <ThemedText type="linkPrimary">{saving ? 'Liquidando…' : 'Marcar como liquidada'}</ThemedText>
-              </ThemedView>
-            </Pressable>
-          </>
-        ) : null}
-
-        {settlement.status === 'liquidada' && !isSeller ? (
-          <Pressable onPress={handleResync} disabled={saving}>
-            <ThemedView type="backgroundElement" style={styles.submitButton}>
-              <ThemedText themeColor="textSecondary">
+          {settled && !isSeller ? (
+            <Pressable onPress={handleResync} disabled={saving} style={styles.resync}>
+              <ThemedText type="small" themeColor="textSecondary">
                 {saving ? 'Reenviando…' : '¿No se refleja en la web? Reenviar sincronización'}
               </ThemedText>
-            </ThemedView>
-          </Pressable>
-        ) : null}
+            </Pressable>
+          ) : null}
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );
 }
 
+function Line({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <View style={styles.line}>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+      <ThemedText type="small" style={color ? { color } : undefined}>
+        {value}
+      </ThemedText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, padding: Spacing.four, gap: Spacing.two },
-  value: { marginBottom: Spacing.two },
-  totalsBlock: {
-    marginTop: Spacing.two,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    gap: Spacing.one,
-  },
-  totalsRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  status: { marginTop: Spacing.two },
-  typeRow: { flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.one, marginBottom: Spacing.two },
-  typeFlex: { flex: 1 },
-  typeButton: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
-  error: { color: '#d9534f' },
-  submitButton: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
+  padded: { padding: Layout.screenPadding },
+  safeArea: { flex: 1 },
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap, paddingBottom: Spacing.six },
+  flex: { flex: 1 },
+  card: { borderRadius: Radii.card, padding: Spacing.four, gap: Spacing.one },
+  heroHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  chip: { borderRadius: Radii.chip, paddingHorizontal: Spacing.two, paddingVertical: 2 },
+  line: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.one },
+  divider: { height: 1, marginVertical: Spacing.two },
+  actionCard: { gap: Spacing.three },
+  accountRow: { flexDirection: 'row', gap: Spacing.two },
+  accountButton: { padding: Spacing.three, borderRadius: Radii.button, alignItems: 'center' },
+  primaryButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.buttonPrimary },
+  primaryLabel: { color: '#FFFFFF' },
+  disabled: { opacity: 0.5 },
+  resync: { alignItems: 'center', paddingVertical: Spacing.two },
 });

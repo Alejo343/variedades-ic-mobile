@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { MySellerView } from '@/components/my-seller-view';
 import { SellerAccessCard } from '@/components/seller-access-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -16,11 +17,17 @@ import { sellerSchema, type SellerInventoryMode } from '@/lib/validations';
 
 type InventoryLine = { productId: number; name: string; sku: string; quantity: number };
 
-export default function EditSellerScreen() {
+// A seller opening their own record ("Mi inventario" / "Mis comisiones") gets
+// a read-only view of their own (components/my-seller-view.tsx); the owner
+// gets the edit screen below.
+export default function SellerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const sellerId = Number(id);
-  const theme = useTheme();
   const { isSeller } = useMySeller();
+  return isSeller ? <MySellerView sellerId={Number(id)} /> : <EditSellerScreen sellerId={Number(id)} />;
+}
+
+function EditSellerScreen({ sellerId }: { sellerId: number }) {
+  const theme = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -72,7 +79,7 @@ export default function EditSellerScreen() {
 
   // The inventory section is read-only, so unlike the form above it also
   // reloads when a background sync changes it (a delivery the owner just
-  // made, a sale from another device) — the seller's "Mi inventario".
+  // made, a sale synced from the seller's phone).
   useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -158,10 +165,6 @@ export default function EditSellerScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={[]}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {isSeller ? (
-            <ThemedText type="default">{name}</ThemedText>
-          ) : (
-            <>
           <ThemedText type="small">Nombre</ThemedText>
           <TextInput value={name} onChangeText={setName} style={inputStyle} />
 
@@ -219,8 +222,6 @@ export default function EditSellerScreen() {
               <ThemedText type="linkPrimary">{saving ? 'Guardando…' : 'Guardar cambios'}</ThemedText>
             </ThemedView>
           </Pressable>
-            </>
-          )}
 
           {savedMode === 'store' ? (
             <>
@@ -241,7 +242,7 @@ export default function EditSellerScreen() {
                 </ThemedText>
               </ThemedView>
 
-              {!isSeller && (pendingCommission?.totalCommission ?? 0) > 0 ? (
+              {(pendingCommission?.totalCommission ?? 0) > 0 ? (
                 <Link href={`/more/sellers/commissions/new?sellerId=${sellerId}`} asChild>
                   <Pressable>
                     <ThemedView type="backgroundSelected" style={styles.submitButton}>
@@ -316,19 +317,17 @@ export default function EditSellerScreen() {
             </>
           ) : null}
 
-          {!isSeller ? (
-            <Link href={`/more/sellers/settlements/new?sellerId=${sellerId}`} asChild>
-              <Pressable>
-                <ThemedView type="backgroundElement" style={styles.submitButton}>
-                  <ThemedText>Liquidar</ThemedText>
-                </ThemedView>
-              </Pressable>
-            </Link>
-          ) : null}
+          <Link href={`/more/sellers/settlements/new?sellerId=${sellerId}`} asChild>
+            <Pressable>
+              <ThemedView type="backgroundElement" style={styles.submitButton}>
+                <ThemedText>Liquidar</ThemedText>
+              </ThemedView>
+            </Pressable>
+          </Link>
             </>
           )}
 
-          {active && !isSeller ? (
+          {active ? (
             <Pressable onPress={handleDeactivate} disabled={saving}>
               <ThemedView type="backgroundElement" style={styles.submitButton}>
                 <ThemedText>Desactivar vendedor</ThemedText>
@@ -336,7 +335,7 @@ export default function EditSellerScreen() {
             </Pressable>
           ) : null}
 
-          {!isSeller && sellerUuid ? <SellerAccessCard sellerUuid={sellerUuid} /> : null}
+          {sellerUuid ? <SellerAccessCard sellerUuid={sellerUuid} /> : null}
         </ScrollView>
       </SafeAreaView>
     </ThemedView>

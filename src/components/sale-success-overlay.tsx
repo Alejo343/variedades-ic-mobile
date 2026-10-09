@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { subscribeSaleSuccessOverlay } from '@/lib/success-overlay';
+import { sessionStore } from '@/lib/sync/session';
 
 // Mercado Libre-style success transition: a circle expands from the button
 // that triggered it until it fully covers the screen, then the checkmark
@@ -33,7 +34,11 @@ export function SaleSuccessOverlay() {
   const diameter = useMemo(() => Math.hypot(width, height) * 2.2, [width, height]);
 
   useEffect(() => {
+    // Sellers have no Inicio tab (hidden tabs can't be navigated to), so
+    // they stay on Vender, which already reset itself for the next sale.
     function goHome() {
+      const session = sessionStore.getSnapshot();
+      if (session.status === 'authenticated' && session.session.user.role === 'seller') return;
       router.replace('/home');
     }
 

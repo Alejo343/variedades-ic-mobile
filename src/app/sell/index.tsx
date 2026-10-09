@@ -1,22 +1,21 @@
-import { Image } from 'expo-image';
-import { Minus, Package, Plus, Search, Tag, Trash2 } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutLeft, LinearTransition, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import { ChevronRight, PackageSearch, Plus, ShoppingCart, Tag, Trash2, X } from 'lucide-react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, FadeOutLeft, LinearTransition } from 'react-native-reanimated';
 
+import { AnimatedTotal, CartRow, GRID_COLUMNS, gridCardWidth, PosSearchBar, ProductCard } from '@/components/pos';
+import { SellerSaleForm } from '@/components/seller-sale-form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
-import { SellerSaleForm } from '@/components/seller-sale-form';
+import { Layout, Radii, Shadow, Spacing } from '@/constants/theme';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useMySeller } from '@/hooks/use-my-seller';
 import { useTheme } from '@/hooks/use-theme';
 import { cashAccountsRepo, categoriesRepo, directSalesRepo, productsRepo, type CashAccount, type Category, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
-import { resolveImageUri } from '@/lib/sync/image-url';
 import { triggerSaleSuccessOverlay } from '@/lib/success-overlay';
 import { directSaleSchema } from '@/lib/validations';
-import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
 type CartItem = {
   productId: number;
@@ -28,20 +27,24 @@ type CartItem = {
   unitPrice: string;
 };
 
-const PAGE_SIZE = 6;
-const GRID_COLUMNS = 3;
-
 // There's no discount column on direct_sale_items — instead of adding one, the
 // discount is folded into each line's unitPrice (proportional to its share of
 // the subtotal) so the sale recorded in cash_movements matches what was
 // actually charged. Rounding remainder goes to the line with the biggest
 // subtotal, to keep every unitPrice >= 0.
 function applyDiscount(cart: CartItem[], subtotal: number, grandTotal: number) {
-  const items = cart.map((item) => ({ productId: item.productId, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) }));
+  const items = cart.map((item) => ({
+    productId: item.productId,
+    quantity: Number(item.quantity),
+    unitPrice: Number(item.unitPrice),
+  }));
   if (subtotal === 0 || grandTotal === subtotal) return items;
 
   const ratio = grandTotal / subtotal;
-  const adjusted = items.map((item) => ({ ...item, unitPrice: Math.max(0, Math.round(item.unitPrice * ratio)) }));
+  const adjusted = items.map((item) => ({
+    ...item,
+    unitPrice: Math.max(0, Math.round(item.unitPrice * ratio)),
+  }));
 
   const computedTotal = adjusted.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const remainder = grandTotal - computedTotal;
@@ -57,154 +60,10 @@ function applyDiscount(cart: CartItem[], subtotal: number, grandTotal: number) {
   return adjusted;
 }
 
-type ProductCardProps = {
-  product: Product;
-  selected: boolean;
-  cardWidth: number;
-  onPress: () => void;
-};
-
-// Quick scale bounce on tap gives immediate tactile feedback before the
-// slower `backgroundSelected` color swap lands.
-function ProductCard({ product, selected, cardWidth, onPress }: ProductCardProps) {
-  const theme = useTheme();
-  const scale = useSharedValue(1);
-  const [pressCount, setPressCount] = useState(0);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-  useEffect(() => {
-    if (pressCount === 0) return;
-    // react-hooks/immutability false-positives on shared-value mutation here (same
-    // pattern as AnimatedTotal below passes lint fine without the extra local state).
-    // eslint-disable-next-line react-hooks/immutability
-    scale.value = withSequence(withTiming(0.92, { duration: 80 }), withTiming(1, { duration: 120 }));
-  }, [pressCount, scale]);
-
-  function handlePress() {
-    setPressCount((c) => c + 1);
-    onPress();
-  }
-
-  return (
-    <Pressable onPress={handlePress} style={{ width: cardWidth }}>
-      <Animated.View style={animatedStyle}>
-        <ThemedView type={selected ? 'backgroundSelected' : 'backgroundElement'} style={[styles.productCard, Shadow.subtle]}>
-          {product.primaryImageUri ? (
-            <Image source={{ uri: resolveImageUri(product.primaryImageUri) }} style={styles.productImage} />
-          ) : (
-            <View style={[styles.productImage, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
-              <Package color={theme.primary} size={22} />
-            </View>
-          )}
-          <ThemedText type="small" numberOfLines={2} style={styles.productName}>
-            {product.name}
-          </ThemedText>
-          <ThemedText type="smallBold">{formatCOP(product.price)}</ThemedText>
-          <ThemedText type="caption" themeColor="textSecondary">
-            Stock: {product.stock}
-          </ThemedText>
-        </ThemedView>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-type CartRowProps = {
-  item: CartItem;
-  onIncrement: () => void;
-  onDecrement: () => void;
-  onRemove: () => void;
-};
-
-// Quantity punches on change so +/- taps register visually, not just numerically.
-function CartRow({ item, onIncrement, onDecrement, onRemove }: CartRowProps) {
-  const theme = useTheme();
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  const mounted = useRef(false);
-
-  useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
-      return;
-    }
-    // eslint-disable-next-line react-hooks/immutability -- see ProductCard note above
-    scale.value = withSequence(withTiming(1.25, { duration: 90 }), withTiming(1, { duration: 120 }));
-  }, [item.quantity, scale]);
-
-  return (
-    <View style={styles.cartRow}>
-      {item.imageUri ? (
-        <Image source={{ uri: resolveImageUri(item.imageUri) }} style={styles.cartThumb} />
-      ) : (
-        <View style={[styles.cartThumb, styles.productImagePlaceholder, { backgroundColor: theme.primaryLight }]}>
-          <Package color={theme.primary} size={26} />
-        </View>
-      )}
-
-      <View style={styles.cartInfo}>
-        <ThemedText type="default" numberOfLines={2}>
-          {item.name}
-        </ThemedText>
-
-        <View style={styles.quantityStepper}>
-          <Pressable
-            onPress={onDecrement}
-            disabled={Number(item.quantity) <= 1}
-            style={[styles.stepperButton, { borderColor: theme.primary }, Number(item.quantity) <= 1 && styles.stepperButtonDisabled]}>
-            <Minus color={theme.primary} size={16} />
-          </Pressable>
-          <Animated.View style={animatedStyle}>
-            <ThemedText type="smallBold" style={[styles.stepperValue, { color: theme.primary }]}>
-              {item.quantity}
-            </ThemedText>
-          </Animated.View>
-          <Pressable
-            onPress={onIncrement}
-            disabled={Number(item.quantity) >= item.stock}
-            style={[
-              styles.stepperButton,
-              { borderColor: theme.primary },
-              Number(item.quantity) >= item.stock && styles.stepperButtonDisabled,
-            ]}>
-            <Plus color={theme.primary} size={16} />
-          </Pressable>
-        </View>
-        {Number(item.quantity) >= item.stock ? (
-          <ThemedText type="caption" themeColor="textSecondary">
-            Stock máximo alcanzado
-          </ThemedText>
-        ) : null}
-      </View>
-
-      <View style={styles.cartRight}>
-        <ThemedText type="cardTitle">{formatCOP((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}</ThemedText>
-        <Pressable onPress={onRemove} style={styles.removeButton}>
-          <Trash2 color={theme.error} size={22} />
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-// Small "punch" every time the total actually changes, so the number reads
-// as freshly updated rather than a silent re-render.
-function AnimatedTotal({ value, color }: { value: number; color: string }) {
-  const scale = useSharedValue(1);
-
-  useEffect(() => {
-    scale.value = withSequence(withTiming(1.08, { duration: 100 }), withTiming(1, { duration: 140 }));
-  }, [value, scale]);
-
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-  return (
-    <Animated.View style={animatedStyle}>
-      <ThemedText type="sectionTitle" style={{ color }}>
-        {formatCOP(value)}
-      </ThemedText>
-    </Animated.View>
-  );
+function stockCaption(product: Product): { caption: string; tone: 'normal' | 'warning' | 'error' } {
+  if (product.stock <= 0) return { caption: 'Agotado', tone: 'error' };
+  if (product.minStock > 0 && product.stock <= product.minStock) return { caption: `Quedan ${product.stock}`, tone: 'warning' };
+  return { caption: `Stock: ${product.stock}`, tone: 'normal' };
 }
 
 // The owner and a 'store' seller use the direct-sale POS below (principal
@@ -225,12 +84,14 @@ function SellerSellScreen() {
 
   if (!seller) {
     return (
-      <ThemedView style={{ flex: 1, padding: Spacing.four }}>
-        <SafeAreaView edges={[]}>
-          <ThemedText themeColor="textSecondary">
-            {loading ? 'Cargando…' : 'Tu inventario aparecerá después de la primera sincronización (Más → Configuración → Sincronizar ahora).'}
+      <ThemedView style={styles.waiting}>
+        <ThemedView type="backgroundElement" style={[styles.waitingCard, Shadow.subtle]}>
+          <ThemedText type="cardTitle">{loading ? 'Cargando…' : 'Preparando tus datos'}</ThemedText>
+          <ThemedText type="secondary" themeColor="textSecondary">
+            Tus productos aparecen aquí después de la primera sincronización. Si no llegan, ve a Más → Configuración → Sincronizar
+            ahora.
           </ThemedText>
-        </SafeAreaView>
+        </ThemedView>
       </ThemedView>
     );
   }
@@ -238,16 +99,21 @@ function SellerSellScreen() {
   return <SellerSaleForm key={formKey} sellerId={seller.id} onSaved={() => setFormKey((k) => k + 1)} />;
 }
 
+// Shop POS. The catalog owns the screen; the cart lives in a sticky bar at
+// the bottom and the checkout (cart, payment method, discount, notes) in a
+// sheet opened from it — so the total is always in view and charging never
+// needs scrolling past the whole catalog.
 function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
   const theme = useTheme();
-  const { width } = useWindowDimensions();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<CashAccount[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState<number | null>(null);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [gridWidth, setGridWidth] = useState(0);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [showDiscount, setShowDiscount] = useState(false);
@@ -255,22 +121,12 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // The "Cobrar" button's own position is where the Mercado Libre-style
-  // success circle (rendered globally, see SaleSuccessOverlay) grows from.
-  const checkoutButtonRef = useRef<View>(null);
-
-  function measureCheckoutOrigin(): Promise<{ x: number; y: number } | null> {
-    return new Promise((resolve) => {
-      const buttonNode = checkoutButtonRef.current;
-      if (!buttonNode) {
-        resolve(null);
-        return;
-      }
-      buttonNode.measureInWindow((bx, by, bw, bh) => {
-        resolve({ x: bx + bw / 2, y: by + bh / 2 });
-      });
-    });
-  }
+  // The success circle (rendered globally, see SaleSuccessOverlay) grows from
+  // the cart bar. It's measured when the sheet opens: by the time the sale is
+  // saved the bar is gone (empty cart) and the sheet is closing, so neither
+  // can be measured then.
+  const cartBarRef = useRef<View>(null);
+  const successOrigin = useRef<{ x: number; y: number } | null>(null);
 
   // Also called right after a sale: the screen stays mounted, so without it
   // the cards keep showing the stock from before the sale until the next focus.
@@ -283,7 +139,9 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
     useCallback(() => {
       let cancelled = false;
       productsRepo.list().then((rows) => {
-        if (!cancelled) setProducts(rows.filter((p) => p.active));
+        if (cancelled) return;
+        setProducts(rows.filter((p) => p.active));
+        setLoaded(true);
       });
       categoriesRepo.list().then((rows) => {
         if (!cancelled) setCategories(rows.filter((c) => c.active));
@@ -310,14 +168,10 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
     });
   }, [products, search, categoryId]);
 
-  const visibleCatalog = catalog.slice(0, visibleCount);
-  const cardWidth = (width - Layout.screenPadding * 2 - Layout.cardGap * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+  const cardWidth = gridCardWidth(gridWidth - Layout.screenPadding * 2);
+  const quantityById = useMemo(() => new Map(cart.map((item) => [item.productId, Number(item.quantity) || 0])), [cart]);
 
-  function selectCategory(id: number | null) {
-    setCategoryId(id);
-    setVisibleCount(PAGE_SIZE);
-  }
-
+  const units = useMemo(() => cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0), [cart]);
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0), [cart]);
   const discountAmount = Math.min(subtotal, Math.max(0, Number(discount) || 0));
   const grandTotal = subtotal - discountAmount;
@@ -332,8 +186,7 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
 
   function toggleProduct(product: Product) {
     setCart((prev) => {
-      const existing = prev.find((item) => item.productId === product.id);
-      if (existing) {
+      if (prev.some((item) => item.productId === product.id)) {
         return prev.filter((item) => item.productId !== product.id);
       }
       return [
@@ -362,11 +215,22 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
   }
 
   function removeItem(productId: number) {
-    setCart((prev) => prev.filter((item) => item.productId !== productId));
+    const next = cart.filter((item) => item.productId !== productId);
+    setCart(next);
+    if (next.length === 0) setCheckoutOpen(false);
   }
 
   function clearCart() {
     setCart([]);
+    setCheckoutOpen(false);
+  }
+
+  function openCheckout() {
+    setError(null);
+    cartBarRef.current?.measureInWindow((x, y, w, h) => {
+      successOrigin.current = { x: x + w / 2, y: y + h / 2 };
+    });
+    setCheckoutOpen(true);
   }
 
   async function handleSubmit() {
@@ -385,15 +249,17 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
     try {
       await directSalesRepo.create(parsed.data);
       await loadProducts();
-      const origin = await measureCheckoutOrigin();
-      if (origin) triggerSaleSuccessOverlay(origin);
+      setCheckoutOpen(false);
       setCart([]);
       setNotes('');
       setSearch('');
       setCategoryId(null);
-      setVisibleCount(PAGE_SIZE);
       setShowDiscount(false);
       setDiscount('');
+      // Let the sheet slide away first: the overlay lives in the main window
+      // and would otherwise grow underneath the modal.
+      const origin = successOrigin.current;
+      if (origin) setTimeout(() => triggerSaleSuccessOverlay(origin), 250);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar la venta');
     } finally {
@@ -403,351 +269,458 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ThemedView type="backgroundElement" style={[styles.searchBar, Shadow.subtle]}>
-            <Search color={theme.textSecondary} size={18} />
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Buscar productos"
-              placeholderTextColor={theme.textSecondary}
-              style={[styles.searchInput, { color: theme.text }]}
-            />
-          </ThemedView>
-
+      <SafeAreaView style={styles.flex} edges={[]}>
+        <View style={styles.header}>
+          <PosSearchBar value={search} onChangeText={setSearch} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
-            <Pressable onPress={() => selectCategory(null)}>
-              <ThemedView
-                type="backgroundElement"
-                style={[
-                  styles.categoryPill,
-                  categoryId === null ? { backgroundColor: theme.primary } : { borderWidth: 1, borderColor: theme.border },
-                ]}>
-                <ThemedText type="small" style={categoryId === null ? styles.categoryLabelSelected : undefined}>
-                  Todos
-                </ThemedText>
-              </ThemedView>
-            </Pressable>
+            <CategoryChip label="Todos" selected={categoryId === null} onPress={() => setCategoryId(null)} />
             {categories.map((category) => (
-              <Pressable key={category.id} onPress={() => selectCategory(category.id)}>
-                <ThemedView
-                  type="backgroundElement"
-                  style={[
-                    styles.categoryPill,
-                    categoryId === category.id
-                      ? { backgroundColor: theme.primary }
-                      : { borderWidth: 1, borderColor: theme.border },
-                  ]}>
-                  <ThemedText type="small" style={categoryId === category.id ? styles.categoryLabelSelected : undefined}>
-                    {category.name}
-                  </ThemedText>
-                </ThemedView>
-              </Pressable>
-            ))}
-          </ScrollView>
-
-          <View style={styles.productGrid}>
-            {visibleCatalog.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                cardWidth={cardWidth}
-                selected={cart.some((item) => item.productId === product.id)}
-                onPress={() => toggleProduct(product)}
+              <CategoryChip
+                key={category.id}
+                label={category.name}
+                selected={categoryId === category.id}
+                onPress={() => setCategoryId(category.id)}
               />
             ))}
+          </ScrollView>
+        </View>
+
+        <View style={styles.flex} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
+          {gridWidth > 0 ? (
+            <FlatList
+              data={catalog}
+              keyExtractor={(item) => String(item.id)}
+              numColumns={GRID_COLUMNS}
+              columnWrapperStyle={styles.gridRow}
+              // renderItem reads the cart; without this the cards wouldn't
+              // re-render when it changes (FlatList only diffs `data`).
+              extraData={quantityById}
+              ItemSeparatorComponent={RowSeparator}
+              contentContainerStyle={[styles.gridContent, cart.length > 0 && styles.gridContentWithBar]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                loaded ? (
+                  <View style={styles.empty}>
+                    <View style={[styles.emptyIcon, { backgroundColor: theme.primaryLight }]}>
+                      <PackageSearch color={theme.primary} size={28} />
+                    </View>
+                    <ThemedText type="secondary" themeColor="textSecondary" style={styles.center}>
+                      {products.length === 0 ? 'Todavía no hay productos en el catálogo.' : 'Ningún producto coincide con la búsqueda.'}
+                    </ThemedText>
+                  </View>
+                ) : null
+              }
+              renderItem={({ item }) => {
+                const { caption, tone } = stockCaption(item);
+                const inCart = quantityById.has(item.id);
+                return (
+                  <ProductCard
+                    name={item.name}
+                    price={item.price}
+                    imageUri={item.primaryImageUri}
+                    caption={caption}
+                    captionTone={tone}
+                    cardWidth={cardWidth}
+                    selected={inCart}
+                    quantity={quantityById.get(item.id)}
+                    // Selling more than the shop has fails anyway (stock check
+                    // in direct-sales-repo), so a sold-out card can't be picked.
+                    disabled={item.stock <= 0 && !inCart}
+                    onPress={() => toggleProduct(item)}
+                  />
+                );
+              }}
+            />
+          ) : null}
+        </View>
+
+        {cart.length > 0 ? (
+          <Animated.View entering={FadeInDown.duration(220)} exiting={FadeOutDown.duration(160)} style={styles.cartBarWrap}>
+            <Pressable onPress={openCheckout}>
+              <View ref={cartBarRef} style={[styles.cartBar, Shadow.subtle, { backgroundColor: theme.primary }]}>
+                <View style={styles.cartBarIcon}>
+                  <ShoppingCart color="#FFFFFF" size={20} />
+                  <View style={[styles.cartBarCount, { backgroundColor: theme.backgroundElement }]}>
+                    <ThemedText type="caption" style={{ color: theme.primary }}>
+                      {units}
+                    </ThemedText>
+                  </View>
+                </View>
+                <View style={styles.flex}>
+                  <ThemedText type="caption" style={styles.onPrimaryMuted}>
+                    {cart.length} {cart.length === 1 ? 'producto' : 'productos'}
+                  </ThemedText>
+                  <ThemedText type="cardTitle" style={styles.onPrimary}>
+                    {formatCOP(grandTotal)}
+                  </ThemedText>
+                </View>
+                <ThemedText type="cardTitle" style={styles.onPrimary}>
+                  Cobrar
+                </ThemedText>
+                <ChevronRight color="#FFFFFF" size={22} />
+              </View>
+            </Pressable>
+          </Animated.View>
+        ) : null}
+      </SafeAreaView>
+
+      <CheckoutSheet
+        visible={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        cart={cart}
+        units={units}
+        accounts={accounts}
+        accountId={accountId}
+        onSelectAccount={setAccountId}
+        notes={notes}
+        onChangeNotes={setNotes}
+        showDiscount={showDiscount}
+        onToggleDiscount={toggleDiscount}
+        discount={discount}
+        onChangeDiscount={setDiscount}
+        subtotal={subtotal}
+        grandTotal={grandTotal}
+        error={error}
+        saving={saving}
+        onIncrement={(id) => changeQuantity(id, 1)}
+        onDecrement={(id) => changeQuantity(id, -1)}
+        onRemove={removeItem}
+        onClear={clearCart}
+        onSubmit={handleSubmit}
+      />
+    </ThemedView>
+  );
+}
+
+function RowSeparator() {
+  return <View style={styles.rowSeparator} />;
+}
+
+function CategoryChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable onPress={onPress}>
+      <View
+        style={[
+          styles.chip,
+          selected
+            ? { backgroundColor: theme.primary, borderColor: theme.primary }
+            : { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+        ]}>
+        <ThemedText type="small" style={{ color: selected ? '#FFFFFF' : theme.text }}>
+          {label}
+        </ThemedText>
+      </View>
+    </Pressable>
+  );
+}
+
+type CheckoutSheetProps = {
+  visible: boolean;
+  onClose: () => void;
+  cart: CartItem[];
+  units: number;
+  accounts: CashAccount[];
+  accountId: number | null;
+  onSelectAccount: (id: number) => void;
+  notes: string;
+  onChangeNotes: (v: string) => void;
+  showDiscount: boolean;
+  onToggleDiscount: () => void;
+  discount: string;
+  onChangeDiscount: (v: string) => void;
+  subtotal: number;
+  grandTotal: number;
+  error: string | null;
+  saving: boolean;
+  onIncrement: (productId: number) => void;
+  onDecrement: (productId: number) => void;
+  onRemove: (productId: number) => void;
+  onClear: () => void;
+  onSubmit: () => void;
+};
+
+function CheckoutSheet(props: CheckoutSheetProps) {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const { cart, accounts, accountId, saving } = props;
+  const canCharge = cart.length > 0 && accountId !== null && !saving;
+
+  return (
+    <Modal
+      visible={props.visible}
+      animationType="slide"
+      presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
+      onRequestClose={props.onClose}>
+      <ThemedView style={styles.flex}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={[styles.sheetHeader, { borderBottomColor: theme.border }]}>
+            <View style={styles.flex}>
+              <ThemedText type="sectionTitle">Cobrar venta</ThemedText>
+              <ThemedText type="caption" themeColor="textSecondary">
+                {cart.length} {cart.length === 1 ? 'producto' : 'productos'} · {props.units} {props.units === 1 ? 'unidad' : 'unidades'}
+              </ThemedText>
+            </View>
+            <Pressable onPress={props.onClose} hitSlop={10} style={[styles.closeButton, { backgroundColor: theme.backgroundElement }]}>
+              <X color={theme.text} size={20} />
+            </Pressable>
           </View>
 
-          {catalog.length === 0 ? (
-            <ThemedText themeColor="textSecondary" type="small" style={styles.emptyCatalog}>
-              Sin productos que coincidan.
-            </ThemedText>
-          ) : null}
-
-          {visibleCount < catalog.length ? (
-            <Pressable onPress={() => setVisibleCount((c) => c + PAGE_SIZE)}>
-              <ThemedView type="backgroundElement" style={[styles.moreButton, Shadow.subtle]}>
-                <ThemedText type="link">Ver más productos</ThemedText>
-              </ThemedView>
-            </Pressable>
-          ) : null}
-
-          <ThemedView type="backgroundElement" style={[styles.cartCard, Shadow.subtle]}>
-            <View style={styles.cartHeader}>
-              <ThemedText type="smallBold">Carrito</ThemedText>
-              {cart.length > 0 ? (
-                <Pressable onPress={clearCart} style={styles.clearButton}>
+          <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
+            <ThemedView type="backgroundElement" style={[styles.card, styles.cartCard, Shadow.subtle]}>
+              <View style={styles.cardHeader}>
+                <ThemedText type="smallBold">Carrito</ThemedText>
+                <Pressable onPress={props.onClear} hitSlop={6} style={styles.inlineButton}>
                   <Trash2 color={theme.error} size={16} />
                   <ThemedText type="small" style={{ color: theme.error }}>
                     Vaciar
                   </ThemedText>
                 </Pressable>
-              ) : null}
-            </View>
-            <View style={[styles.cartHeaderDivider, { backgroundColor: theme.border }]} />
-
-            {cart.length === 0 ? (
-              <ThemedText themeColor="textSecondary" type="small">
-                Ningún producto agregado todavía.
-              </ThemedText>
-            ) : (
-              cart.map((item, index) => (
+              </View>
+              {cart.map((item, index) => (
                 <Animated.View
                   key={item.productId}
-                  entering={FadeInDown.duration(220)}
+                  entering={FadeInDown.duration(200)}
                   exiting={FadeOutLeft.duration(180)}
-                  layout={LinearTransition.delay(140)}>
+                  layout={LinearTransition.delay(120)}>
+                  {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.border }]} /> : null}
                   <CartRow
-                    item={item}
-                    onIncrement={() => changeQuantity(item.productId, 1)}
-                    onDecrement={() => changeQuantity(item.productId, -1)}
-                    onRemove={() => removeItem(item.productId)}
+                    name={item.name}
+                    imageUri={item.imageUri}
+                    quantity={Number(item.quantity) || 0}
+                    max={item.stock}
+                    lineTotal={(Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)}
+                    onIncrement={() => props.onIncrement(item.productId)}
+                    onDecrement={() => props.onDecrement(item.productId)}
+                    onRemove={() => props.onRemove(item.productId)}
                   />
-                  {index < cart.length - 1 ? <View style={[styles.cartDivider, { backgroundColor: theme.border }]} /> : null}
                 </Animated.View>
-              ))
-            )}
-          </ThemedView>
-
-          <ThemedView type="backgroundElement" style={[styles.paymentCard, Shadow.subtle]}>
-            <ThemedText type="smallBold" style={styles.paymentCardTitle}>
-              Método de pago
-            </ThemedText>
-            <View style={styles.typeRow}>
-              {accounts.map((account) => (
-                <Pressable key={account.id} style={styles.typeFlex} onPress={() => setAccountId(account.id)}>
-                  <ThemedView type={accountId === account.id ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
-                    <ThemedText type={accountId === account.id ? 'linkPrimary' : undefined}>{account.name}</ThemedText>
-                  </ThemedView>
-                </Pressable>
               ))}
-            </View>
-          </ThemedView>
+              <Pressable onPress={props.onClose}>
+                <View style={[styles.addMore, { borderTopColor: theme.border }]}>
+                  <Plus color={theme.primary} size={16} />
+                  <ThemedText type="small" style={{ color: theme.primary }}>
+                    Agregar más productos
+                  </ThemedText>
+                </View>
+              </Pressable>
+            </ThemedView>
 
-          <ThemedView type="backgroundElement" style={[styles.notesCard, Shadow.subtle]}>
-            <ThemedText type="smallBold">Notas (opcional)</ThemedText>
-            <TextInput
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Ej. cliente frecuente, entrega a domicilio…"
-              placeholderTextColor={theme.textSecondary}
-              multiline
-              style={[styles.notesInput, { color: theme.text, borderColor: theme.border }]}
-            />
-          </ThemedView>
-
-          <ThemedView type="backgroundElement" style={[styles.checkoutCard, Shadow.subtle]}>
-            <Pressable onPress={toggleDiscount}>
-              <View
-                style={[
-                  styles.discountButton,
-                  { borderColor: withAlpha(theme.primary, 0.4) },
-                  showDiscount && { borderColor: theme.primary, backgroundColor: theme.primaryLight },
-                ]}>
-                <Tag color={showDiscount ? theme.primary : withAlpha(theme.primary, 0.6)} size={18} />
-                <ThemedText type="default" style={{ color: showDiscount ? theme.primary : withAlpha(theme.primary, 0.6) }}>
-                  Descuento
-                </ThemedText>
+            <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+              <ThemedText type="smallBold">Método de pago</ThemedText>
+              <View style={styles.accountRow}>
+                {accounts.map((account) => {
+                  const selected = accountId === account.id;
+                  return (
+                    <Pressable key={account.id} onPress={() => props.onSelectAccount(account.id)} style={styles.accountFlex}>
+                      <View
+                        style={[
+                          styles.accountButton,
+                          selected
+                            ? { backgroundColor: theme.primaryLight, borderColor: theme.primary }
+                            : { backgroundColor: theme.background, borderColor: theme.border },
+                        ]}>
+                        <ThemedText type={selected ? 'smallBold' : 'small'} style={{ color: selected ? theme.primary : theme.text }}>
+                          {account.name}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                  );
+                })}
               </View>
-            </Pressable>
+              {accounts.length === 0 ? (
+                <ThemedText type="caption" themeColor="textSecondary">
+                  No hay cuentas activas. Crea una en Más → Caja → Gestionar cuentas.
+                </ThemedText>
+              ) : null}
+            </ThemedView>
 
-            {showDiscount ? (
-              <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
+            <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+              <Pressable onPress={props.onToggleDiscount}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.inlineButton}>
+                    <Tag color={props.showDiscount ? theme.primary : theme.textSecondary} size={18} />
+                    <ThemedText type="smallBold">Descuento</ThemedText>
+                  </View>
+                  <ThemedText type="small" style={{ color: theme.primary }}>
+                    {props.showDiscount ? 'Quitar' : 'Agregar'}
+                  </ThemedText>
+                </View>
+              </Pressable>
+              {props.showDiscount ? (
+                <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
+                  <View style={[styles.moneyInput, { borderColor: theme.border }]}>
+                    <ThemedText type="default" themeColor="textSecondary">
+                      $
+                    </ThemedText>
+                    <TextInput
+                      value={props.discount}
+                      onChangeText={props.onChangeDiscount}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={theme.textSecondary}
+                      autoFocus
+                      style={[styles.moneyInputField, { color: theme.text }]}
+                    />
+                  </View>
+                </Animated.View>
+              ) : null}
+
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+
+              <ThemedText type="smallBold">Notas (opcional)</ThemedText>
+              <TextInput
+                value={props.notes}
+                onChangeText={props.onChangeNotes}
+                placeholder="Ej. cliente frecuente, entrega a domicilio…"
+                placeholderTextColor={theme.textSecondary}
+                multiline
+                style={[styles.notesInput, { color: theme.text, borderColor: theme.border }]}
+              />
+            </ThemedView>
+          </ScrollView>
+
+          <ThemedView
+            type="backgroundElement"
+            style={[styles.sheetFooter, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
+            {props.subtotal !== props.grandTotal ? (
+              <>
                 <View style={styles.totalRow}>
                   <ThemedText type="small" themeColor="textSecondary">
                     Subtotal
                   </ThemedText>
-                  <ThemedText type="small">{formatCOP(subtotal)}</ThemedText>
+                  <ThemedText type="small">{formatCOP(props.subtotal)}</ThemedText>
                 </View>
                 <View style={styles.totalRow}>
                   <ThemedText type="small" themeColor="textSecondary">
                     Descuento
                   </ThemedText>
-                  <TextInput
-                    value={discount}
-                    onChangeText={setDiscount}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor={theme.textSecondary}
-                    autoFocus
-                    style={[styles.discountInput, { color: theme.error }]}
-                  />
-                </View>
-              </Animated.View>
-            ) : null}
-
-            <Animated.View layout={LinearTransition.delay(90)} style={styles.checkoutBottom}>
-              <View style={styles.totalRow}>
-                <ThemedText type="cardTitle">Total</ThemedText>
-                <AnimatedTotal value={grandTotal} color={theme.primary} />
-              </View>
-
-              {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-
-              <Pressable ref={checkoutButtonRef} onPress={handleSubmit} disabled={saving || cart.length === 0}>
-                <View
-                  style={[
-                    styles.checkoutButton,
-                    { backgroundColor: theme.primary },
-                    (saving || cart.length === 0) && styles.checkoutButtonDisabled,
-                  ]}>
-                  <ThemedText type="sectionTitle" style={styles.checkoutLabel}>
-                    {saving ? 'Cobrando…' : 'Cobrar'}
+                  <ThemedText type="small" style={{ color: theme.error }}>
+                    −{formatCOP(props.subtotal - props.grandTotal)}
                   </ThemedText>
                 </View>
-              </Pressable>
-            </Animated.View>
+              </>
+            ) : null}
+            <View style={styles.totalRow}>
+              <ThemedText type="cardTitle">Total</ThemedText>
+              <AnimatedTotal value={props.grandTotal} color={theme.primary} />
+            </View>
+
+            {props.error ? <ThemedText style={{ color: theme.error }}>{props.error}</ThemedText> : null}
+
+            <Pressable onPress={props.onSubmit} disabled={!canCharge}>
+              <View style={[styles.chargeButton, { backgroundColor: theme.primary }, !canCharge && styles.disabled]}>
+                <ThemedText type="sectionTitle" style={styles.onPrimary}>
+                  {saving ? 'Cobrando…' : `Cobrar ${formatCOP(props.grandTotal)}`}
+                </ThemedText>
+              </View>
+            </Pressable>
           </ThemedView>
-        </ScrollView>
-      </SafeAreaView>
-    </ThemedView>
+        </KeyboardAvoidingView>
+      </ThemedView>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  notesCard: {
-    borderRadius: Radii.card,
-    padding: Spacing.three,
-    marginBottom: Spacing.three,
-    gap: Spacing.two,
+  flex: { flex: 1 },
+  center: { textAlign: 'center' },
+  waiting: { flex: 1, padding: Layout.screenPadding },
+  waitingCard: { borderRadius: Radii.card, padding: Spacing.four, gap: Spacing.one },
+
+  header: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three },
+  categoryRow: { gap: Spacing.two, paddingBottom: Spacing.three },
+  chip: { borderWidth: 1, borderRadius: Radii.chip, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+
+  gridContent: { paddingHorizontal: Layout.screenPadding, paddingBottom: Spacing.four },
+  rowSeparator: { height: Layout.cardGap },
+  // Room for the cart bar so the last row isn't hidden behind it.
+  gridContentWithBar: { paddingBottom: 104 },
+  gridRow: { gap: Layout.cardGap },
+  empty: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.six },
+  emptyIcon: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+
+  cartBarWrap: { position: 'absolute', left: Layout.screenPadding, right: Layout.screenPadding, bottom: Spacing.three },
+  cartBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+    borderRadius: Radii.buttonPrimary,
   },
+  cartBarIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  cartBarCount: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onPrimary: { color: '#FFFFFF' },
+  onPrimaryMuted: { color: 'rgba(255,255,255,0.85)' },
+
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingHorizontal: Layout.screenPadding,
+    paddingVertical: Spacing.three,
+    borderBottomWidth: 1,
+  },
+  closeButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  sheetContent: { padding: Layout.screenPadding, gap: Spacing.three },
+  card: { borderRadius: Radii.card, padding: Spacing.three, gap: Spacing.two },
+  cartCard: { paddingBottom: 0, gap: 0 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: Spacing.one },
+  inlineButton: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
+  divider: { height: 1 },
+  addMore: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.one,
+    borderTopWidth: 1,
+    marginHorizontal: -Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  accountRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  accountFlex: { flexGrow: 1, flexBasis: '30%' },
+  accountButton: { borderWidth: 1.5, borderRadius: Radii.button, paddingVertical: Spacing.three, alignItems: 'center' },
+  moneyInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    borderWidth: 1,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+  },
+  moneyInputField: { flex: 1, paddingVertical: Spacing.two, fontSize: 18 },
   notesInput: {
     borderWidth: 1,
     borderRadius: Spacing.two,
     padding: Spacing.three,
-    minHeight: 80,
+    minHeight: 72,
     fontSize: 16,
     textAlignVertical: 'top',
   },
-  typeRow: { flexDirection: 'row', gap: Spacing.two },
-  typeFlex: { flex: 1 },
-  typeButton: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    borderRadius: Radii.button,
-    paddingHorizontal: Spacing.three,
-    marginBottom: Spacing.three,
-  },
-  searchInput: { flex: 1, paddingVertical: Spacing.three, fontSize: 16 },
-  categoryRow: { gap: Spacing.two, paddingBottom: Spacing.three },
-  categoryPill: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Radii.chip,
-  },
-  categoryLabelSelected: { color: '#FFFFFF' },
-  productGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Layout.cardGap,
-    marginBottom: Spacing.three,
-  },
-  productCard: {
-    borderRadius: Radii.card,
-    padding: Spacing.two,
-    gap: Spacing.half,
-  },
-  productImage: { width: '100%', height: 80, borderRadius: Spacing.two },
-  productImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  productName: { minHeight: 36 },
-  emptyCatalog: { textAlign: 'center', paddingVertical: Spacing.four },
-  moreButton: {
-    borderRadius: Radii.button,
-    padding: Spacing.three,
-    alignItems: 'center',
-    marginBottom: Spacing.three,
-  },
-  cartCard: {
-    borderRadius: Radii.card,
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
-    paddingBottom: Spacing.two,
-    marginBottom: Spacing.three,
-  },
-  paymentCard: {
-    borderRadius: Radii.card,
-    padding: Spacing.three,
-    marginBottom: Spacing.three,
-  },
-  paymentCardTitle: { marginBottom: Spacing.two },
-  cartHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.three,
-  },
-  cartHeaderDivider: { height: 1, marginHorizontal: -Spacing.three, marginBottom: Spacing.one },
-  clearButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-  },
-  cartRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.two,
-    gap: Spacing.three,
-  },
-  cartDivider: { height: 1 },
-  cartThumb: { width: 64, height: 64, borderRadius: Spacing.three },
-  cartInfo: { flex: 1, gap: Spacing.two },
-  cartRight: { alignItems: 'flex-end', gap: Spacing.two },
-  quantityStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: Spacing.two,
-  },
-  stepperButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepperButtonDisabled: { opacity: 0.3 },
-  stepperValue: { minWidth: 20, textAlign: 'center' },
-  removeButton: { padding: Spacing.one },
-  error: { color: '#d9534f' },
-  checkoutCard: {
-    borderRadius: Radii.card,
-    padding: Spacing.three,
-    gap: Spacing.three,
-  },
-  checkoutBottom: { gap: Spacing.three },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  discountButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.two,
-    borderWidth: 1.5,
-    borderRadius: Radii.buttonPrimary,
-    paddingVertical: Spacing.three,
-  },
-  discountInput: { fontSize: 14, textAlign: 'right', minWidth: 80 },
-  checkoutButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.four,
-    paddingHorizontal: Spacing.four,
-    borderRadius: Radii.buttonPrimary,
-  },
-  checkoutButtonDisabled: { opacity: 0.5 },
-  checkoutLabel: { color: '#FFFFFF' },
+
+  sheetFooter: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, gap: Spacing.two, borderTopWidth: 1 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chargeButton: { alignItems: 'center', paddingVertical: Spacing.four, borderRadius: Radii.buttonPrimary, marginTop: Spacing.one },
+  disabled: { opacity: 0.5 },
 });

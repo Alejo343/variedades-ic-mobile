@@ -1,19 +1,19 @@
+import { Stack } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
-import { useMySeller } from '@/hooks/use-my-seller';
-import { cashAccountsRepo, directSalesRepo, sellersRepo, type DirectSale } from '@/lib/data';
-import { formatCOP } from '@/lib/format';
+import { SaleList, type SaleListRow, type SaleListSummary } from '@/components/sale-list';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
+import { useMySeller } from '@/hooks/use-my-seller';
+import { cashAccountsRepo, directSalesRepo, sellersRepo } from '@/lib/data';
+import { formatDateTime } from '@/lib/format';
+
+function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
 
 export default function SalesHistoryScreen() {
-  const [sales, setSales] = useState<DirectSale[]>([]);
-  const [accountNames, setAccountNames] = useState<Record<number, string>>({});
-  const [sellerNames, setSellerNames] = useState<Record<number, string>>({});
+  const [rows, setRows] = useState<SaleListRow[]>([]);
+  const [summary, setSummary] = useState<SaleListSummary | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   // A store seller only ever sees their own sales ("Mis ventas").
   const { isSeller, seller } = useMySeller();
@@ -22,13 +22,36 @@ export default function SalesHistoryScreen() {
   useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      Promise.all([directSalesRepo.list(), cashAccountsRepo.list(), sellersRepo.list()]).then(([rows, accounts, sellers]) => {
-        if (!cancelled) {
-          setSales(onlySellerId === null ? rows : rows.filter((s) => s.sellerId === onlySellerId));
-          setAccountNames(Object.fromEntries(accounts.map((a) => [a.id, a.name])));
-          setSellerNames(Object.fromEntries(sellers.map((s) => [s.id, s.name])));
-          setLoading(false);
-        }
+      Promise.all([directSalesRepo.list(), cashAccountsRepo.list(), sellersRepo.list()]).then(([sales, accounts, sellers]) => {
+        if (cancelled) return;
+        const accountNames = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
+        const sellerNames = Object.fromEntries(sellers.map((s) => [s.id, s.name]));
+        const visible = onlySellerId === null ? sales : sales.filter((s) => s.sellerId === onlySellerId);
+
+        setRows(
+          visible.map((sale) => {
+            const products = plural(sale.items.length, 'producto', 'productos');
+            const parts = [formatDateTime(sale.saleDate), accountNames[sale.accountId] ?? `Cuenta #${sale.accountId}`];
+            if (onlySellerId === null && sale.sellerId !== null) parts.push(`vendió ${sellerNames[sale.sellerId] ?? 'un vendedor'}`);
+            return {
+              key: String(sale.id),
+              title: onlySellerId === null ? `Venta #${sale.id} · ${products}` : products,
+              subtitle: parts.join(' · '),
+              amount: sale.totalAmount,
+              commission: sale.sellerId !== null ? sale.commissionAmount : undefined,
+            };
+          }),
+        );
+        setSummary(
+          onlySellerId === null
+            ? undefined
+            : {
+                total: visible.reduce((sum, s) => sum + s.totalAmount, 0),
+                count: visible.length,
+                commission: visible.reduce((sum, s) => sum + s.commissionAmount, 0),
+              },
+        );
+        setLoading(false);
       });
       return () => {
         cancelled = true;
@@ -37,44 +60,9 @@ export default function SalesHistoryScreen() {
   );
 
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <FlatList
-          data={sales}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            !loading ? (
-              <ThemedText themeColor="textSecondary" style={styles.empty}>
-                Sin ventas todavía.
-              </ThemedText>
-            ) : null
-          }
-          renderItem={({ item }) => (
-            <ThemedView type="backgroundElement" style={styles.row}>
-              <ThemedText type="small">
-                Venta #{item.id} · {item.items.length} {item.items.length === 1 ? 'producto' : 'productos'}
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                {formatCOP(item.totalAmount)} · {item.saleDate} · {accountNames[item.accountId] ?? `Cuenta #${item.accountId}`}
-              </ThemedText>
-              {item.sellerId !== null && (
-                <ThemedText type="small" themeColor="textSecondary">
-                  {isSeller ? '' : `Vendió ${sellerNames[item.sellerId] ?? 'un vendedor'} · `}Comisión {formatCOP(item.commissionAmount)}
-                </ThemedText>
-              )}
-            </ThemedView>
-          )}
-        />
-      </SafeAreaView>
-    </ThemedView>
+    <>
+      {isSeller ? <Stack.Screen options={{ title: 'Mis ventas' }} /> : null}
+      <SaleList rows={rows} loading={loading} summary={summary} emptyText="Sin ventas todavía." />
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1, padding: Spacing.four, gap: Spacing.three },
-  listContent: { gap: Spacing.two },
-  empty: { textAlign: 'center', paddingVertical: Spacing.five },
-  row: { padding: Spacing.three, borderRadius: Spacing.three, gap: Spacing.half },
-});

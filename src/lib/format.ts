@@ -71,3 +71,24 @@ export function startOfLocalDayUtc(localDate: string): string {
   const [year, month, day] = localDate.split('-').map(Number);
   return toSqliteUtcTimestamp(new Date(year, month - 1, day));
 }
+
+// True when the UTC SQLite timestamp `value` falls on the local calendar day
+// `localDate` — the same [start, end) bounds as the two helpers above, so a
+// late-night sale counts for the day it happened here, not the UTC one.
+export function isOnLocalDay(value: string, localDate: string): boolean {
+  const normalized = toSqliteUtcTimestamp(parseSqliteDate(value));
+  return normalized >= startOfLocalDayUtc(localDate) && normalized < endOfLocalDayUtc(localDate);
+}
+
+const SHORT_MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+// "8 oct · 3:40 p. m." in local time. Built by hand for the same reason as
+// formatCOP: Intl date/time styles aren't reliably bundled with Hermes.
+export function formatDateTime(value: string): string {
+  const date = parseSqliteDate(value);
+  const hours = date.getHours();
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const suffix = hours < 12 ? 'a. m.' : 'p. m.';
+  return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]} · ${hour12}:${minutes} ${suffix}`;
+}

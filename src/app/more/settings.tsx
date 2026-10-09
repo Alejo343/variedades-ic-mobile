@@ -1,46 +1,67 @@
-import { useCallback, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { CircleAlert, LogOut, Moon, RefreshCw, Smartphone, Sun, type LucideProps } from 'lucide-react-native';
+import { useCallback, useState, type ComponentType, type ReactNode } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SyncStatusPill, useSyncStatus } from '@/components/sync-status';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useThemePreference } from '@/hooks/use-app-color-scheme';
-import { useTheme } from '@/hooks/use-theme';
+import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useSyncSession } from '@/hooks/use-sync-session';
-import { formatRelativeTime } from '@/lib/format';
-import { getLastSyncAt, resetCursor } from '@/lib/sync/cursor';
-import { runSync, syncEngineStore } from '@/lib/sync/engine';
-import { pendingStore } from '@/lib/sync/pending';
+import { useTheme } from '@/hooks/use-theme';
+import { resetCursor } from '@/lib/sync/cursor';
+import { runSync } from '@/lib/sync/engine';
 import { dismissRejection, listRejections, retryRejection } from '@/lib/sync/push-engine';
+import type { SyncOperationType } from '@/lib/sync/operation-types';
 import { sessionStore } from '@/lib/sync/session';
 import type { ThemePreference } from '@/lib/theme-preference';
-import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 
-const OPTIONS: { value: ThemePreference; label: string }[] = [
-  { value: 'light', label: 'Claro' },
-  { value: 'dark', label: 'Oscuro' },
-  { value: 'system', label: 'Sistema' },
+const THEME_OPTIONS: { value: ThemePreference; label: string; icon: ComponentType<LucideProps> }[] = [
+  { value: 'light', label: 'Claro', icon: Sun },
+  { value: 'dark', label: 'Oscuro', icon: Moon },
+  { value: 'system', label: 'Sistema', icon: Smartphone },
 ];
 
 const ROLE_LABEL = { owner: 'Dueño', seller: 'Vendedor' } as const;
 
+// What a rejected operation was, in words the person recognizes — the raw
+// type names are the sync protocol's, not theirs.
+const OPERATION_LABEL: Record<SyncOperationType, string> = {
+  upsertCategory: 'Guardar categoría',
+  upsertProduct: 'Guardar producto',
+  upsertSeller: 'Guardar vendedor',
+  upsertDistributor: 'Guardar distribuidor',
+  upsertCashAccount: 'Guardar cuenta',
+  createInventoryAdjustment: 'Ajuste de inventario',
+  createCashMovement: 'Movimiento de caja',
+  createDirectSale: 'Venta en la tienda',
+  createSellerDelivery: 'Entrega a vendedor',
+  createSellerSale: 'Venta de vendedor',
+  createSellerReturn: 'Devolución',
+  createSellerLoss: 'Pérdida',
+  createPurchaseOrder: 'Pedido de compra',
+  transitionPurchaseOrder: 'Cambio de estado de un pedido',
+  createPurchasePayment: 'Pago a distribuidor',
+  createSettlement: 'Liquidación',
+  markSettlementSettled: 'Cerrar liquidación',
+  createCommissionPayment: 'Pago de comisiones',
+};
+
 type Rejection = { id: number; type: string; error: string; createdAt: string };
 
-// The manual button + rejected-operations list (sub-paso 11), plus the
-// pending count and last-sync time (sub-paso 12) — hooks/use-auto-sync.ts
-// is what actually triggers automatic syncs; this section just shows where
-// things stand and still lets the user force one by hand.
+// Sync card: where things stand, the manual button, operations the server
+// rejected (sub-paso 11) and the full-resync rescue tool. hooks/use-auto-sync.ts
+// is what actually triggers automatic syncs.
 function SyncSection() {
-  const running = useSyncExternalStore(syncEngineStore.subscribe, syncEngineStore.isRunning);
-  const pending = useSyncExternalStore(pendingStore.subscribe, pendingStore.getSnapshot);
+  const theme = useTheme();
+  const status = useSyncStatus();
   const [message, setMessage] = useState<string | null>(null);
   const [rejections, setRejections] = useState<Rejection[]>([]);
-  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     listRejections().then(setRejections);
-    setLastSyncAt(getLastSyncAt());
   }, []);
 
   useDataFocusEffect(reload);
@@ -53,7 +74,11 @@ function SyncSection() {
     } else if (result.status === 'error') {
       setMessage(`No se pudo completar (${result.stage === 'push' ? 'al enviar' : 'al recibir'}): ${result.error}`);
     } else {
-      setMessage(`Listo — ${result.pushed} enviadas, ${result.rejected} rechazadas, ${result.pulledPages} página(s) recibidas.`);
+      setMessage(
+        result.rejected > 0
+          ? `Listo, pero el servidor rechazó ${result.rejected} ${result.rejected === 1 ? 'cambio' : 'cambios'}.`
+          : 'Todo sincronizado.',
+      );
     }
     reload();
   }
@@ -94,46 +119,61 @@ function SyncSection() {
   }
 
   return (
-    <>
-      <ThemedText type="small">Sincronización</ThemedText>
-      <ThemedText themeColor="textSecondary" type="small" style={styles.syncStatus}>
-        {pending > 0 ? `${pending} pendiente(s)` : 'Sin pendientes'}
-        {lastSyncAt ? ` · última sincronización: ${formatRelativeTime(lastSyncAt)}` : ' · todavía no ha sincronizado'}
-      </ThemedText>
-      <Pressable onPress={handleSync} disabled={running} style={styles.syncButton}>
-        <ThemedView type="backgroundSelected" style={styles.optionButton}>
-          {running ? <ActivityIndicator /> : <ThemedText type="linkPrimary">Sincronizar ahora</ThemedText>}
-        </ThemedView>
-      </Pressable>
-      <Pressable onPress={handleForceResync} disabled={running} style={styles.syncButton}>
-        <ThemedView type="backgroundElement" style={styles.optionButton}>
-          <ThemedText>Forzar resincronización completa</ThemedText>
-        </ThemedView>
-      </Pressable>
-      {message && <ThemedText style={styles.syncMessage}>{message}</ThemedText>}
+    <Section title="Sincronización">
+      <Card>
+        <SyncStatusPill />
+        <ThemedText type="secondary" themeColor="textSecondary">
+          La app sincroniza sola cuando hay internet. Usa el botón si quieres asegurarte ahora mismo.
+        </ThemedText>
 
-      {rejections.length > 0 && (
-        <ThemedView type="backgroundElement" style={styles.rejectionsCard}>
+        <Pressable onPress={handleSync} disabled={status.running}>
+          <View style={[styles.primaryButton, { backgroundColor: theme.primary }, status.running && styles.disabled]}>
+            {status.running ? <ActivityIndicator color="#FFFFFF" /> : <RefreshCw color="#FFFFFF" size={18} />}
+            <ThemedText type="cardTitle" style={styles.onPrimary}>
+              {status.running ? 'Sincronizando…' : 'Sincronizar ahora'}
+            </ThemedText>
+          </View>
+        </Pressable>
+        {message ? <ThemedText type="small">{message}</ThemedText> : null}
+
+        {rejections.length > 0 ? (
+          <View style={[styles.rejections, { backgroundColor: withAlpha(theme.error, 0.06), borderColor: withAlpha(theme.error, 0.2) }]}>
+            <View style={styles.rejectionsHeader}>
+              <CircleAlert color={theme.error} size={16} />
+              <ThemedText type="smallBold" style={{ color: theme.error }}>
+                El servidor rechazó {rejections.length} {rejections.length === 1 ? 'cambio' : 'cambios'}
+              </ThemedText>
+            </View>
+            {rejections.map((r, i) => (
+              <View key={r.id} style={[styles.rejectionRow, i > 0 && { borderTopWidth: 1, borderTopColor: withAlpha(theme.error, 0.15) }]}>
+                <ThemedText type="small">{OPERATION_LABEL[r.type as SyncOperationType] ?? r.type}</ThemedText>
+                <ThemedText type="caption" themeColor="textSecondary">
+                  {r.error}
+                </ThemedText>
+                <View style={styles.rejectionActions}>
+                  <Pressable onPress={() => handleRetry(r.id)} hitSlop={6}>
+                    <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                      Reintentar
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable onPress={() => handleDismiss(r.id)} hitSlop={6}>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      Descartar
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        <Pressable onPress={handleForceResync} disabled={status.running} style={styles.textButton}>
           <ThemedText type="small" themeColor="textSecondary">
-            El servidor rechazó {rejections.length} operación(es):
+            ¿Falta algo? Forzar resincronización completa
           </ThemedText>
-          {rejections.map((r) => (
-            <ThemedView key={r.id} style={styles.rejectionRow}>
-              <ThemedView style={styles.rejectionText}>
-                <ThemedText type="small">{r.type}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">{r.error}</ThemedText>
-              </ThemedView>
-              <Pressable onPress={() => handleRetry(r.id)}>
-                <ThemedText type="small" themeColor="textSecondary">Reintentar</ThemedText>
-              </Pressable>
-              <Pressable onPress={() => handleDismiss(r.id)}>
-                <ThemedText type="small" themeColor="textSecondary">Descartar</ThemedText>
-              </Pressable>
-            </ThemedView>
-          ))}
-        </ThemedView>
-      )}
-    </>
+        </Pressable>
+      </Card>
+    </Section>
   );
 }
 
@@ -149,44 +189,84 @@ export default function SettingsScreen() {
     ]);
   }
 
+  const user = session.status === 'authenticated' ? session.session.user : null;
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {session.status === 'authenticated' && (
-            <>
-              <ThemedText type="small">Cuenta</ThemedText>
-              <ThemedView type="backgroundElement" style={styles.accountCard}>
-                <ThemedText>{session.session.user.name}</ThemedText>
-                <ThemedText themeColor="textSecondary" type="small">
-                  {session.session.user.username} · {ROLE_LABEL[session.session.user.role]}
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {user ? (
+            <Card>
+              <View style={styles.account}>
+                <View style={[styles.avatar, { backgroundColor: theme.primaryLight }]}>
+                  <ThemedText type="sectionTitle" style={{ color: theme.primary }}>
+                    {user.name.trim().charAt(0).toUpperCase() || '?'}
+                  </ThemedText>
+                </View>
+                <View style={styles.flex}>
+                  <ThemedText type="cardTitle">{user.name}</ThemedText>
+                  <ThemedText type="caption" themeColor="textSecondary">
+                    {user.username} · {ROLE_LABEL[user.role]}
+                  </ThemedText>
+                </View>
+              </View>
+            </Card>
+          ) : null}
+
+          {user ? <SyncSection /> : null}
+
+          <Section title="Apariencia">
+            <Card>
+              <View style={styles.segmented}>
+                {THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
+                  const selected = preference === value;
+                  return (
+                    <Pressable key={value} style={styles.flex} onPress={() => setPreference(value)}>
+                      <ThemedView type={selected ? 'backgroundSelected' : 'background'} style={styles.segment}>
+                        <Icon color={selected ? theme.primary : theme.textSecondary} size={20} />
+                        <ThemedText type={selected ? 'smallBold' : 'small'} style={{ color: selected ? theme.primary : theme.text }}>
+                          {label}
+                        </ThemedText>
+                      </ThemedView>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <ThemedText type="caption" themeColor="textSecondary">
+                &quot;Sistema&quot; sigue el modo claro u oscuro del teléfono.
+              </ThemedText>
+            </Card>
+          </Section>
+
+          {user ? (
+            <Pressable onPress={handleLogout}>
+              <View style={[styles.logout, { borderColor: withAlpha(theme.error, 0.4) }]}>
+                <LogOut color={theme.error} size={18} />
+                <ThemedText type="default" style={{ color: theme.error }}>
+                  Cerrar sesión
                 </ThemedText>
-              </ThemedView>
-              <Pressable onPress={handleLogout} style={styles.logoutButton}>
-                <ThemedText style={{ color: theme.error }}>Cerrar sesión</ThemedText>
-              </Pressable>
-
-              <SyncSection />
-            </>
-          )}
-
-          <ThemedText type="small">Tema</ThemedText>
-          <ThemedView style={styles.optionRow}>
-            {OPTIONS.map((option) => (
-              <Pressable key={option.value} style={styles.optionFlex} onPress={() => setPreference(option.value)}>
-                <ThemedView
-                  type={preference === option.value ? 'backgroundSelected' : 'backgroundElement'}
-                  style={styles.optionButton}>
-                  <ThemedText type={preference === option.value ? 'linkPrimary' : undefined}>{option.label}</ThemedText>
-                </ThemedView>
-              </Pressable>
-            ))}
-          </ThemedView>
-          <ThemedText themeColor="textSecondary" type="small">
-            &quot;Sistema&quot; sigue el modo claro/oscuro configurado en el teléfono.
-          </ThemedText>
+              </View>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
+    </ThemedView>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <ThemedText type="sectionTitle">{title}</ThemedText>
+      {children}
+    </View>
+  );
+}
+
+function Card({ children }: { children: ReactNode }) {
+  return (
+    <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+      {children}
     </ThemedView>
   );
 }
@@ -194,46 +274,36 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  optionRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
-  optionFlex: { flex: 1 },
-  optionButton: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
-  accountCard: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    marginBottom: Spacing.one,
-    gap: Spacing.half,
-  },
-  logoutButton: {
-    marginBottom: Spacing.four,
-  },
-  syncStatus: {
-    marginBottom: Spacing.one,
-  },
-  syncButton: {
-    marginBottom: Spacing.two,
-  },
-  syncMessage: {
-    marginBottom: Spacing.two,
-  },
-  rejectionsCard: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    marginBottom: Spacing.four,
-    gap: Spacing.two,
-  },
-  rejectionRow: {
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap, paddingBottom: Spacing.six },
+  flex: { flex: 1 },
+  section: { gap: Spacing.two },
+  card: { borderRadius: Radii.card, padding: Spacing.four, gap: Spacing.three },
+  account: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  avatar: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  primaryButton: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: Spacing.two,
+    paddingVertical: Spacing.three,
+    borderRadius: Radii.buttonPrimary,
   },
-  rejectionText: {
-    flex: 1,
-    gap: Spacing.half,
+  onPrimary: { color: '#FFFFFF' },
+  disabled: { opacity: 0.6 },
+  textButton: { alignItems: 'center', paddingVertical: Spacing.one },
+  rejections: { borderWidth: 1, borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.two },
+  rejectionsHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  rejectionRow: { gap: Spacing.half, paddingTop: Spacing.two },
+  rejectionActions: { flexDirection: 'row', gap: Spacing.four, marginTop: Spacing.one },
+  segmented: { flexDirection: 'row', gap: Spacing.two },
+  segment: { alignItems: 'center', gap: Spacing.one, paddingVertical: Spacing.three, borderRadius: Radii.button },
+  logout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    borderWidth: 1.5,
+    borderRadius: Radii.buttonPrimary,
+    paddingVertical: Spacing.three,
   },
 });

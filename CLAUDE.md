@@ -904,6 +904,68 @@ Inicio, sin tocar `lib/data` (mismas consultas que antes):
 - Verificado con `npm run test` (162) + `npx tsc --noEmit` en verde.
   **No verificado todavía en el celular del usuario.**
 
+### Rollout — pantallas del vendedor
+
+Sesión 2026-10-08. Rediseño de todo lo que ve un usuario con rol vendedor,
+con el mismo lenguaje visual de Inicio/Reportes. **Sin cambios de
+comportamiento ni de datos** (mismos repos y validaciones):
+
+- **Vender (consignación)** — `components/seller-sale-form.tsx`: catálogo en
+  grid con buscador (solo la mercancía del vendedor, "Tienes N"), toque para
+  agregar/quitar, carrito con +/- (tope = lo que tiene), el **precio c/u sigue
+  editable** como antes, comisión estimada destacada, botón verde con el mismo
+  círculo de venta exitosa del POS. Las piezas del POS se sacaron de
+  `sell/index.tsx` a `components/pos.tsx` (`ProductCard`, `CartRow`,
+  `AnimatedTotal`, `PosSearchBar`, `ProductThumb`) y las usan las dos pantallas.
+  El vendedor de tienda sigue usando el POS del dueño.
+- **Más (vendedor)** — `components/seller-home.tsx`: saludo, estado de
+  sincronización (`components/sync-status.tsx`: sincronizando / N cambios por
+  enviar / al día), número principal (consignación: lo que entrega en la
+  próxima liquidación = `settlementsRepo.preview` a hoy; tienda: comisión por
+  cobrar), "Vendiste hoy" + mercancía contigo / comisión de hoy, y menú
+  agrupado (`components/menu-row.tsx`). Consignación gana **"Mis ventas"**
+  (`/more/sellers/sales`, filtrado a las suyas), que antes no tenía acceso.
+- **Mi inventario / Mis comisiones** — `components/my-seller-view.tsx`; la
+  ruta `more/sellers/[id]` elige entre esta vista (vendedor) y el formulario
+  del dueño, que ya no tiene ramas `isSeller`.
+- **Liquidaciones (lista y detalle), Mis ventas (`sell/history.tsx`,
+  `more/sellers/sales/index.tsx`, lista compartida `components/sale-list.tsx`)
+  y Configuración** rediseñadas para los dos roles. Configuración muestra los
+  rechazos de sync con nombres legibles en vez del tipo de operación.
+- `format.ts` gana `isOnLocalDay` y `formatDateTime` ("8 oct · 3:40 p. m.",
+  armado a mano como `formatCOP`), con tests.
+- El menú Más del **dueño** no se tocó.
+- Verificado con `npm run test` (179) + `npx tsc --noEmit` en verde (lint: el
+  error preexistente). **No verificado todavía en el celular.**
+
+### Rollout — Vender (POS) rediseñado
+
+Sesión 2026-10-08, después del rollout del vendedor. `sell/index.tsx`
+(`DirectSaleScreen`, lo usan el dueño y el vendedor de tienda) cambia de una
+sola página larga a **catálogo + barra de carrito + hoja de cobro**, sin
+cambios de reglas de negocio:
+
+- Buscador y categorías fijos arriba; la cuadrícula es un `FlatList` de 3
+  columnas con todo el catálogo (se quitó la paginación de 6 en 6). El ancho
+  de tarjeta sale de `pos.tsx#gridCardWidth` sobre el ancho medido, no del de
+  la ventana (bug real: con el ancho de ventana la tercera columna no cabía).
+  `extraData` es obligatorio: `renderItem` lee el carrito.
+- Tarjetas (`pos.tsx#ProductCard`, compartida con la venta de consignación):
+  borde verde + badge con la cantidad cuando está en el carrito; "Quedan N" en
+  amarillo con stock ≤ mínimo; **agotado = atenuado y no se puede tocar** (la
+  venta fallaría igual por el chequeo de stock de `direct-sales-repo`). Tocar
+  sigue siendo agregar/quitar, como decidió el usuario antes.
+- Barra fija abajo cuando hay carrito ("N productos · total · Cobrar") que
+  abre un `Modal` con carrito, método de pago, descuento, notas y "Cobrar $X"
+  fijo al pie. El círculo de venta exitosa crece desde la barra (se mide al
+  abrir la hoja) y se dispara 250 ms después de cerrarla, porque el overlay
+  vive en la ventana principal y quedaría debajo del modal.
+- Bug corregido de paso: `SaleSuccessOverlay` siempre hacía
+  `router.replace('/home')`, pero un vendedor no tiene Inicio (tab `hidden`).
+  Ahora solo redirige al dueño.
+- Verificado con `npm run test` (179) + `npx tsc --noEmit` en verde. **No
+  verificado todavía en el celular.**
+
 ## Importación de compras desde Excel (.xlsx)
 
 Construida en la sesión 2026-08-01. El cliente de IC Variedades arma cada
