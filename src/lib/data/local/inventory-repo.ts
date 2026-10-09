@@ -60,8 +60,16 @@ export const localInventoryRepo: InventoryRepo = {
     return rows.map(toMovement);
   },
 
+  // Only the shop's own (principal) ledger: seller rows (the + side of a
+  // delivery, a seller's sale) never touch products.stock and read as noise
+  // on the Inventario screen.
   async getRecentMovements(limit = 50) {
-    const rows = await db.select().from(inventoryMovements).orderBy(desc(inventoryMovements.createdAt)).limit(limit);
+    const rows = await db
+      .select()
+      .from(inventoryMovements)
+      .where(eq(inventoryMovements.ownerType, "principal"))
+      .orderBy(desc(inventoryMovements.createdAt), desc(inventoryMovements.id))
+      .limit(limit);
     return rows.map(toMovement);
   },
 
@@ -81,7 +89,9 @@ export const localInventoryRepo: InventoryRepo = {
   },
 
   async getOutOfStock() {
-    const rows = await db.select(productColumns).from(products).where(and(eq(products.active, true), eq(products.stock, 0)));
+    // <= 0, not = 0: sync accepts an offline sale of the last unit, so stock
+    // can go negative — that product is just as sold out.
+    const rows = await db.select(productColumns).from(products).where(and(eq(products.active, true), sql`${products.stock} <= 0`));
     return rows.map(toProduct);
   },
 };
