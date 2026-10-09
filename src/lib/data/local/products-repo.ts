@@ -230,10 +230,15 @@ export const localProductsRepo: ProductsRepo = {
   },
 
   async update(id: number, data: UpdateProductInput, images?: ImageDraft[]) {
+    // Stock is never edited here: the server derives it from
+    // inventory_movements only, so a stock written straight into the row
+    // lived only on this phone until the next pull overwrote it. It changes
+    // through a movement (inventory adjustment, sale, purchase...).
+    const { stock: _ignoredStock, ...fields } = data;
     const removedUrls = await db.transaction(async (tx) => {
       const [row] = await tx
         .update(products)
-        .set({ ...data, updatedAt: new Date().toISOString() })
+        .set({ ...fields, updatedAt: new Date().toISOString() })
         .where(eq(products.id, id))
         .returning();
       if (!row) throw new Error("Producto no encontrado");

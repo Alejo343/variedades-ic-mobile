@@ -57,4 +57,16 @@ describe("localProductsRepo + product_images", async () => {
     const out = await localInventoryRepo.getOutOfStock();
     expect(out.find((p) => p.id === 1)?.primaryImageUri).toBe("file:///old.jpg");
   });
+
+  // El servidor solo deriva el stock de inventory_movements y upsertProduct
+  // nunca lo lleva: un stock escrito en el formulario de edición quedaba solo
+  // en este celular y el siguiente pull lo pisaba. update() lo ignora; el
+  // stock cambia únicamente con un movimiento (ajuste, venta, compra...).
+  it("update ignora el stock: solo cambia con movimientos", async () => {
+    const before = (await repo.getById(2))!;
+    await repo.update(2, { stock: before.stock + 50, price: 25 } as never);
+    const after = (await repo.getById(2))!;
+    expect(after.stock).toBe(before.stock);
+    expect(after.price).toBe(25);
+  });
 });
