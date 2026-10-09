@@ -966,6 +966,36 @@ cambios de reglas de negocio:
 - Verificado con `npm run test` (179) + `npx tsc --noEmit` en verde. **No
   verificado todavía en el celular.**
 
+### Rollout — editar producto
+
+Sesión 2026-10-08. `more/products/[id].tsx` rediseñada: insignias (SKU,
+pendiente de sincronizar, activo), tarjetas de **stock** y **ganancia por
+unidad** (precio − compra, con % del precio, calculada mientras se escribe),
+y secciones Fotos / Información / Precios / Inventario / Identificación con
+los componentes nuevos de `components/form.tsx` (`FormSection`, `FormField`,
+`FormRow`, `FormInput` con prefijo `$`). "Guardar cambios" queda fijo abajo y
+solo se habilita si algo cambió. Se agregó "Reactivar producto" para uno
+desactivado (antes no había forma desde la app).
+
+- **Bug corregido (confirmado por el usuario: "el stock no debería
+  modificarse allí")**: el formulario dejaba escribir el stock y
+  `products-repo.ts#update` lo guardaba directo en la fila, sin movimiento. El
+  servidor nunca toma el stock del celular, así que el número vivía solo en
+  ese teléfono hasta que el siguiente pull lo pisaba en silencio. Ahora
+  `update()` ignora `stock` (test en `local/products-repo.test.ts`) y la
+  pantalla lo muestra de solo lectura con "Ajustar stock", que abre
+  `inventory/adjust` con el producto ya elegido (`?productId=`).
+- Al volver de "Ajustar stock" solo se refrescan stock/SKU/estado; el
+  formulario se llena una sola vez, así no se pierde lo que se estaba
+  editando.
+- `products/new.tsx` (crear) usa las mismas secciones y componentes
+  (`FormChip` también salió a `form.tsx`). Ahí el stock inicial **sí** es
+  editable: `create()` lo registra como ajuste "Stock inicial". Muestra la
+  ganancia por unidad bajo los precios y "Crear producto" se habilita al tener
+  nombre y precio.
+- Verificado con `npm run test` (180) + `npx tsc --noEmit` en verde. **No
+  verificado todavía en el celular.**
+
 ## Importación de compras desde Excel (.xlsx)
 
 Construida en la sesión 2026-08-01. El cliente de IC Variedades arma cada

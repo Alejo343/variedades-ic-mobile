@@ -1,50 +1,78 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Link, router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Boxes, PackageX, Power, TrendingDown, TrendingUp, TriangleAlert, type LucideProps } from 'lucide-react-native';
+import { useCallback, useMemo, useRef, useState, type ComponentType } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FormChip, FormField, FormInput, FormRow, FormSection } from '@/components/form';
 import { ProductImageGallery } from '@/components/product-image-gallery';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
 import type { ImageDraft } from '@/lib/domain/product-images';
+import { formatCOP } from '@/lib/format';
 import { pendingUuidsForType } from '@/lib/sync/outbox';
 import { productSchema } from '@/lib/validations';
+
+// Every editable value of the form, as typed — compared against the loaded
+// snapshot to know whether there's anything to save.
+type FormValues = {
+  name: string;
+  slug: string;
+  description: string;
+  categoryId: number | null;
+  price: string;
+  purchasePrice: string;
+  distributorCode: string;
+  minStock: string;
+  warrantyMonths: string;
+  images: ImageDraft[];
+};
+
+function valuesFrom(product: Product & { images: { url: string; isPrimary: boolean }[] }): FormValues {
+  return {
+    name: product.name,
+    slug: product.slug,
+    description: product.description ?? '',
+    categoryId: product.categoryId,
+    price: String(product.price),
+    purchasePrice: String(product.purchasePrice),
+    distributorCode: product.distributorCode ?? '',
+    minStock: String(product.minStock),
+    warrantyMonths: product.warrantyMonths != null ? String(product.warrantyMonths) : '',
+    images: product.images.map(({ url, isPrimary }) => ({ url, isPrimary })),
+  };
+}
 
 export default function EditProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const productId = Number(id);
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [sku, setSku] = useState('');
   const [skuPending, setSkuPending] = useState(false);
   const [active, setActive] = useState(true);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryId, setCategoryId] = useState<number | null>(null);
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [description, setDescription] = useState('');
-  const [price, setPrice] = useState('');
-  const [purchasePrice, setPurchasePrice] = useState('');
-  const [distributorCode, setDistributorCode] = useState('');
-  const [stock, setStock] = useState('0');
-  const [minStock, setMinStock] = useState('0');
-  const [warrantyMonths, setWarrantyMonths] = useState('');
-  const [images, setImages] = useState<ImageDraft[]>([]);
-  const [savedImages, setSavedImages] = useState<ImageDraft[]>([]);
+  // Read-only here: stock only changes through a movement (Ajustar stock).
+  const [stock, setStock] = useState(0);
+  const [values, setValues] = useState<FormValues | null>(null);
+  const [saved, setSaved] = useState<FormValues | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
+  const formLoaded = useRef(false);
 
-  // Edit form: plain useFocusEffect on purpose, not useDataFocusEffect — a
-  // background sync must not overwrite what the user is typing.
+  // Plain useFocusEffect on purpose, not useDataFocusEffect — a background
+  // sync must not overwrite what the user is typing. The form is filled only
+  // the first time; coming back (e.g. from Ajustar stock) refreshes just the
+  // read-only parts, so unsaved edits survive the trip.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
       categoriesRepo.list().then((rows) => {
         if (!cancelled) setCategories(rows.filter((c) => c.active));
       });
@@ -54,19 +82,13 @@ export default function EditProductScreen() {
           setSku(product.sku);
           setSkuPending(pending.has(product.uuid));
           setActive(product.active);
-          setCategoryId(product.categoryId);
-          setName(product.name);
-          setSlug(product.slug);
-          setDescription(product.description ?? '');
-          setPrice(String(product.price));
-          setPurchasePrice(String(product.purchasePrice));
-          setDistributorCode(product.distributorCode ?? '');
-          setStock(String(product.stock));
-          setMinStock(String(product.minStock));
-          setWarrantyMonths(product.warrantyMonths != null ? String(product.warrantyMonths) : '');
-          const loaded = product.images.map(({ url, isPrimary }) => ({ url, isPrimary }));
-          setImages(loaded);
-          setSavedImages(loaded);
+          setStock(product.stock);
+          if (!formLoaded.current) {
+            const loaded = valuesFrom(product);
+            setValues(loaded);
+            setSaved(loaded);
+            formLoaded.current = true;
+          }
         }
         setLoading(false);
       });
@@ -76,20 +98,25 @@ export default function EditProductScreen() {
     }, [productId]),
   );
 
-  const savedUrls = useMemo(() => new Set(savedImages.map((image) => image.url)), [savedImages]);
+  const savedUrls = useMemo(() => new Set((saved?.images ?? []).map((image) => image.url)), [saved]);
+  const dirty = values !== null && saved !== null && JSON.stringify(values) !== JSON.stringify(saved);
+
+  function set<K extends keyof FormValues>(key: K, value: FormValues[K]) {
+    setValues((prev) => (prev ? { ...prev, [key]: value } : prev));
+  }
 
   async function handleSubmit() {
+    if (!values) return;
     const parsed = productSchema.safeParse({
-      name,
-      slug,
-      description: description || undefined,
-      price: Number(price),
-      purchasePrice: purchasePrice ? Number(purchasePrice) : 0,
-      categoryId,
-      distributorCode: distributorCode.trim() || undefined,
-      stock: Number(stock) || 0,
-      minStock: Number(minStock) || 0,
-      warrantyMonths: warrantyMonths ? Number(warrantyMonths) : null,
+      name: values.name,
+      slug: values.slug,
+      description: values.description || undefined,
+      price: Number(values.price),
+      purchasePrice: values.purchasePrice ? Number(values.purchasePrice) : 0,
+      categoryId: values.categoryId,
+      distributorCode: values.distributorCode.trim() || undefined,
+      minStock: Number(values.minStock) || 0,
+      warrantyMonths: values.warrantyMonths ? Number(values.warrantyMonths) : null,
       active,
     });
     if (!parsed.success) {
@@ -108,7 +135,8 @@ export default function EditProductScreen() {
           return;
         }
       }
-      await productsRepo.update(productId, parsed.data, images);
+      // productSchema defaults stock to 0; update() ignores it anyway.
+      await productsRepo.update(productId, parsed.data, values.images);
       router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el producto');
@@ -117,144 +145,252 @@ export default function EditProductScreen() {
     }
   }
 
-  async function handleDeactivate() {
+  async function handleSetActive(next: boolean) {
     setSaving(true);
+    setError(null);
     try {
-      await productsRepo.deactivate(productId);
-      router.back();
+      if (next) {
+        await productsRepo.update(productId, { active: true });
+        setActive(true);
+      } else {
+        await productsRepo.deactivate(productId);
+        router.back();
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo desactivar el producto');
+      setError(e instanceof Error ? e.message : 'No se pudo cambiar el estado del producto');
+    } finally {
       setSaving(false);
     }
   }
 
-  if (loading) {
+  if (loading || !values) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <ThemedText themeColor="textSecondary">Cargando…</ThemedText>
-        </SafeAreaView>
+      <ThemedView style={[styles.container, styles.padded]}>
+        <ThemedText themeColor="textSecondary">{loading ? 'Cargando…' : 'Producto no encontrado'}</ThemedText>
       </ThemedView>
     );
   }
 
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
+  const minStock = Number(saved?.minStock) || 0;
+  const stockState = stock <= 0 ? 'out' : minStock > 0 && stock <= minStock ? 'low' : 'ok';
+  const stockColor = stockState === 'out' ? theme.error : stockState === 'low' ? theme.warning : theme.info;
+  const StockIcon = stockState === 'out' ? PackageX : stockState === 'low' ? TriangleAlert : Boxes;
+
+  const price = Number(values.price) || 0;
+  const cost = Number(values.purchasePrice) || 0;
+  const gain = price - cost;
+  const marginPct = price > 0 && cost > 0 ? Math.round((gain / price) * 100) : null;
+  const marginColor = gain < 0 ? theme.error : theme.primary;
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ProductImageGallery images={images} onChange={setImages} onError={setError} savedUrls={savedUrls} />
+      <Stack.Screen options={{ title: saved?.name || 'Producto' }} />
+      <SafeAreaView style={styles.flex} edges={[]}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <View style={styles.badges}>
+              <Badge label={`SKU ${sku}`} color={theme.textSecondary} />
+              {skuPending ? <Badge label="Pendiente de sincronizar" color={theme.warning} /> : null}
+              <Badge label={active ? 'Activo' : 'Inactivo'} color={active ? theme.primary : theme.error} />
+            </View>
 
-          <ThemedText themeColor="textSecondary" type="small" style={styles.skuText}>
-            SKU: {sku}
-            {skuPending ? ' (pendiente de confirmar al sincronizar)' : ''}
-          </ThemedText>
-
-          <ThemedText type="small">Nombre</ThemedText>
-          <TextInput value={name} onChangeText={setName} style={inputStyle} />
-
-          <ThemedText type="small">Slug</ThemedText>
-          <TextInput value={slug} onChangeText={setSlug} autoCapitalize="none" style={inputStyle} />
-
-          <ThemedText type="small">Categoría</ThemedText>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-            <Pressable onPress={() => setCategoryId(null)}>
-              <ThemedView type={categoryId === null ? 'backgroundSelected' : 'backgroundElement'} style={styles.chip}>
-                <ThemedText type="small">General</ThemedText>
+            <View style={styles.tiles}>
+              <ThemedView type="backgroundElement" style={[styles.tile, Shadow.subtle]}>
+                <TileHeader icon={StockIcon} color={stockColor} label="Stock" />
+                <ThemedText type="cardTitle" style={stockState !== 'ok' ? { color: stockColor } : undefined}>
+                  {stock} {stock === 1 ? 'unidad' : 'unidades'}
+                </ThemedText>
+                <Link href={`/more/inventory/adjust?productId=${productId}`} asChild>
+                  <Pressable hitSlop={6}>
+                    <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                      Ajustar stock
+                    </ThemedText>
+                  </Pressable>
+                </Link>
               </ThemedView>
+              <ThemedView type="backgroundElement" style={[styles.tile, Shadow.subtle]}>
+                <TileHeader icon={gain < 0 ? TrendingDown : TrendingUp} color={marginColor} label="Ganancia por unidad" />
+                <ThemedText type="cardTitle" style={{ color: cost > 0 ? marginColor : theme.textSecondary }}>
+                  {cost > 0 ? formatCOP(gain) : '—'}
+                </ThemedText>
+                <ThemedText type="caption" themeColor="textSecondary">
+                  {marginPct !== null ? `${marginPct}% del precio` : 'Falta el precio de compra'}
+                </ThemedText>
+              </ThemedView>
+            </View>
+
+            <FormSection title="Fotos">
+              <ProductImageGallery images={values.images} onChange={(images) => set('images', images)} onError={setError} savedUrls={savedUrls} />
+            </FormSection>
+
+            <FormSection title="Información">
+              <FormField label="Nombre">
+                <FormInput value={values.name} onChangeText={(v) => set('name', v)} />
+              </FormField>
+              <FormField label="Categoría">
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                  <FormChip label="General" selected={values.categoryId === null} onPress={() => set('categoryId', null)} />
+                  {categories.map((category) => (
+                    <FormChip
+                      key={category.id}
+                      label={category.name}
+                      selected={values.categoryId === category.id}
+                      onPress={() => set('categoryId', category.id)}
+                    />
+                  ))}
+                </ScrollView>
+              </FormField>
+              <FormField label="Descripción (opcional)">
+                <FormInput value={values.description} onChangeText={(v) => set('description', v)} multiline />
+              </FormField>
+            </FormSection>
+
+            <FormSection title="Precios">
+              <FormRow>
+                <FormField label="Precio de venta" style={styles.flex}>
+                  <FormInput prefix="$" value={values.price} onChangeText={(v) => set('price', v)} keyboardType="numeric" />
+                </FormField>
+                <FormField label="Precio de compra" style={styles.flex}>
+                  <FormInput
+                    prefix="$"
+                    value={values.purchasePrice}
+                    onChangeText={(v) => set('purchasePrice', v)}
+                    keyboardType="numeric"
+                    placeholder="0"
+                  />
+                </FormField>
+              </FormRow>
+            </FormSection>
+
+            <FormSection title="Inventario">
+              <FormRow>
+                <FormField label="Stock mínimo" style={styles.flex}>
+                  <FormInput value={values.minStock} onChangeText={(v) => set('minStock', v)} keyboardType="numeric" />
+                </FormField>
+                <FormField label="Garantía (meses)" style={styles.flex}>
+                  <FormInput
+                    value={values.warrantyMonths}
+                    onChangeText={(v) => set('warrantyMonths', v)}
+                    keyboardType="numeric"
+                    placeholder="Sin garantía"
+                  />
+                </FormField>
+              </FormRow>
+              <ThemedText type="caption" themeColor="textSecondary">
+                Con el stock en el mínimo o menos, el producto aparece como &quot;stock bajo&quot; en las alertas. El stock se cambia con
+                &quot;Ajustar stock&quot;, arriba.
+              </ThemedText>
+            </FormSection>
+
+            <FormSection title="Identificación">
+              <FormField label="Código del proveedor (opcional)" hint="El código con que lo identifica el distribuidor. No se puede repetir.">
+                <FormInput
+                  value={values.distributorCode}
+                  onChangeText={(v) => set('distributorCode', v)}
+                  placeholder="Ej. PROV-100"
+                  autoCapitalize="none"
+                />
+              </FormField>
+              <FormField label="Slug" hint="La dirección del producto en la página web.">
+                <FormInput value={values.slug} onChangeText={(v) => set('slug', v)} autoCapitalize="none" />
+              </FormField>
+            </FormSection>
+
+            {error ? (
+              <View style={[styles.errorBox, { backgroundColor: withAlpha(theme.error, 0.08) }]}>
+                <ThemedText type="small" style={{ color: theme.error }}>
+                  {error}
+                </ThemedText>
+                {conflict ? (
+                  <Pressable onPress={() => router.push(`/more/products/${conflict.id}`)}>
+                    <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                      Ir a editar {conflict.name}
+                    </ThemedText>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
+
+            <Pressable onPress={() => handleSetActive(!active)} disabled={saving}>
+              <View style={[styles.stateButton, { borderColor: withAlpha(active ? theme.error : theme.primary, 0.4) }]}>
+                <Power color={active ? theme.error : theme.primary} size={18} />
+                <ThemedText type="default" style={{ color: active ? theme.error : theme.primary }}>
+                  {active ? 'Desactivar producto' : 'Reactivar producto'}
+                </ThemedText>
+              </View>
             </Pressable>
-            {categories.map((category) => (
-              <Pressable key={category.id} onPress={() => setCategoryId(category.id)}>
-                <ThemedView
-                  type={categoryId === category.id ? 'backgroundSelected' : 'backgroundElement'}
-                  style={styles.chip}>
-                  <ThemedText type="small">{category.name}</ThemedText>
-                </ThemedView>
-              </Pressable>
-            ))}
+            <ThemedText type="caption" themeColor="textSecondary" style={styles.center}>
+              {active
+                ? 'Un producto desactivado deja de aparecer en Vender. Su historial se conserva.'
+                : 'Está desactivado: no aparece en Vender.'}
+            </ThemedText>
           </ScrollView>
 
-          <ThemedText type="small">Descripción (opcional)</ThemedText>
-          <TextInput value={description} onChangeText={setDescription} style={inputStyle} multiline />
-
-          <ThemedText type="small">Código del proveedor (opcional)</ThemedText>
-          <TextInput
-            value={distributorCode}
-            onChangeText={setDistributorCode}
-            placeholder="Ej. PROV-100"
-            placeholderTextColor={theme.textSecondary}
-            autoCapitalize="none"
-            style={inputStyle}
-          />
-
-          <ThemedText type="small">Precio de venta</ThemedText>
-          <TextInput value={price} onChangeText={setPrice} keyboardType="numeric" style={inputStyle} />
-
-          <ThemedText type="small">Precio de compra (opcional)</ThemedText>
-          <TextInput value={purchasePrice} onChangeText={setPurchasePrice} keyboardType="numeric" style={inputStyle} />
-
-          <ThemedText type="small">Stock</ThemedText>
-          <TextInput value={stock} onChangeText={setStock} keyboardType="numeric" style={inputStyle} />
-
-          <ThemedText type="small">Stock mínimo</ThemedText>
-          <TextInput value={minStock} onChangeText={setMinStock} keyboardType="numeric" style={inputStyle} />
-
-          <ThemedText type="small">Garantía en meses (opcional)</ThemedText>
-          <TextInput value={warrantyMonths} onChangeText={setWarrantyMonths} keyboardType="numeric" style={inputStyle} />
-
-          {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-          {conflict ? (
-            <Pressable onPress={() => router.push(`/more/products/${conflict.id}`)}>
-              <ThemedText type="linkPrimary" style={styles.conflictLink}>
-                Ir a editar {conflict.name}
-              </ThemedText>
+          <ThemedView
+            type="backgroundElement"
+            style={[styles.saveBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
+            <Pressable onPress={handleSubmit} disabled={saving || !dirty}>
+              <View style={[styles.saveButton, { backgroundColor: theme.primary }, (saving || !dirty) && styles.disabled]}>
+                <ThemedText type="cardTitle" style={styles.onPrimary}>
+                  {saving ? 'Guardando…' : dirty ? 'Guardar cambios' : 'Sin cambios'}
+                </ThemedText>
+              </View>
             </Pressable>
-          ) : null}
-
-          <Pressable onPress={handleSubmit} disabled={saving}>
-            <ThemedView type="backgroundSelected" style={styles.submitButton}>
-              <ThemedText type="linkPrimary">{saving ? 'Guardando…' : 'Guardar cambios'}</ThemedText>
-            </ThemedView>
-          </Pressable>
-
-          {active ? (
-            <Pressable onPress={handleDeactivate} disabled={saving}>
-              <ThemedView type="backgroundElement" style={styles.submitButton}>
-                <ThemedText>Desactivar producto</ThemedText>
-              </ThemedView>
-            </Pressable>
-          ) : null}
-        </ScrollView>
+          </ThemedView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
   );
 }
 
+function Badge({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={[styles.badge, { backgroundColor: withAlpha(color, 0.12) }]}>
+      <ThemedText type="caption" style={{ color }}>
+        {label}
+      </ThemedText>
+    </View>
+  );
+}
+
+function TileHeader({ icon: Icon, color, label }: { icon: ComponentType<LucideProps>; color: string; label: string }) {
+  return (
+    <View style={styles.tileHeader}>
+      <View style={[styles.tileIcon, { backgroundColor: withAlpha(color, 0.12) }]}>
+        <Icon color={color} size={16} />
+      </View>
+      <ThemedText type="caption" themeColor="textSecondary" style={styles.flex}>
+        {label}
+      </ThemedText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  skuText: { textAlign: 'center', marginBottom: Spacing.three },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  chipRow: { marginBottom: Spacing.two },
-  chip: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.five,
-    marginRight: Spacing.two,
-  },
-  error: { color: '#d9534f' },
-  conflictLink: { marginBottom: Spacing.two },
-  submitButton: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
+  padded: { padding: Layout.screenPadding },
+  flex: { flex: 1 },
+  center: { textAlign: 'center' },
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap, paddingBottom: Spacing.five },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  badge: { borderRadius: Radii.chip, paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
+  tiles: { flexDirection: 'row', gap: Layout.cardGap },
+  tile: { flex: 1, borderRadius: Radii.card, padding: Spacing.three, gap: Spacing.one },
+  tileHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginBottom: Spacing.one },
+  tileIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  chips: { gap: Spacing.two },
+  errorBox: { borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.two },
+  stateButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    borderWidth: 1.5,
+    borderRadius: Radii.buttonPrimary,
+    paddingVertical: Spacing.three,
   },
+  saveBar: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, borderTopWidth: 1 },
+  saveButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.buttonPrimary },
+  onPrimary: { color: '#FFFFFF' },
+  disabled: { opacity: 0.5 },
 });

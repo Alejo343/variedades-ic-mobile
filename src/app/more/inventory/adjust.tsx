@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,9 +20,17 @@ export default function AdjustStockScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Opened from a product's edit screen ("Ajustar stock") with that product
+  // already chosen; from Inventario, without it.
+  const { productId } = useLocalSearchParams<{ productId?: string }>();
+
   useEffect(() => {
-    productsRepo.list().then((rows) => setProducts(rows.filter((p) => p.active)));
-  }, []);
+    productsRepo.list().then((rows) => {
+      const active = rows.filter((p) => p.active);
+      setProducts(active);
+      if (productId) setSelected(active.find((p) => p.id === Number(productId)) ?? null);
+    });
+  }, [productId]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
