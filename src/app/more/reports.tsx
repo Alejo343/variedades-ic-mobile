@@ -45,6 +45,7 @@ import {
   type SalesReport,
 } from '@/lib/data';
 import { formatCOP, endOfLocalDayUtc, startOfLocalDayUtc } from '@/lib/format';
+import { isBusinessCashMovement } from '@/lib/domain/cash';
 import { formatRangeLabel, periodRange, REPORT_PERIODS, type ReportPeriod } from '@/lib/report-periods';
 
 // Channel colors for the local-vs-sellers split. Fixed in both themes (not
@@ -153,7 +154,10 @@ export default function ReportsScreen() {
           });
           const cashPeriod = { income: 0, expense: 0 };
           const byAccount = new Map<number, { income: number; expense: number }>();
+          // Transfers and cash adjustments move balances but aren't business
+          // income/expense (lib/domain/cash.ts).
           for (const m of cashInRange) {
+            if (!isBusinessCashMovement(m)) continue;
             const bucket = byAccount.get(m.accountId) ?? { income: 0, expense: 0 };
             if (m.type === 'ingreso') {
               bucket.income += m.amount;

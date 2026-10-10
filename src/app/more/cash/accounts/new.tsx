@@ -1,17 +1,20 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AccountTypePicker } from '@/components/account-type-picker';
+import { FormField, FormInput, FormSection } from '@/components/form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Layout, Radii, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { cashAccountsRepo } from '@/lib/data';
 import { cashAccountSchema } from '@/lib/validations';
 
 export default function NewCashAccountScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [type, setType] = useState<'efectivo' | 'banco'>('efectivo');
   const [notes, setNotes] = useState('');
@@ -40,46 +43,49 @@ export default function NewCashAccountScreen() {
     }
   }
 
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
+  const canSave = name.trim().length > 0 && !saving;
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ThemedText type="small">Nombre</ThemedText>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="Ej. Efectivo, Bancolombia, Nequi"
-            placeholderTextColor={theme.textSecondary}
-            style={inputStyle}
-          />
+      <SafeAreaView style={styles.flex} edges={[]}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            <FormSection title="Cuenta">
+              <FormField label="Nombre">
+                <FormInput value={name} onChangeText={setName} placeholder="Ej. Efectivo, Bancolombia, Nequi" autoFocus />
+              </FormField>
+              <FormField label="Tipo">
+                <AccountTypePicker value={type} onChange={setType} />
+              </FormField>
+              <FormField label="Notas (opcional)">
+                <FormInput value={notes} onChangeText={setNotes} multiline />
+              </FormField>
+            </FormSection>
+            <ThemedText type="caption" themeColor="textSecondary">
+              La cuenta empieza en $0. Su saldo sale de los movimientos que se registren en ella (ventas, gastos, pagos).
+            </ThemedText>
 
-          <ThemedText type="small">Tipo</ThemedText>
-          <ThemedView style={styles.typeRow}>
-            <Pressable style={styles.typeFlex} onPress={() => setType('efectivo')}>
-              <ThemedView type={type === 'efectivo' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
-                <ThemedText type={type === 'efectivo' ? 'linkPrimary' : undefined}>Efectivo</ThemedText>
-              </ThemedView>
-            </Pressable>
-            <Pressable style={styles.typeFlex} onPress={() => setType('banco')}>
-              <ThemedView type={type === 'banco' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
-                <ThemedText type={type === 'banco' ? 'linkPrimary' : undefined}>Banco</ThemedText>
-              </ThemedView>
+            {error ? (
+              <View style={[styles.errorBox, { backgroundColor: withAlpha(theme.error, 0.08) }]}>
+                <ThemedText type="small" style={{ color: theme.error }}>
+                  {error}
+                </ThemedText>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <ThemedView
+            type="backgroundElement"
+            style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
+            <Pressable onPress={handleSubmit} disabled={!canSave}>
+              <View style={[styles.primaryButton, { backgroundColor: theme.primary }, !canSave && styles.disabled]}>
+                <ThemedText type="cardTitle" style={styles.onPrimary}>
+                  {saving ? 'Guardando…' : 'Crear cuenta'}
+                </ThemedText>
+              </View>
             </Pressable>
           </ThemedView>
-
-          <ThemedText type="small">Notas (opcional)</ThemedText>
-          <TextInput value={notes} onChangeText={setNotes} style={inputStyle} multiline />
-
-          {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-
-          <Pressable onPress={handleSubmit} disabled={saving}>
-            <ThemedView type="backgroundSelected" style={styles.submitButton}>
-              <ThemedText type="linkPrimary">{saving ? 'Guardando…' : 'Guardar cuenta'}</ThemedText>
-            </ThemedView>
-          </Pressable>
-        </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -87,26 +93,11 @@ export default function NewCashAccountScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  typeRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
-  typeFlex: { flex: 1 },
-  typeButton: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
-  error: { color: '#d9534f' },
-  submitButton: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
+  flex: { flex: 1 },
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap },
+  errorBox: { borderRadius: Spacing.three, padding: Spacing.three },
+  bottomBar: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, borderTopWidth: 1 },
+  primaryButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.buttonPrimary },
+  onPrimary: { color: '#FFFFFF' },
+  disabled: { opacity: 0.5 },
 });

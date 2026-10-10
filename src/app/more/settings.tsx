@@ -36,6 +36,7 @@ const OPERATION_LABEL: Record<SyncOperationType, string> = {
   upsertCashAccount: 'Guardar cuenta',
   createInventoryAdjustment: 'Ajuste de inventario',
   createCashMovement: 'Movimiento de caja',
+  createCashTransfer: 'Transferencia entre cuentas',
   createDirectSale: 'Venta en la tienda',
   createSellerDelivery: 'Entrega a vendedor',
   createSellerSale: 'Venta de vendedor',

@@ -42,6 +42,14 @@ export const cashMovementSchema = z.object({
   notes: z.string().optional(),
 });
 
+// Moving money between two cash accounts — see lib/domain/cash.ts.
+export const cashTransferSchema = z.object({
+  fromAccountId: z.number().int(),
+  toAccountId: z.number().int(),
+  amount: z.number().int().min(1, "El monto debe ser mayor a 0"),
+  notes: z.string().optional(),
+});
+
 export const directSaleItemSchema = z.object({
   productId: z.number().int(),
   quantity: z.number().int().min(1),
@@ -155,6 +163,7 @@ export type ProductInput = z.infer<typeof productSchema>;
 export type InventoryAdjustmentInput = z.infer<typeof inventoryAdjustmentSchema>;
 export type CashAccountInput = z.infer<typeof cashAccountSchema>;
 export type CashMovementInput = z.infer<typeof cashMovementSchema>;
+export type CashTransferInput = z.infer<typeof cashTransferSchema>;
 export type DirectSaleItemInput = z.infer<typeof directSaleItemSchema>;
 export type DirectSaleInput = z.infer<typeof directSaleSchema>;
 export type SellerInput = z.infer<typeof sellerSchema>;

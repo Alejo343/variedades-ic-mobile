@@ -37,9 +37,11 @@ import {
   settlementsRepo,
   type Product,
 } from "@/lib/data";
+import { isBusinessCashMovement } from "@/lib/domain/cash";
 import {
   formatCOP,
   formatRelativeTime,
+  isOnLocalDay,
   todayLocalDateString,
 } from "@/lib/format";
 import { resolveImageUri } from "@/lib/sync/image-url";
@@ -114,17 +116,24 @@ export default function HomeScreen() {
         ]) => {
           if (cancelled) return;
 
+          // Dates are UTC text: isOnLocalDay compares against the local day's
+          // UTC bounds (startsWith(today) dropped sales after 7 p. m. in
+          // Colombia). Transfers and adjustments aren't business income.
           const today = todayLocalDateString();
           setTodayIncome(
             cashMovements
               .filter(
-                (m) => m.type === "ingreso" && m.movementDate.startsWith(today),
+                (m) =>
+                  m.type === "ingreso" &&
+                  isBusinessCashMovement(m) &&
+                  isOnLocalDay(m.movementDate, today),
               )
               .reduce((sum, m) => sum + m.amount, 0),
           );
           setTodaySalesCount(
-            directSales.filter((s) => s.saleDate.startsWith(today)).length +
-              sellerSales.filter((s) => s.saleDate.startsWith(today)).length,
+            directSales.filter((s) => isOnLocalDay(s.saleDate, today)).length +
+              sellerSales.filter((s) => isOnLocalDay(s.saleDate, today))
+                .length,
           );
           setLowStockCount(lowStock.length);
           setOutOfStockCount(outOfStock.length);

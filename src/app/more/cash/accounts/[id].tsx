@@ -1,27 +1,36 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Power } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AccountTypePicker } from '@/components/account-type-picker';
+import { FormField, FormInput, FormSection } from '@/components/form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { cashAccountsRepo } from '@/lib/data';
-import { formatCOP } from '@/lib/format';
+import { cashAccountsRepo, cashRepo, type CashMovement } from '@/lib/data';
+import { formatCOP, formatDateTime } from '@/lib/format';
 import { cashAccountSchema } from '@/lib/validations';
+
+type FormValues = { name: string; type: 'efectivo' | 'banco'; notes: string };
+
+const RECENT_LIMIT = 10;
 
 export default function EditCashAccountScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const accountId = Number(id);
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
-  const [name, setName] = useState('');
-  const [type, setType] = useState<'efectivo' | 'banco'>('efectivo');
-  const [notes, setNotes] = useState('');
+  const [values, setValues] = useState<FormValues | null>(null);
+  const [saved, setSaved] = useState<FormValues | null>(null);
   const [active, setActive] = useState(true);
   const [balance, setBalance] = useState(0);
+  const [recent, setRecent] = useState<CashMovement[]>([]);
+  const [movementCount, setMovementCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -30,31 +39,35 @@ export default function EditCashAccountScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setLoading(true);
-      Promise.all([cashAccountsRepo.getById(accountId), cashAccountsRepo.listWithBalances()]).then(([account, withBalances]) => {
-        if (cancelled) return;
-        if (account) {
-          setName(account.name);
-          setType(account.type);
-          setNotes(account.notes ?? '');
-          setActive(account.active);
-        }
-        setBalance(withBalances.find((a) => a.id === accountId)?.balance ?? 0);
-        setLoading(false);
-      });
+      Promise.all([cashAccountsRepo.getById(accountId), cashAccountsRepo.listWithBalances(), cashRepo.list()]).then(
+        ([account, withBalances, movements]) => {
+          if (cancelled) return;
+          if (account) {
+            const loaded: FormValues = { name: account.name, type: account.type, notes: account.notes ?? '' };
+            setValues(loaded);
+            setSaved(loaded);
+            setActive(account.active);
+          }
+          setBalance(withBalances.find((a) => a.id === accountId)?.balance ?? 0);
+          const own = movements
+            .filter((m) => m.accountId === accountId)
+            .sort((a, b) => (a.movementDate < b.movementDate ? 1 : -1));
+          setMovementCount(own.length);
+          setRecent(own.slice(0, RECENT_LIMIT));
+          setLoading(false);
+        },
+      );
       return () => {
         cancelled = true;
       };
     }, [accountId]),
   );
 
+  const dirty = values !== null && saved !== null && JSON.stringify(values) !== JSON.stringify(saved);
+
   async function handleSubmit() {
-    const parsed = cashAccountSchema.safeParse({
-      name,
-      type,
-      notes: notes || undefined,
-      active,
-    });
+    if (!values) return;
+    const parsed = cashAccountSchema.safeParse({ name: values.name, type: values.type, notes: values.notes || undefined, active });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Datos inválidos');
       return;
@@ -71,78 +84,135 @@ export default function EditCashAccountScreen() {
     }
   }
 
-  async function handleDeactivate() {
+  async function handleSetActive(next: boolean) {
     setSaving(true);
+    setError(null);
     try {
-      await cashAccountsRepo.deactivate(accountId);
-      router.back();
+      if (next) {
+        await cashAccountsRepo.update(accountId, { active: true });
+        setActive(true);
+      } else {
+        await cashAccountsRepo.deactivate(accountId);
+        router.back();
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo desactivar la cuenta');
+      setError(e instanceof Error ? e.message : 'No se pudo cambiar el estado de la cuenta');
+    } finally {
       setSaving(false);
     }
   }
 
-  if (loading) {
+  if (loading || !values) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <ThemedText themeColor="textSecondary">Cargando…</ThemedText>
-        </SafeAreaView>
+      <ThemedView style={[styles.container, styles.padded]}>
+        <ThemedText themeColor="textSecondary">{loading ? 'Cargando…' : 'Cuenta no encontrada'}</ThemedText>
       </ThemedView>
     );
   }
 
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
-
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ThemedView type="backgroundElement" style={styles.balanceBlock}>
-            <ThemedText themeColor="textSecondary" type="small">
-              Saldo actual
-            </ThemedText>
-            <ThemedText type="linkPrimary" style={styles.balanceAmount}>
-              {formatCOP(balance)}
-            </ThemedText>
-          </ThemedView>
-
-          <ThemedText type="small">Nombre</ThemedText>
-          <TextInput value={name} onChangeText={setName} style={inputStyle} />
-
-          <ThemedText type="small">Tipo</ThemedText>
-          <ThemedView style={styles.typeRow}>
-            <Pressable style={styles.typeFlex} onPress={() => setType('efectivo')}>
-              <ThemedView type={type === 'efectivo' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
-                <ThemedText type={type === 'efectivo' ? 'linkPrimary' : undefined}>Efectivo</ThemedText>
-              </ThemedView>
-            </Pressable>
-            <Pressable style={styles.typeFlex} onPress={() => setType('banco')}>
-              <ThemedView type={type === 'banco' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
-                <ThemedText type={type === 'banco' ? 'linkPrimary' : undefined}>Banco</ThemedText>
-              </ThemedView>
-            </Pressable>
-          </ThemedView>
-
-          <ThemedText type="small">Notas (opcional)</ThemedText>
-          <TextInput value={notes} onChangeText={setNotes} style={inputStyle} multiline />
-
-          {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-
-          <Pressable onPress={handleSubmit} disabled={saving}>
-            <ThemedView type="backgroundSelected" style={styles.submitButton}>
-              <ThemedText type="linkPrimary">{saving ? 'Guardando…' : 'Guardar cambios'}</ThemedText>
+      <Stack.Screen options={{ title: saved?.name || 'Cuenta' }} />
+      <SafeAreaView style={styles.flex} edges={[]}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+              <View style={styles.heroHeader}>
+                <ThemedText type="secondary" themeColor="textSecondary" style={styles.flex}>
+                  Saldo actual
+                </ThemedText>
+                <View style={[styles.badge, { backgroundColor: withAlpha(active ? theme.primary : theme.error, 0.12) }]}>
+                  <ThemedText type="caption" style={{ color: active ? theme.primary : theme.error }}>
+                    {active ? 'Activa' : 'Inactiva'}
+                  </ThemedText>
+                </View>
+              </View>
+              <ThemedText
+                type="bigNumber"
+                style={{ color: balance < 0 ? theme.error : theme.text }}
+                adjustsFontSizeToFit
+                numberOfLines={1}>
+                {formatCOP(balance)}
+              </ThemedText>
+              <ThemedText type="secondary" themeColor="textSecondary">
+                {movementCount} {movementCount === 1 ? 'movimiento' : 'movimientos'}
+              </ThemedText>
             </ThemedView>
-          </Pressable>
 
-          {active ? (
-            <Pressable onPress={handleDeactivate} disabled={saving}>
-              <ThemedView type="backgroundElement" style={styles.submitButton}>
-                <ThemedText>Desactivar cuenta</ThemedText>
-              </ThemedView>
+            <FormSection title="Datos">
+              <FormField label="Nombre">
+                <FormInput value={values.name} onChangeText={(v) => setValues({ ...values, name: v })} />
+              </FormField>
+              <FormField label="Tipo">
+                <AccountTypePicker value={values.type} onChange={(v) => setValues({ ...values, type: v })} />
+              </FormField>
+              <FormField label="Notas (opcional)">
+                <FormInput value={values.notes} onChangeText={(v) => setValues({ ...values, notes: v })} multiline />
+              </FormField>
+            </FormSection>
+
+            {recent.length > 0 ? (
+              <View style={styles.section}>
+                <ThemedText type="sectionTitle">Últimos movimientos</ThemedText>
+                <ThemedView type="backgroundElement" style={[styles.listCard, Shadow.subtle]}>
+                  {recent.map((movement, i) => {
+                    const income = movement.type === 'ingreso';
+                    return (
+                      <View key={movement.id} style={[styles.row, i > 0 && { borderTopWidth: 1, borderTopColor: theme.border }]}>
+                        <View style={styles.flex}>
+                          <ThemedText type="small" numberOfLines={1}>
+                            {movement.concept}
+                          </ThemedText>
+                          <ThemedText type="caption" themeColor="textSecondary">
+                            {formatDateTime(movement.movementDate)}
+                          </ThemedText>
+                        </View>
+                        <ThemedText type="smallBold" style={{ color: income ? theme.primary : theme.error }}>
+                          {income ? '+' : '−'}
+                          {formatCOP(movement.amount)}
+                        </ThemedText>
+                      </View>
+                    );
+                  })}
+                </ThemedView>
+              </View>
+            ) : null}
+
+            {error ? (
+              <View style={[styles.errorBox, { backgroundColor: withAlpha(theme.error, 0.08) }]}>
+                <ThemedText type="small" style={{ color: theme.error }}>
+                  {error}
+                </ThemedText>
+              </View>
+            ) : null}
+
+            <Pressable onPress={() => handleSetActive(!active)} disabled={saving}>
+              <View style={[styles.stateButton, { borderColor: withAlpha(active ? theme.error : theme.primary, 0.4) }]}>
+                <Power color={active ? theme.error : theme.primary} size={18} />
+                <ThemedText type="default" style={{ color: active ? theme.error : theme.primary }}>
+                  {active ? 'Desactivar cuenta' : 'Reactivar cuenta'}
+                </ThemedText>
+              </View>
             </Pressable>
-          ) : null}
-        </ScrollView>
+            <ThemedText type="caption" themeColor="textSecondary" style={styles.center}>
+              {active
+                ? 'Una cuenta desactivada deja de aparecer al cobrar o registrar movimientos. Su historial y su saldo se conservan.'
+                : 'Está desactivada: no aparece al cobrar ni al registrar movimientos.'}
+            </ThemedText>
+          </ScrollView>
+
+          <ThemedView
+            type="backgroundElement"
+            style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
+            <Pressable onPress={handleSubmit} disabled={saving || !dirty}>
+              <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (saving || !dirty) && styles.disabled]}>
+                <ThemedText type="cardTitle" style={styles.onPrimary}>
+                  {saving ? 'Guardando…' : dirty ? 'Guardar cambios' : 'Sin cambios'}
+                </ThemedText>
+              </View>
+            </Pressable>
+          </ThemedView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -150,28 +220,28 @@ export default function EditCashAccountScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  balanceBlock: { padding: Spacing.four, borderRadius: Spacing.three, alignItems: 'center', marginBottom: Spacing.two, gap: Spacing.one },
-  balanceAmount: { fontSize: 24 },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  typeRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
-  typeFlex: { flex: 1 },
-  typeButton: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
+  padded: { padding: Layout.screenPadding },
+  flex: { flex: 1 },
+  center: { textAlign: 'center' },
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap, paddingBottom: Spacing.five },
+  card: { borderRadius: Radii.card, padding: Spacing.four, gap: Spacing.one },
+  heroHeader: { flexDirection: 'row', alignItems: 'center' },
+  badge: { borderRadius: Radii.chip, paddingHorizontal: Spacing.two, paddingVertical: 2 },
+  section: { gap: Spacing.two },
+  listCard: { borderRadius: Radii.card, paddingHorizontal: Spacing.three },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.three },
+  errorBox: { borderRadius: Spacing.three, padding: Spacing.three },
+  stateButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    borderWidth: 1.5,
+    borderRadius: Radii.buttonPrimary,
+    paddingVertical: Spacing.three,
   },
-  error: { color: '#d9534f' },
-  submitButton: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
+  bottomBar: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, borderTopWidth: 1 },
+  primaryButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.buttonPrimary },
+  onPrimary: { color: '#FFFFFF' },
+  disabled: { opacity: 0.5 },
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { endOfLocalDayUtc, formatDateTime, isOnLocalDay, toSqliteUtcTimestamp } from './format';
+import { dayLabel, endOfLocalDayUtc, formatDateTime, formatTime, isOnLocalDay, localDateKey, toSqliteUtcTimestamp } from './format';
 
 // Bug real (sesión 2026-10-03): markSettled enviaba settledAt con
 // `new Date().toISOString()` ("...T...Z"), que el servidor rechazaba
@@ -43,5 +43,29 @@ describe('formatDateTime', () => {
     expect(formatDateTime(toSqliteUtcTimestamp(new Date(2026, 9, 8, 15, 40)))).toBe('8 oct · 3:40 p. m.');
     expect(formatDateTime(toSqliteUtcTimestamp(new Date(2026, 0, 2, 0, 5)))).toBe('2 ene · 12:05 a. m.');
     expect(formatDateTime(toSqliteUtcTimestamp(new Date(2026, 11, 31, 12, 0)))).toBe('31 dic · 12:00 p. m.');
+  });
+});
+
+describe('localDateKey', () => {
+  it('devuelve el día local de un timestamp UTC, no el día UTC', () => {
+    expect(localDateKey(toSqliteUtcTimestamp(new Date(2026, 9, 7, 23, 50)))).toBe('2026-10-07');
+    expect(localDateKey(toSqliteUtcTimestamp(new Date(2026, 9, 8, 0, 5)))).toBe('2026-10-08');
+  });
+});
+
+describe('dayLabel', () => {
+  it('dice Hoy, Ayer o la fecha corta', () => {
+    expect(dayLabel('2026-10-08', '2026-10-08')).toBe('Hoy');
+    expect(dayLabel('2026-10-07', '2026-10-08')).toBe('Ayer');
+    expect(dayLabel('2026-09-30', '2026-10-01')).toBe('Ayer');
+    expect(dayLabel('2026-10-05', '2026-10-08')).toBe('5 oct');
+    expect(dayLabel('2025-12-31', '2026-10-08')).toBe('31 dic 2025');
+  });
+});
+
+describe('formatTime', () => {
+  it('muestra la hora local en formato de 12 horas', () => {
+    expect(formatTime(toSqliteUtcTimestamp(new Date(2026, 9, 8, 15, 40)))).toBe('3:40 p. m.');
+    expect(formatTime(toSqliteUtcTimestamp(new Date(2026, 9, 8, 0, 5)))).toBe('12:05 a. m.');
   });
 });

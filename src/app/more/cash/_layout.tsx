@@ -5,6 +5,7 @@ export default function CashLayout() {
     <Stack>
       <Stack.Screen name="index" options={{ title: 'Caja' }} />
       <Stack.Screen name="new" options={{ title: 'Registrar movimiento', presentation: 'modal' }} />
+      <Stack.Screen name="transfer" options={{ title: 'Transferir entre cuentas', presentation: 'modal' }} />
       <Stack.Screen name="accounts/index" options={{ title: 'Cuentas' }} />
       <Stack.Screen name="accounts/new" options={{ title: 'Nueva cuenta', presentation: 'modal' }} />
       <Stack.Screen name="accounts/[id]" options={{ title: 'Editar cuenta' }} />

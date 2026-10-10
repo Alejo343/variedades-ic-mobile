@@ -82,13 +82,39 @@ export function isOnLocalDay(value: string, localDate: string): boolean {
 
 const SHORT_MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
-// "8 oct · 3:40 p. m." in local time. Built by hand for the same reason as
+// "3:40 p. m." in local time. Built by hand for the same reason as
 // formatCOP: Intl date/time styles aren't reliably bundled with Hermes.
-export function formatDateTime(value: string): string {
+export function formatTime(value: string): string {
   const date = parseSqliteDate(value);
   const hours = date.getHours();
   const hour12 = hours % 12 === 0 ? 12 : hours % 12;
   const minutes = String(date.getMinutes()).padStart(2, '0');
-  const suffix = hours < 12 ? 'a. m.' : 'p. m.';
-  return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]} · ${hour12}:${minutes} ${suffix}`;
+  return `${hour12}:${minutes} ${hours < 12 ? 'a. m.' : 'p. m.'}`;
+}
+
+// "8 oct · 3:40 p. m." in local time.
+export function formatDateTime(value: string): string {
+  const date = parseSqliteDate(value);
+  return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]} · ${formatTime(value)}`;
+}
+
+// The local calendar day ('YYYY-MM-DD') a UTC SQLite timestamp falls on — the
+// key to group things "by day" the way the person lived them.
+export function localDateKey(value: string): string {
+  const date = parseSqliteDate(value);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+// Heading for a day group: "Hoy", "Ayer", "5 oct", or "31 dic 2025" for
+// another year. Both arguments are local 'YYYY-MM-DD' dates.
+export function dayLabel(localDate: string, today: string): string {
+  if (localDate === today) return 'Hoy';
+  const [ty, tm, td] = today.split('-').map(Number);
+  const yesterday = new Date(ty, tm - 1, td - 1);
+  const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+  if (localDate === yesterdayKey) return 'Ayer';
+  const [y, m, d] = localDate.split('-').map(Number);
+  return y === ty ? `${d} ${SHORT_MONTHS[m - 1]}` : `${d} ${SHORT_MONTHS[m - 1]} ${y}`;
 }

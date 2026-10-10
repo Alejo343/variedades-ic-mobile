@@ -1,6 +1,7 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
+import { planCashTransfer } from "../../domain/cash";
 import { enqueueOperation } from "../../sync/outbox";
-import type { CashMovementInput } from "../../validations";
+import type { CashMovementInput, CashTransferInput } from "../../validations";
 import type { CashMovement, CashRepo } from "../cash-repo";
 import type { Tx } from "./db";
 import { db } from "./db";
@@ -92,6 +93,33 @@ export const localCashRepo: CashRepo = {
       });
       const { uuid: _uuid, ...cashMovement } = movement;
       return cashMovement;
+    });
+  },
+
+  async transfer(input: CashTransferInput) {
+    await db.transaction(async (tx) => {
+      const accounts = await tx
+        .select({ id: cashAccounts.id, uuid: cashAccounts.uuid, name: cashAccounts.name })
+        .from(cashAccounts)
+        .where(inArray(cashAccounts.id, [input.fromAccountId, input.toAccountId]));
+      const from = accounts.find((a) => a.id === input.fromAccountId);
+      const to = accounts.find((a) => a.id === input.toAccountId);
+      if (!from || !to) throw new Error("Cuenta no encontrada");
+      const plan = planCashTransfer({ from, to, amount: input.amount });
+      if (!plan.ok) throw new Error(plan.reason);
+      const [out, inn] = [
+        await recordCashMovementTx(tx, { ...plan.movements[0], notes: input.notes }),
+        await recordCashMovementTx(tx, { ...plan.movements[1], notes: input.notes }),
+      ];
+      await enqueueOperation(tx, "createCashTransfer", {
+        fromAccountUuid: from.uuid,
+        toAccountUuid: to.uuid,
+        amount: input.amount,
+        transferDate: out.movementDate,
+        notes: input.notes ?? null,
+        outMovementUuid: out.uuid,
+        inMovementUuid: inn.uuid,
+      });
     });
   },
 };
