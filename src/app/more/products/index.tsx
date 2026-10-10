@@ -1,4 +1,4 @@
-import { Link, Stack } from 'expo-router';
+import { Link, Stack, useLocalSearchParams } from 'expo-router';
 import { PackageSearch, Plus, Tags } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -40,6 +40,9 @@ export default function ProductsScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  // Opened from a category ("Ver productos") with only its products.
+  const { categoryId } = useLocalSearchParams<{ categoryId?: string }>();
+  const onlyCategoryId = categoryId ? Number(categoryId) : null;
 
   useDataFocusEffect(
     useCallback(() => {
@@ -47,7 +50,9 @@ export default function ProductsScreen() {
       Promise.all([productsRepo.list(), categoriesRepo.list(), pendingUuidsForType('upsertProduct')]).then(
         ([rows, categories, pending]) => {
           if (cancelled) return;
-          setProducts([...rows].sort((a, b) => a.name.localeCompare(b.name)));
+          setProducts(
+            rows.filter((p) => onlyCategoryId === null || p.categoryId === onlyCategoryId).sort((a, b) => a.name.localeCompare(b.name)),
+          );
           setCategoryNames(Object.fromEntries(categories.map((c) => [c.id, c.name])));
           setPendingUuids(pending);
           setLoading(false);
@@ -56,7 +61,7 @@ export default function ProductsScreen() {
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [onlyCategoryId]),
   );
 
   const counts = useMemo(
@@ -93,6 +98,7 @@ export default function ProductsScreen() {
     <ThemedView style={styles.container}>
       <Stack.Screen
         options={{
+          title: onlyCategoryId !== null ? (categoryNames[onlyCategoryId] ?? 'Productos') : 'Productos',
           headerRight: () => (
             <Link href="/more/products/categories" asChild>
               <Pressable hitSlop={8} style={styles.headerAction}>

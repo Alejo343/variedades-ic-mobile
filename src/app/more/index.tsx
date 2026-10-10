@@ -16,7 +16,6 @@ const OWNER_MENU_ITEMS = [
   { label: 'Productos', href: '/more/products' },
   { label: 'Inventario', href: '/more/inventory' },
   { label: 'Categorías', href: '/more/products/categories' },
-  { label: 'Respaldo', href: '/more/backup' },
   { label: 'Configuración', href: '/more/settings' },
 ] as const;
 

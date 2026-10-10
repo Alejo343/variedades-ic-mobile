@@ -10,7 +10,6 @@ export default function MoreLayout() {
       <Stack.Screen name="sellers" options={{ headerShown: false }} />
       <Stack.Screen name="purchases" options={{ headerShown: false }} />
       <Stack.Screen name="reports" options={{ title: 'Reportes' }} />
-      <Stack.Screen name="backup" options={{ title: 'Respaldo' }} />
       <Stack.Screen name="settings" options={{ title: 'Configuración' }} />
     </Stack>
   );

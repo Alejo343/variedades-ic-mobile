@@ -1,34 +1,36 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useEffect, useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CategoryForm, EMPTY_CATEGORY_FORM, findCategoryClash, type CategoryFormValues } from '@/components/category-form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Layout, Radii, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { categoriesRepo } from '@/lib/data';
-import { categorySchema, toSlug } from '@/lib/validations';
+import { categoriesRepo, type Category } from '@/lib/data';
+import { categorySchema } from '@/lib/validations';
 
 export default function NewCategoryScreen() {
   const theme = useTheme();
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [description, setDescription] = useState('');
+  const insets = useSafeAreaInsets();
+  const [values, setValues] = useState<CategoryFormValues>(EMPTY_CATEGORY_FORM);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  function handleNameChange(value: string) {
-    setName(value);
-    if (!slugTouched) setSlug(toSlug(value));
-  }
+  useEffect(() => {
+    categoriesRepo.list().then(setCategories);
+  }, []);
+
+  const clash = findCategoryClash(values, categories);
+  const canSave = values.name.trim().length > 0 && values.slug.trim().length > 0 && !clash && !saving;
 
   async function handleSubmit() {
     const parsed = categorySchema.safeParse({
-      name,
-      slug,
-      description: description || undefined,
+      name: values.name.trim(),
+      slug: values.slug.trim(),
+      description: values.description.trim() || undefined,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Datos inválidos');
@@ -46,54 +48,32 @@ export default function NewCategoryScreen() {
     }
   }
 
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
-
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ThemedText type="small">Nombre</ThemedText>
-        <TextInput
-          value={name}
-          onChangeText={handleNameChange}
-          placeholder="Ej. Tecnología"
-          placeholderTextColor={theme.textSecondary}
-          style={inputStyle}
-        />
-
-        <ThemedText type="small">Slug</ThemedText>
-        <TextInput
-          value={slug}
-          onChangeText={(v) => {
-            setSlugTouched(true);
-            setSlug(v);
-          }}
-          autoCapitalize="none"
-          placeholder="tecnologia"
-          placeholderTextColor={theme.textSecondary}
-          style={inputStyle}
-        />
-
-        <ThemedText type="small">Descripción (opcional)</ThemedText>
-        <TextInput
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Descripción"
-          placeholderTextColor={theme.textSecondary}
-          style={inputStyle}
-          multiline
-        />
-
-        {error ? (
-          <ThemedText themeColor="text" style={styles.error}>
-            {error}
-          </ThemedText>
-        ) : null}
-
-        <Pressable onPress={handleSubmit} disabled={saving}>
-          <ThemedView type="backgroundSelected" style={styles.submitButton}>
-            <ThemedText type="linkPrimary">{saving ? 'Guardando…' : 'Guardar categoría'}</ThemedText>
+      <SafeAreaView style={styles.flex} edges={[]}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            <CategoryForm values={values} onChange={setValues} clash={clash} />
+            {error ? (
+              <View style={[styles.errorBox, { backgroundColor: withAlpha(theme.error, 0.08) }]}>
+                <ThemedText type="small" style={{ color: theme.error }}>
+                  {error}
+                </ThemedText>
+              </View>
+            ) : null}
+          </ScrollView>
+          <ThemedView
+            type="backgroundElement"
+            style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
+            <Pressable onPress={handleSubmit} disabled={!canSave}>
+              <View style={[styles.primaryButton, { backgroundColor: theme.primary }, !canSave && styles.disabled]}>
+                <ThemedText type="cardTitle" style={styles.onPrimary}>
+                  {saving ? 'Guardando…' : 'Crear categoría'}
+                </ThemedText>
+              </View>
+            </Pressable>
           </ThemedView>
-        </Pressable>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -101,18 +81,11 @@ export default function NewCategoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, padding: Spacing.four, gap: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  error: { color: '#d9534f' },
-  submitButton: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
+  flex: { flex: 1 },
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap },
+  errorBox: { borderRadius: Spacing.three, padding: Spacing.three },
+  bottomBar: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, borderTopWidth: 1 },
+  primaryButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.buttonPrimary },
+  onPrimary: { color: '#FFFFFF' },
+  disabled: { opacity: 0.5 },
 });

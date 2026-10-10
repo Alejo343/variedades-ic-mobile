@@ -187,7 +187,7 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
 - **Orden de una corrida** (`engine.ts#runSync`): subir fotos `file:` → push →
   pull. Corridas simultáneas comparten la misma promesa.
 - **Reiniciar el cursor** (`resetCursor`) siempre que los datos locales se
-  reemplazan: primer login (`wipeAllTables`), importar respaldo, cambio de
+  reemplazan: primer login (`wipeAllTables`), cambio de
   alcance del pull (`scope.ts`). Botón "Forzar resincronización completa" en
   Configuración.
 - **Disparadores** (`scheduler.ts` + `hooks/use-auto-sync.ts`): login
@@ -202,7 +202,9 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   mostrarla. `expo-image` cachea en disco.
 - **Sesión**: token en `expo-secure-store`; URL del servidor solo en
   `lib/sync/config.ts`. El primer login de un celular borra la base local.
-  Respaldo → Importar está bloqueado con sesión activa.
+- No hay respaldo local (se eliminó): la copia de verdad es la base del
+  servidor. La app abre una sola conexión SQLite al arrancar y nunca la
+  cierra.
 - Las contraseñas de vendedores no pasan por la cola: "Acceso a la app" en la
   ficha del vendedor llama directo a la API (requiere internet).
 
@@ -248,8 +250,13 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   base).
 - Rediseñadas con el lenguaje visual nuevo: Inicio, Vender (POS), Reportes,
   pantallas del vendedor, Productos (lista/crear/editar), Inventario, Ajustar
-  stock, Caja y Cuentas, Vendedores (lado dueño, todo), Compras y
-  Distribuidores. **Pendientes**: Categorías, Respaldo.
+  stock, Caja y Cuentas, Vendedores (lado dueño, todo), Compras,
+  Distribuidores y Categorías (todas las pantallas).
+- Categorías (`components/category-form.tsx`): muestran el prefijo de SKU que
+  reciben sus productos (`domain/sku.ts#getSkuPrefix`) y bloquean un nombre o
+  slug repetido antes de guardar (slug único en la base). Renombrar una
+  categoría no cambia el SKU de sus productos; el servidor solo re-prefija
+  cuando un producto se mueve de categoría. Productos acepta `?categoryId=`.
 - Compras: `components/purchase-status.tsx` (etiqueta y color por estado);
   la lista acepta `?distributorId=` y "Nuevo pedido" también (distribuidor
   preseleccionado); "Distribuidores" está en el encabezado de Compras.
@@ -284,6 +291,9 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   `force-stop` de Expo Go y relanzar.
 - Expo Go en el emulador: `adb reverse` + `am start -a
   android.intent.action.VIEW -d "exp://localhost:8081"`.
+- **Vitest: "failed to find the current suite" en todos los archivos a la
+  vez** = la terminal quedó en `c:\...` (unidad en minúscula). Correr desde
+  `C:/Users/...` (mayúscula); no es un error del código.
 - `npm run lint` tiene un error preexistente en
   `hooks/use-color-scheme.web.ts`, no relacionado con nada reciente.
 - En el `.env.local` de la web, cada `$` va escapado como `\$` (Next lo
@@ -304,7 +314,7 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   - Diagnóstico: `ssh mivps`, y en la base `SELECT * FROM
     sync_applied_operations ORDER BY created_at DESC LIMIT 20`. Si la
     operación no aparece, el celular nunca la envió.
-- **Falta verificar en el celular**: Compras y Distribuidores (rediseño), Reportes (rediseño), pantallas del
+- **Falta verificar en el celular**: Categorías (rediseño), Reportes (rediseño), pantallas del
   vendedor, POS rediseñado, editar/crear producto, Productos/Inventario/
   Ajustar stock, Caja y Cuentas, transferencias entre cuentas (desplegar
   primero la web), importación de Excel, código de proveedor, sync reactiva
@@ -313,8 +323,10 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
 - Fase 9 sub-paso 4 (verificación manual de Reportes) quedó sin cerrar
   formalmente.
 - Diferido a propósito: catálogo de productos por proveedor (mejoraría la
-  importación de Excel), reordenar fotos, el respaldo no incluye los archivos
-  de fotos, fotos huérfanas al salir sin guardar.
+  importación de Excel), reordenar fotos, fotos huérfanas al salir sin
+  guardar.
+- **El servidor no tiene respaldos de Postgres** (sin `pg_dump` en cron ni
+  nada en `/var/backups`), y ahora es la única copia de los datos.
 
 ## Comandos
 
