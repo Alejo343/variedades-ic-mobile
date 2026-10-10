@@ -152,12 +152,13 @@ type CartRowProps = {
   quantity: number;
   // Upper bound for the + button (stock in the shop, or what the seller holds).
   max: number;
-  lineTotal: number;
+  // Omitted where the line moves no money (a return).
+  lineTotal?: number;
   onIncrement: () => void;
   onDecrement: () => void;
   onRemove: () => void;
   // When set, the unit price is editable under the stepper.
-  unitPrice?: { value: string; onChange: (v: string) => void };
+  unitPrice?: { value: string; onChange: (v: string) => void; label?: string };
 };
 
 // Quantity punches on change so +/- taps register visually, not just numerically.
@@ -219,7 +220,7 @@ export function CartRow({ name, imageUri, quantity, max, lineTotal, onIncrement,
         {unitPrice ? (
           <View style={[styles.unitPriceRow, { borderColor: theme.border }]}>
             <ThemedText type="caption" themeColor="textSecondary">
-              Precio c/u $
+              {unitPrice.label ?? 'Precio c/u $'}
             </ThemedText>
             <TextInput
               value={unitPrice.value}
@@ -232,7 +233,7 @@ export function CartRow({ name, imageUri, quantity, max, lineTotal, onIncrement,
       </View>
 
       <View style={styles.cartRight}>
-        <ThemedText type="cardTitle">{formatCOP(lineTotal)}</ThemedText>
+        {lineTotal !== undefined ? <ThemedText type="cardTitle">{formatCOP(lineTotal)}</ThemedText> : null}
         <Pressable onPress={onRemove} hitSlop={8} style={styles.removeButton}>
           <Trash2 color={theme.error} size={22} />
         </Pressable>

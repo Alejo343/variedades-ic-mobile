@@ -1,4 +1,4 @@
-import { Link, Stack } from 'expo-router';
+import { Link, Stack, useLocalSearchParams } from 'expo-router';
 import { ChevronRight, ClipboardList } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
@@ -16,6 +16,9 @@ import { formatCOP } from '@/lib/format';
 export default function SettlementsScreen() {
   const theme = useTheme();
   const { isSeller } = useMySeller();
+  // The owner can open one seller's settlements from their profile (`?sellerId=`).
+  const { sellerId } = useLocalSearchParams<{ sellerId?: string }>();
+  const onlySellerId = !isSeller && sellerId ? Number(sellerId) : null;
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [sellerNames, setSellerNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
@@ -25,14 +28,14 @@ export default function SettlementsScreen() {
       let cancelled = false;
       Promise.all([settlementsRepo.list(), sellersRepo.list()]).then(([rows, sellers]) => {
         if (cancelled) return;
-        setSettlements(rows);
+        setSettlements(onlySellerId === null ? rows : rows.filter((r) => r.sellerId === onlySellerId));
         setSellerNames(Object.fromEntries(sellers.map((s) => [s.id, s.name])));
         setLoading(false);
       });
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [onlySellerId]),
   );
 
   const pending = settlements.filter((s) => s.status !== 'liquidada');
@@ -41,6 +44,9 @@ export default function SettlementsScreen() {
   return (
     <ThemedView style={styles.container}>
       {isSeller ? <Stack.Screen options={{ title: 'Mis liquidaciones' }} /> : null}
+      {onlySellerId !== null && sellerNames[onlySellerId] ? (
+        <Stack.Screen options={{ title: `Liquidaciones · ${sellerNames[onlySellerId]}` }} />
+      ) : null}
       <SafeAreaView style={styles.safeArea} edges={[]}>
         <FlatList
           data={settlements}

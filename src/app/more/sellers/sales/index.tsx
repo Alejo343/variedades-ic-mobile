@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 
 import { SaleList, type SaleListRow, type SaleListSummary } from '@/components/sale-list';
@@ -19,7 +19,10 @@ export default function SellerSalesScreen() {
   const [summary, setSummary] = useState<SaleListSummary | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const { isSeller, seller } = useMySeller();
-  const onlySellerId = isSeller ? (seller?.id ?? -1) : null;
+  // The owner can open one seller's sales from their profile (`?sellerId=`).
+  const params = useLocalSearchParams<{ sellerId?: string }>();
+  const onlySellerId = isSeller ? (seller?.id ?? -1) : params.sellerId ? Number(params.sellerId) : null;
+  const [sellerName, setSellerName] = useState<string | null>(null);
 
   useDataFocusEffect(
     useCallback(() => {
@@ -28,6 +31,7 @@ export default function SellerSalesScreen() {
         if (cancelled) return;
         const sellerNames = Object.fromEntries(sellers.map((s) => [s.id, s.name]));
         const visible = onlySellerId === null ? sales : sales.filter((s) => s.sellerId === onlySellerId);
+        setSellerName(!isSeller && onlySellerId !== null ? (sellerNames[onlySellerId] ?? null) : null);
 
         setRows(
           visible.map((sale) => {
@@ -59,16 +63,18 @@ export default function SellerSalesScreen() {
       return () => {
         cancelled = true;
       };
-    }, [onlySellerId]),
+    }, [onlySellerId, isSeller]),
   );
 
   return (
     <>
       {isSeller ? <Stack.Screen options={{ title: 'Mis ventas' }} /> : null}
+      {sellerName ? <Stack.Screen options={{ title: `Ventas · ${sellerName}` }} /> : null}
       <SaleList
         rows={rows}
         loading={loading}
         summary={summary}
+        summaryTitle={isSeller ? 'Has vendido' : 'Vendió'}
         emptyText={isSeller ? 'Todavía no has registrado ventas.' : 'Sin ventas de vendedores todavía.'}
       />
     </>

@@ -1,27 +1,31 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DateChoice } from '@/components/date-choice';
+import { FormSection } from '@/components/form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { sellersRepo, settlementsRepo, type Seller, type SettlementPreview } from '@/lib/data';
-import { formatCOP } from '@/lib/format';
+import { formatCOP, todayLocalDateString } from '@/lib/format';
 import { settlementSchema } from '@/lib/validations';
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
+// Creates a settlement for everything the seller has pending up to a date
+// (settlements-repo.ts). Marking it as settled — the money into an account —
+// happens on its detail screen.
 export default function NewSettlementScreen() {
   const { sellerId: sellerIdParam } = useLocalSearchParams<{ sellerId: string }>();
   const sellerId = Number(sellerIdParam);
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [seller, setSeller] = useState<Seller | null>(null);
-  const [periodDate, setPeriodDate] = useState(today());
+  // Local date, not toISOString(): that one is UTC and after 7 p. m. in
+  // Colombia it already reads tomorrow.
+  const [periodDate, setPeriodDate] = useState(todayLocalDateString());
   const [preview, setPreview] = useState<SettlementPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -43,6 +47,9 @@ export default function NewSettlementScreen() {
     };
   }, [sellerId, periodDate, isValidPeriodDate]);
 
+  const nothingPending = preview !== null && preview.totalSales === 0 && preview.totalLosses === 0;
+  const canSave = isValidPeriodDate && preview !== null && !nothingPending && !saving;
+
   async function handleSubmit() {
     const parsed = settlementSchema.safeParse({ sellerId, periodDate });
     if (!parsed.success) {
@@ -61,93 +68,94 @@ export default function NewSettlementScreen() {
     }
   }
 
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
-
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ThemedText type="small">Vendedor</ThemedText>
-        <ThemedText type="default" style={styles.sellerName}>
-          {seller?.name ?? `Vendedor #${sellerId}`}
-        </ThemedText>
+      <SafeAreaView style={styles.flex} edges={[]}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <ThemedText type="cardTitle">{seller?.name ?? 'Vendedor'}</ThemedText>
 
-        <ThemedText type="small">Fecha del período (YYYY-MM-DD)</ThemedText>
-        <TextInput
-          value={periodDate}
-          onChangeText={setPeriodDate}
-          placeholder="2026-07-20"
-          placeholderTextColor={theme.textSecondary}
-          style={inputStyle}
-        />
-        <ThemedText type="small" themeColor="textSecondary">
-          Incluye todas las ventas y pérdidas del vendedor hasta esta fecha que todavía no se hayan liquidado.
-        </ThemedText>
+          <FormSection title="Hasta">
+            <DateChoice value={periodDate} onChange={setPeriodDate} />
+            <ThemedText type="caption" themeColor="textSecondary">
+              Incluye todas sus ventas y pérdidas hasta esta fecha que todavía no se hayan liquidado.
+            </ThemedText>
+          </FormSection>
 
-        {isValidPeriodDate && preview ? (
-          <ThemedView type="backgroundElement" style={styles.previewBlock}>
-            <ThemedView style={styles.previewRow}>
-              <ThemedText type="small" themeColor="textSecondary">
-                Ventas
+          {isValidPeriodDate && preview ? (
+            <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+              <ThemedText type="secondary" themeColor="textSecondary">
+                A entregar
               </ThemedText>
-              <ThemedText type="small">{formatCOP(preview.totalSales)}</ThemedText>
-            </ThemedView>
-            <ThemedView style={styles.previewRow}>
-              <ThemedText type="small" themeColor="textSecondary">
-                Comisión
+              <ThemedText type="bigNumber" style={{ color: theme.primary }} adjustsFontSizeToFit numberOfLines={1}>
+                {formatCOP(preview.amountDue)}
               </ThemedText>
-              <ThemedText type="small">-{formatCOP(preview.totalCommission)}</ThemedText>
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+              <Line label="Ventas" value={formatCOP(preview.totalSales)} />
+              <Line label="Su comisión" value={`−${formatCOP(preview.totalCommission)}`} color={theme.primary} />
+              <Line label="Pérdidas a su cargo" value={`+${formatCOP(preview.totalLosses)}`} color={preview.totalLosses > 0 ? theme.error : undefined} />
             </ThemedView>
-            <ThemedView style={styles.previewRow}>
-              <ThemedText type="small" themeColor="textSecondary">
-                Pérdidas
+          ) : null}
+
+          {nothingPending ? (
+            <View style={[styles.note, { backgroundColor: withAlpha(theme.info, 0.08) }]}>
+              <ThemedText type="small" style={{ color: theme.info }}>
+                No tiene ventas ni pérdidas pendientes hasta esa fecha.
               </ThemedText>
-              <ThemedText type="small">+{formatCOP(preview.totalLosses)}</ThemedText>
-            </ThemedView>
-            <ThemedView style={styles.previewRow}>
-              <ThemedText type="smallBold">A entregar</ThemedText>
-              <ThemedText type="linkPrimary">{formatCOP(preview.amountDue)}</ThemedText>
-            </ThemedView>
-          </ThemedView>
-        ) : (
-          <ThemedText themeColor="textSecondary" type="small" style={styles.previewBlock}>
-            Escribe una fecha válida para ver los totales del período.
+            </View>
+          ) : null}
+
+          {error ? (
+            <View style={[styles.note, { backgroundColor: withAlpha(theme.error, 0.08) }]}>
+              <ThemedText type="small" style={{ color: theme.error }}>
+                {error}
+              </ThemedText>
+            </View>
+          ) : null}
+        </ScrollView>
+
+        <ThemedView
+          type="backgroundElement"
+          style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
+          <Pressable onPress={handleSubmit} disabled={!canSave}>
+            <View style={[styles.primaryButton, { backgroundColor: theme.primary }, !canSave && styles.disabled]}>
+              <ThemedText type="cardTitle" style={styles.onPrimary}>
+                {saving ? 'Creando…' : 'Crear liquidación'}
+              </ThemedText>
+            </View>
+          </Pressable>
+          <ThemedText type="caption" themeColor="textSecondary" style={styles.center}>
+            Después la marcas como liquidada cuando recibas el dinero.
           </ThemedText>
-        )}
-
-        {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-
-        <Pressable onPress={handleSubmit} disabled={saving || !isValidPeriodDate || !preview}>
-          <ThemedView type="backgroundSelected" style={styles.submitButton}>
-            <ThemedText type="linkPrimary">{saving ? 'Creando…' : 'Crear liquidación'}</ThemedText>
-          </ThemedView>
-        </Pressable>
+        </ThemedView>
       </SafeAreaView>
     </ThemedView>
   );
 }
 
+function Line({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <View style={styles.line}>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+      <ThemedText type="small" style={color ? { color } : undefined}>
+        {value}
+      </ThemedText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, padding: Spacing.four, gap: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  sellerName: { marginBottom: Spacing.two },
-  previewBlock: {
-    marginTop: Spacing.two,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    gap: Spacing.one,
-  },
-  previewRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  error: { color: '#d9534f' },
-  submitButton: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
+  flex: { flex: 1 },
+  center: { textAlign: 'center' },
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap, paddingBottom: Spacing.five },
+  card: { borderRadius: Radii.card, padding: Spacing.four, gap: Spacing.one },
+  divider: { height: 1, marginVertical: Spacing.two },
+  line: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
+  note: { borderRadius: Spacing.three, padding: Spacing.three },
+  bottomBar: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, borderTopWidth: 1, gap: Spacing.two },
+  primaryButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.buttonPrimary },
+  onPrimary: { color: '#FFFFFF' },
+  disabled: { opacity: 0.5 },
 });

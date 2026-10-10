@@ -5,7 +5,8 @@ export default function SellersLayout() {
     <Stack>
       <Stack.Screen name="index" options={{ title: 'Vendedores' }} />
       <Stack.Screen name="new" options={{ title: 'Nuevo vendedor', presentation: 'modal' }} />
-      <Stack.Screen name="[id]" options={{ title: 'Editar vendedor' }} />
+      <Stack.Screen name="[id]/index" options={{ title: 'Vendedor' }} />
+      <Stack.Screen name="[id]/edit" options={{ title: 'Editar vendedor' }} />
       <Stack.Screen name="deliveries/index" options={{ title: 'Entregas a vendedores' }} />
       <Stack.Screen name="deliveries/new" options={{ title: 'Nueva entrega', presentation: 'modal' }} />
       <Stack.Screen name="sales/index" options={{ title: 'Ventas de vendedores' }} />

@@ -111,10 +111,15 @@ export function localDateKey(value: string): string {
 // another year. Both arguments are local 'YYYY-MM-DD' dates.
 export function dayLabel(localDate: string, today: string): string {
   if (localDate === today) return 'Hoy';
-  const [ty, tm, td] = today.split('-').map(Number);
-  const yesterday = new Date(ty, tm - 1, td - 1);
-  const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-  if (localDate === yesterdayKey) return 'Ayer';
+  if (localDate === shiftLocalDate(today, -1)) return 'Ayer';
   const [y, m, d] = localDate.split('-').map(Number);
-  return y === ty ? `${d} ${SHORT_MONTHS[m - 1]}` : `${d} ${SHORT_MONTHS[m - 1]} ${y}`;
+  return y === Number(today.slice(0, 4)) ? `${d} ${SHORT_MONTHS[m - 1]}` : `${d} ${SHORT_MONTHS[m - 1]} ${y}`;
+}
+
+// A local 'YYYY-MM-DD' date moved by `days` (negative = back), across months
+// and years.
+export function shiftLocalDate(localDate: string, days: number): string {
+  const [y, m, d] = localDate.split('-').map(Number);
+  const date = new Date(y, m - 1, d + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }

@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, TextInput } from 'react-native';
+import { KeyRound } from 'lucide-react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { FormField, FormInput, FormSection } from '@/components/form';
+import { Radii, Spacing, withAlpha } from '@/constants/theme';
 import { useSyncSession } from '@/hooks/use-sync-session';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -91,107 +92,104 @@ export function SellerAccessCard({ sellerUuid }: { sellerUuid: string }) {
     ]);
   }
 
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
-
   return (
-    <ThemedView style={styles.container}>
-      <ThemedText type="smallBold">Acceso a la app</ThemedText>
-
+    <FormSection title="Acceso a la app">
       {loading ? (
         <ThemedText type="small" themeColor="textSecondary">
           Cargando…
         </ThemedText>
       ) : access ? (
         <>
-          <ThemedView type="backgroundElement" style={styles.row}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Usuario para iniciar sesión
-            </ThemedText>
-            <ThemedText type="default">{access.username}</ThemedText>
-            <ThemedText type="small" themeColor={access.active ? 'textSecondary' : undefined} style={!access.active && styles.inactive}>
-              {access.active ? 'Activo' : 'Desactivado'}
-            </ThemedText>
-          </ThemedView>
+          <View style={styles.userRow}>
+            <View style={[styles.iconDot, { backgroundColor: withAlpha(access.active ? theme.primary : theme.error, 0.12) }]}>
+              <KeyRound color={access.active ? theme.primary : theme.error} size={18} />
+            </View>
+            <View style={styles.flex}>
+              <ThemedText type="caption" themeColor="textSecondary">
+                Usuario para iniciar sesión
+              </ThemedText>
+              <ThemedText type="default">{access.username}</ThemedText>
+            </View>
+            <View style={[styles.badge, { backgroundColor: withAlpha(access.active ? theme.primary : theme.error, 0.12) }]}>
+              <ThemedText type="caption" style={{ color: access.active ? theme.primary : theme.error }}>
+                {access.active ? 'Activo' : 'Desactivado'}
+              </ThemedText>
+            </View>
+          </View>
 
-          <ThemedText type="small">Nueva contraseña</ThemedText>
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            placeholder="Mínimo 8 caracteres"
-            placeholderTextColor={theme.textSecondary}
-            style={inputStyle}
-          />
+          <FormField label="Nueva contraseña">
+            <FormInput value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" placeholder="Mínimo 8 caracteres" />
+          </FormField>
           <Pressable onPress={changePassword} disabled={busy || password.length === 0}>
-            <ThemedView type="backgroundSelected" style={[styles.button, (busy || password.length === 0) && styles.disabled]}>
-              <ThemedText type="linkPrimary">{busy ? 'Guardando…' : 'Cambiar contraseña'}</ThemedText>
-            </ThemedView>
+            <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (busy || password.length === 0) && styles.disabled]}>
+              <ThemedText type="smallBold" style={styles.onPrimary}>
+                {busy ? 'Guardando…' : 'Cambiar contraseña'}
+              </ThemedText>
+            </View>
           </Pressable>
 
           <Pressable onPress={toggleActive} disabled={busy}>
-            <ThemedView type="backgroundElement" style={styles.button}>
-              <ThemedText>{access.active ? 'Desactivar acceso' : 'Activar acceso'}</ThemedText>
-            </ThemedView>
+            <View style={[styles.outlineButton, { borderColor: withAlpha(access.active ? theme.error : theme.primary, 0.4) }]}>
+              <ThemedText type="small" style={{ color: access.active ? theme.error : theme.primary }}>
+                {access.active ? 'Desactivar acceso' : 'Activar acceso'}
+              </ThemedText>
+            </View>
           </Pressable>
         </>
       ) : error ? null : (
         <>
-          <ThemedText type="small" themeColor="textSecondary">
-            Este vendedor todavía no puede entrar a la app. Créale un usuario y una contraseña: con eso inicia sesión en su
-            celular.
+          <ThemedText type="secondary" themeColor="textSecondary">
+            Todavía no puede entrar a la app. Créale un usuario y una contraseña: con eso inicia sesión en su celular.
           </ThemedText>
-          <ThemedText type="small">Usuario</ThemedText>
-          <TextInput
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="ej. ella"
-            placeholderTextColor={theme.textSecondary}
-            style={inputStyle}
-          />
-          <ThemedText type="small">Contraseña</ThemedText>
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            placeholder="Mínimo 8 caracteres"
-            placeholderTextColor={theme.textSecondary}
-            style={inputStyle}
-          />
+          <FormField label="Usuario">
+            <FormInput value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="ej. maria" />
+          </FormField>
+          <FormField label="Contraseña">
+            <FormInput value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" placeholder="Mínimo 8 caracteres" />
+          </FormField>
           <Pressable onPress={createAccess} disabled={busy || !username || !password}>
-            <ThemedView type="backgroundSelected" style={[styles.button, (busy || !username || !password) && styles.disabled]}>
-              <ThemedText type="linkPrimary">{busy ? 'Creando…' : 'Crear acceso'}</ThemedText>
-            </ThemedView>
+            <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (busy || !username || !password) && styles.disabled]}>
+              <ThemedText type="smallBold" style={styles.onPrimary}>
+                {busy ? 'Creando…' : 'Crear acceso'}
+              </ThemedText>
+            </View>
           </Pressable>
         </>
       )}
 
       {error ? (
         <>
-          <ThemedText style={styles.error}>{error}</ThemedText>
+          <ThemedText type="small" style={{ color: theme.error }}>
+            {error}
+          </ThemedText>
           {!access ? (
             <Pressable onPress={load}>
-              <ThemedView type="backgroundElement" style={styles.button}>
-                <ThemedText>Reintentar</ThemedText>
-              </ThemedView>
+              <View style={[styles.outlineButton, { borderColor: theme.border }]}>
+                <ThemedText type="small">Reintentar</ThemedText>
+              </View>
             </Pressable>
           ) : null}
         </>
       ) : null}
-      {notice ? <ThemedText type="small" themeColor="textSecondary">{notice}</ThemedText> : null}
-    </ThemedView>
+      {notice ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          {notice}
+        </ThemedText>
+      ) : null}
+      <ThemedText type="caption" themeColor="textSecondary">
+        Necesita internet. Para cerrar la sesión de un celular específico, usa el panel web.
+      </ThemedText>
+    </FormSection>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: Spacing.two, marginTop: Spacing.four },
-  row: { padding: Spacing.three, borderRadius: Spacing.three, gap: Spacing.half },
-  input: { borderWidth: 1, borderRadius: Spacing.two, padding: Spacing.three },
-  button: { padding: Spacing.three, borderRadius: Spacing.three, alignItems: 'center' },
+  flex: { flex: 1 },
+  userRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  iconDot: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  badge: { borderRadius: Radii.chip, paddingHorizontal: Spacing.two, paddingVertical: 2 },
+  primaryButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.button },
+  outlineButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.button, borderWidth: 1.5 },
+  onPrimary: { color: '#FFFFFF' },
   disabled: { opacity: 0.5 },
-  inactive: { color: '#d9534f' },
-  error: { color: '#d9534f' },
 });

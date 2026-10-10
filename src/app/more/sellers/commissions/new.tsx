@@ -1,13 +1,23 @@
 import { router, useLocalSearchParams } from 'expo-router';
+import { Banknote, Landmark } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DateChoice } from '@/components/date-choice';
+import { FormSection } from '@/components/form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { cashAccountsRepo, commissionPaymentsRepo, sellersRepo, type CashAccount, type CommissionPaymentPreview, type Seller } from '@/lib/data';
+import {
+  cashAccountsRepo,
+  commissionPaymentsRepo,
+  sellersRepo,
+  type CashAccountWithBalance,
+  type CommissionPaymentPreview,
+  type Seller,
+} from '@/lib/data';
 import { formatCOP, todayLocalDateString } from '@/lib/format';
 
 // Pays a store seller every commission still unpaid up to a date — an expense
@@ -16,9 +26,10 @@ export default function NewCommissionPaymentScreen() {
   const { sellerId: sellerIdParam } = useLocalSearchParams<{ sellerId: string }>();
   const sellerId = Number(sellerIdParam);
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [seller, setSeller] = useState<Seller | null>(null);
-  const [accounts, setAccounts] = useState<CashAccount[]>([]);
+  const [accounts, setAccounts] = useState<CashAccountWithBalance[]>([]);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [periodDate, setPeriodDate] = useState(todayLocalDateString());
   const [preview, setPreview] = useState<CommissionPaymentPreview | null>(null);
@@ -27,7 +38,7 @@ export default function NewCommissionPaymentScreen() {
 
   useEffect(() => {
     sellersRepo.getById(sellerId).then(setSeller);
-    cashAccountsRepo.list().then((rows) => {
+    cashAccountsRepo.listWithBalances().then((rows) => {
       const active = rows.filter((a) => a.active);
       setAccounts(active);
       setAccountId((current) => current ?? active[0]?.id ?? null);
@@ -47,7 +58,8 @@ export default function NewCommissionPaymentScreen() {
     };
   }, [sellerId, periodDate, isValidPeriodDate]);
 
-  const canPay = isValidPeriodDate && accountId !== null && (preview?.totalCommission ?? 0) > 0;
+  const amount = preview?.totalCommission ?? 0;
+  const canPay = isValidPeriodDate && accountId !== null && amount > 0 && !saving;
 
   async function handleSubmit() {
     if (!canPay || accountId === null) return;
@@ -63,75 +75,85 @@ export default function NewCommissionPaymentScreen() {
     }
   }
 
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
-
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ThemedText type="small">Vendedor</ThemedText>
-          <ThemedText type="default" style={styles.sellerName}>
-            {seller?.name ?? `Vendedor #${sellerId}`}
-          </ThemedText>
+      <SafeAreaView style={styles.flex} edges={[]}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <ThemedText type="cardTitle">{seller?.name ?? 'Vendedor'}</ThemedText>
 
-          <ThemedText type="small">Pagar hasta (YYYY-MM-DD)</ThemedText>
-          <TextInput
-            value={periodDate}
-            onChangeText={setPeriodDate}
-            placeholder="2026-10-07"
-            placeholderTextColor={theme.textSecondary}
-            style={inputStyle}
-          />
-          <ThemedText type="small" themeColor="textSecondary">
-            Incluye las comisiones de todas sus ventas hasta esta fecha que todavía no se hayan pagado.
-          </ThemedText>
-
-          <ThemedText type="small" style={styles.label}>
-            Pagar desde
-          </ThemedText>
-          <ThemedView style={styles.accountRow}>
-            {accounts.map((account) => (
-              <Pressable key={account.id} style={styles.accountFlex} onPress={() => setAccountId(account.id)}>
-                <ThemedView type={accountId === account.id ? 'backgroundSelected' : 'backgroundElement'} style={styles.accountButton}>
-                  <ThemedText type={accountId === account.id ? 'linkPrimary' : undefined}>{account.name}</ThemedText>
-                </ThemedView>
-              </Pressable>
-            ))}
-          </ThemedView>
+          <FormSection title="Pagar hasta">
+            <DateChoice value={periodDate} onChange={setPeriodDate} />
+            <ThemedText type="caption" themeColor="textSecondary">
+              Cubre las comisiones de todas sus ventas hasta esta fecha que todavía no se hayan pagado.
+            </ThemedText>
+          </FormSection>
 
           {isValidPeriodDate && preview ? (
-            <ThemedView type="backgroundElement" style={styles.previewBlock}>
-              <ThemedView style={styles.previewRow}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Ventas incluidas
-                </ThemedText>
-                <ThemedText type="small">{preview.saleCount}</ThemedText>
-              </ThemedView>
-              <ThemedView style={styles.previewRow}>
-                <ThemedText type="smallBold">A pagar</ThemedText>
-                <ThemedText type="linkPrimary">{formatCOP(preview.totalCommission)}</ThemedText>
-              </ThemedView>
+            <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+              <ThemedText type="secondary" themeColor="textSecondary">
+                A pagar
+              </ThemedText>
+              <ThemedText type="bigNumber" style={{ color: theme.purple }} adjustsFontSizeToFit numberOfLines={1}>
+                {formatCOP(amount)}
+              </ThemedText>
+              <ThemedText type="secondary" themeColor="textSecondary">
+                {amount > 0
+                  ? `${preview.saleCount} ${preview.saleCount === 1 ? 'venta' : 'ventas'} sin pagar`
+                  : 'No hay comisiones pendientes hasta esa fecha.'}
+              </ThemedText>
             </ThemedView>
-          ) : (
-            <ThemedText themeColor="textSecondary" type="small" style={styles.previewBlock}>
-              Escribe una fecha válida para ver lo pendiente.
-            </ThemedText>
-          )}
-
-          {isValidPeriodDate && preview && preview.totalCommission <= 0 ? (
-            <ThemedText themeColor="textSecondary" type="small">
-              No hay comisiones pendientes hasta esa fecha.
-            </ThemedText>
           ) : null}
 
-          {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
+          <FormSection title="Sale de">
+            <View style={styles.accountRow}>
+              {accounts.map((account) => {
+                const selected = accountId === account.id;
+                const Icon = account.type === 'banco' ? Landmark : Banknote;
+                return (
+                  <Pressable key={account.id} style={styles.accountFlex} onPress={() => setAccountId(account.id)}>
+                    <View
+                      style={[
+                        styles.accountButton,
+                        selected
+                          ? { backgroundColor: withAlpha(theme.purple, 0.1), borderColor: theme.purple }
+                          : { backgroundColor: theme.background, borderColor: theme.border },
+                      ]}>
+                      <Icon color={selected ? theme.purple : theme.textSecondary} size={18} />
+                      <View style={styles.flex}>
+                        <ThemedText type={selected ? 'smallBold' : 'small'} numberOfLines={1} style={{ color: selected ? theme.purple : theme.text }}>
+                          {account.name}
+                        </ThemedText>
+                        <ThemedText type="caption" themeColor="textSecondary">
+                          {formatCOP(account.balance)}
+                        </ThemedText>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </FormSection>
 
-          <Pressable onPress={handleSubmit} disabled={saving || !canPay}>
-            <ThemedView type="backgroundSelected" style={[styles.submitButton, !canPay && styles.disabled]}>
-              <ThemedText type="linkPrimary">{saving ? 'Pagando…' : 'Pagar comisiones'}</ThemedText>
-            </ThemedView>
-          </Pressable>
+          {error ? (
+            <View style={[styles.note, { backgroundColor: withAlpha(theme.error, 0.08) }]}>
+              <ThemedText type="small" style={{ color: theme.error }}>
+                {error}
+              </ThemedText>
+            </View>
+          ) : null}
         </ScrollView>
+
+        <ThemedView
+          type="backgroundElement"
+          style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
+          <Pressable onPress={handleSubmit} disabled={!canPay}>
+            <View style={[styles.primaryButton, { backgroundColor: theme.purple }, !canPay && styles.disabled]}>
+              <ThemedText type="cardTitle" style={styles.onPrimary}>
+                {saving ? 'Pagando…' : amount > 0 ? `Pagar ${formatCOP(amount)}` : 'Pagar comisiones'}
+              </ThemedText>
+            </View>
+          </Pressable>
+        </ThemedView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -139,32 +161,22 @@ export default function NewCommissionPaymentScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  sellerName: { marginBottom: Spacing.two },
-  label: { marginTop: Spacing.two },
+  flex: { flex: 1 },
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap, paddingBottom: Spacing.five },
+  card: { borderRadius: Radii.card, padding: Spacing.four, gap: Spacing.one },
   accountRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   accountFlex: { flexGrow: 1, flexBasis: '45%' },
-  accountButton: { padding: Spacing.three, borderRadius: Spacing.three, alignItems: 'center' },
-  previewBlock: {
-    marginTop: Spacing.two,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    gap: Spacing.one,
-  },
-  previewRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  error: { color: '#d9534f' },
-  submitButton: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
+  accountButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.two,
+    borderWidth: 1.5,
+    borderRadius: Radii.button,
+    padding: Spacing.three,
   },
+  note: { borderRadius: Spacing.three, padding: Spacing.three },
+  bottomBar: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, borderTopWidth: 1 },
+  primaryButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.buttonPrimary },
+  onPrimary: { color: '#FFFFFF' },
   disabled: { opacity: 0.5 },
 });

@@ -27,11 +27,14 @@ export function SaleList({
   loading,
   emptyText,
   summary,
+  summaryTitle = 'Has vendido',
 }: {
   rows: SaleListRow[];
   loading: boolean;
   emptyText: string;
   summary?: SaleListSummary;
+  // "Has vendido" for the seller themself, "Vendió" when the owner looks.
+  summaryTitle?: string;
 }) {
   const theme = useTheme();
   return (
@@ -45,7 +48,7 @@ export function SaleList({
             summary && rows.length > 0 ? (
               <ThemedView type="backgroundElement" style={[styles.summary, Shadow.subtle]}>
                 <ThemedText type="secondary" themeColor="textSecondary">
-                  Has vendido
+                  {summaryTitle}
                 </ThemedText>
                 <ThemedText type="bigNumber" adjustsFontSizeToFit numberOfLines={1}>
                   {formatCOP(summary.total)}

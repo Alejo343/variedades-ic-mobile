@@ -226,11 +226,21 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   lo que no sea la tab bar.
 - Componentes compartidos: `pos.tsx` (grid y carrito del POS), `form.tsx`
   (`FormSection`, `FormField`, `FormInput`, `FormChip`), `menu-row.tsx`,
-  `sale-list.tsx`, `account-type-picker.tsx`, `sync-status.tsx`.
+  `sale-list.tsx`, `record-list.tsx` (historiales), `stock-cart-form.tsx`
+  (entrega/devolución/pérdida: grid + carrito + costo opcional),
+  `seller-form.tsx` (crear/editar vendedor), `date-choice.tsx` (Hoy / Ayer /
+  otra fecha), `account-type-picker.tsx`, `sync-status.tsx`.
+- Vendedores (lado dueño): la ficha `more/sellers/[id]/index.tsx` es un perfil
+  (cifras, acciones, inventario, actividad, historial filtrado, acceso a la
+  app); editar datos está en `[id]/edit.tsx`. Los historiales (entregas,
+  ventas, devoluciones, pérdidas, liquidaciones, `sell/history`) aceptan
+  `?sellerId=` para mostrar solo los de un vendedor. La comisión en porcentaje
+  se escribe como porcentaje (`lib/seller-commission.ts` convierte a puntos
+  base).
 - Rediseñadas con el lenguaje visual nuevo: Inicio, Vender (POS), Reportes,
   pantallas del vendedor, Productos (lista/crear/editar), Inventario, Ajustar
-  stock, Caja y Cuentas. **Pendientes**: Compras, Distribuidores, Vendedores
-  (lado dueño: lista, entregas, devoluciones, pérdidas), Categorías, Respaldo.
+  stock, Caja y Cuentas, Vendedores (lado dueño, todo). **Pendientes**:
+  Compras, Distribuidores, Categorías, Respaldo.
 - `lib/format.ts#formatCOP` formatea a mano (sin `Intl` de moneda, poco
   confiable en Hermes); igual `formatDateTime`/`formatTime`.
 
@@ -282,7 +292,8 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   - Diagnóstico: `ssh mivps`, y en la base `SELECT * FROM
     sync_applied_operations ORDER BY created_at DESC LIMIT 20`. Si la
     operación no aparece, el celular nunca la envió.
-- **Falta verificar en el celular**: Reportes (rediseño), pantallas del
+- **Falta verificar en el celular**: Vendedores (lado dueño, rediseño
+  completo), Reportes (rediseño), pantallas del
   vendedor, POS rediseñado, editar/crear producto, Productos/Inventario/
   Ajustar stock, Caja y Cuentas, transferencias entre cuentas (desplegar
   primero la web), importación de Excel, código de proveedor, sync reactiva

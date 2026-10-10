@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayLabel, endOfLocalDayUtc, formatDateTime, formatTime, isOnLocalDay, localDateKey, toSqliteUtcTimestamp } from './format';
+import { dayLabel, endOfLocalDayUtc, shiftLocalDate, formatDateTime, formatTime, isOnLocalDay, localDateKey, toSqliteUtcTimestamp } from './format';
 
 // Bug real (sesión 2026-10-03): markSettled enviaba settledAt con
 // `new Date().toISOString()` ("...T...Z"), que el servidor rechazaba
@@ -67,5 +67,14 @@ describe('formatTime', () => {
   it('muestra la hora local en formato de 12 horas', () => {
     expect(formatTime(toSqliteUtcTimestamp(new Date(2026, 9, 8, 15, 40)))).toBe('3:40 p. m.');
     expect(formatTime(toSqliteUtcTimestamp(new Date(2026, 9, 8, 0, 5)))).toBe('12:05 a. m.');
+  });
+});
+
+describe('shiftLocalDate', () => {
+  it('mueve una fecha local por días, cruzando meses y años', () => {
+    expect(shiftLocalDate('2026-10-08', -1)).toBe('2026-10-07');
+    expect(shiftLocalDate('2026-10-01', -1)).toBe('2026-09-30');
+    expect(shiftLocalDate('2026-01-01', -1)).toBe('2025-12-31');
+    expect(shiftLocalDate('2026-12-31', 1)).toBe('2027-01-01');
   });
 });

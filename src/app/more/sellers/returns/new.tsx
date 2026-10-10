@@ -1,210 +1,80 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Undo2 } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
+import { StockCartForm, type StockOption } from '@/components/stock-cart-form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { productsRepo, sellerReturnsRepo, sellersRepo, type Seller } from '@/lib/data';
 import { sellerReturnSchema } from '@/lib/validations';
 
-type InventoryOption = { productId: number; name: string; sku: string; available: number };
-type CartItem = { productId: number; name: string; sku: string; available: number; quantity: string };
-
+// A seller hands merchandise back: −seller, +principal in the ledger. Only
+// what they hold can be returned; no money moves.
 export default function NewSellerReturnScreen() {
   const { sellerId: sellerIdParam } = useLocalSearchParams<{ sellerId: string }>();
   const sellerId = Number(sellerIdParam);
   const theme = useTheme();
-
   const [seller, setSeller] = useState<Seller | null>(null);
-  const [options, setOptions] = useState<InventoryOption[]>([]);
-  const [search, setSearch] = useState('');
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [notes, setNotes] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [options, setOptions] = useState<StockOption[] | null>(null);
 
   useEffect(() => {
     sellersRepo.getById(sellerId).then(setSeller);
     Promise.all([sellersRepo.getInventory(sellerId), productsRepo.list()]).then(([lines, products]) => {
-      const productById = Object.fromEntries(products.map((p) => [p.id, p]));
+      const byId = Object.fromEntries(products.map((p) => [p.id, p]));
       setOptions(
-        lines.map((line) => ({
-          productId: line.productId,
-          available: line.quantity,
-          name: productById[line.productId]?.name ?? `Producto #${line.productId}`,
-          sku: productById[line.productId]?.sku ?? '',
+        lines.map((l) => ({
+          productId: l.productId,
+          name: byId[l.productId]?.name ?? `Producto #${l.productId}`,
+          sku: byId[l.productId]?.sku ?? '',
+          imageUri: byId[l.productId]?.primaryImageUri ?? null,
+          available: l.quantity,
+          price: byId[l.productId]?.price ?? 0,
+          defaultCost: 0,
         })),
       );
     });
   }, [sellerId]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return [];
-    return options.filter((o) => o.name.toLowerCase().includes(q) || o.sku.toLowerCase().includes(q));
-  }, [options, search]);
-
-  function addProduct(option: InventoryOption) {
-    setCart((prev) => {
-      const existing = prev.find((item) => item.productId === option.productId);
-      if (existing) {
-        return prev.map((item) => (item.productId === option.productId ? { ...item, quantity: String((Number(item.quantity) || 0) + 1) } : item));
-      }
-      return [...prev, { productId: option.productId, name: option.name, sku: option.sku, available: option.available, quantity: '1' }];
-    });
-    setSearch('');
-  }
-
-  function updateItem(productId: number, value: string) {
-    setCart((prev) => prev.map((item) => (item.productId === productId ? { ...item, quantity: value } : item)));
-  }
-
-  function removeItem(productId: number) {
-    setCart((prev) => prev.filter((item) => item.productId !== productId));
-  }
-
-  async function handleSubmit() {
-    const parsed = sellerReturnSchema.safeParse({
-      sellerId,
-      items: cart.map((item) => ({ productId: item.productId, quantity: Number(item.quantity) })),
-      notes: notes || undefined,
-    });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'Datos inválidos');
-      return;
-    }
-    setError(null);
-    setSaving(true);
-    try {
-      await sellerReturnsRepo.create(parsed.data);
-      router.back();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo registrar la devolución');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
-
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ThemedText type="small">Vendedor</ThemedText>
-          <ThemedText type="default" style={styles.sellerName}>
-            {seller?.name ?? `Vendedor #${sellerId}`}
-          </ThemedText>
-
-          <ThemedText type="small" style={styles.label}>
-            Agregar producto (solo lo que este vendedor tiene disponible)
-          </ThemedText>
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Buscar producto por nombre o SKU"
-            placeholderTextColor={theme.textSecondary}
-            style={inputStyle}
-          />
-          {filtered.length > 0 ? (
-            <ThemedView style={styles.productList}>
-              {filtered.map((option) => (
-                <Pressable key={option.productId} onPress={() => addProduct(option)}>
-                  <ThemedView type="backgroundElement" style={styles.productRow}>
-                    <ThemedText type="small">{option.name}</ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {option.sku} · disponible: {option.available}
-                    </ThemedText>
-                  </ThemedView>
-                </Pressable>
-              ))}
-            </ThemedView>
-          ) : null}
-
-          <ThemedText type="smallBold" style={styles.sectionTitle}>
-            Productos a devolver
-          </ThemedText>
-          {cart.length === 0 ? (
-            <ThemedText themeColor="textSecondary" type="small">
-              Ningún producto agregado todavía.
+    <StockCartForm
+      header={
+        <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+          <View style={[styles.iconDot, { backgroundColor: withAlpha(theme.warning, 0.12) }]}>
+            <Undo2 color={theme.warning} size={20} />
+          </View>
+          <View style={styles.flex}>
+            <ThemedText type="cardTitle">{seller?.name ?? 'Vendedor'}</ThemedText>
+            <ThemedText type="caption" themeColor="textSecondary">
+              Lo que devuelva vuelve al inventario de la tienda.
             </ThemedText>
-          ) : (
-            cart.map((item) => (
-              <ThemedView key={item.productId} type="backgroundElement" style={styles.cartRow}>
-                <ThemedView style={styles.cartRowHeader}>
-                  <ThemedText type="small" style={styles.cartName} numberOfLines={1}>
-                    {item.name}
-                  </ThemedText>
-                  <Pressable onPress={() => removeItem(item.productId)}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      Quitar
-                    </ThemedText>
-                  </Pressable>
-                </ThemedView>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Disponible: {item.available}
-                </ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Cantidad
-                </ThemedText>
-                <TextInput value={item.quantity} onChangeText={(v) => updateItem(item.productId, v)} keyboardType="numeric" style={inputStyle} />
-              </ThemedView>
-            ))
-          )}
-
-          <ThemedText type="small" style={styles.label}>
-            Notas (opcional)
-          </ThemedText>
-          <TextInput value={notes} onChangeText={setNotes} style={inputStyle} multiline />
-
-          {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-
-          <Pressable onPress={handleSubmit} disabled={saving || cart.length === 0}>
-            <ThemedView type="backgroundSelected" style={styles.submitButton}>
-              <ThemedText type="linkPrimary">{saving ? 'Registrando…' : 'Registrar devolución'}</ThemedText>
-            </ThemedView>
-          </Pressable>
-        </ScrollView>
-      </SafeAreaView>
-    </ThemedView>
+          </View>
+        </ThemedView>
+      }
+      options={options}
+      availableLabel={(n) => `Tiene ${n}`}
+      emptyTitle="No tiene mercancía"
+      emptyText="Este vendedor no tiene nada que devolver."
+      submitLabel="Registrar devolución"
+      tint={theme.warning}
+      onSubmit={async (lines, notes) => {
+        const parsed = sellerReturnSchema.safeParse({
+          sellerId,
+          items: lines.map(({ productId, quantity }) => ({ productId, quantity })),
+          notes: notes || undefined,
+        });
+        if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Datos inválidos');
+        await sellerReturnsRepo.create(parsed.data);
+        router.back();
+      }}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  sellerName: { marginBottom: Spacing.two },
-  label: { marginTop: Spacing.two },
-  productList: { maxHeight: 200, marginBottom: Spacing.two },
-  productRow: {
-    padding: Spacing.three,
-    borderRadius: Spacing.two,
-    marginBottom: Spacing.one,
-  },
-  sectionTitle: { marginTop: Spacing.two, marginBottom: Spacing.one },
-  cartRow: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    marginBottom: Spacing.two,
-    gap: Spacing.one,
-  },
-  cartRowHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cartName: { flex: 1, marginRight: Spacing.two },
-  error: { color: '#d9534f' },
-  submitButton: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
+  flex: { flex: 1 },
+  card: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, borderRadius: Radii.card, padding: Spacing.three },
+  iconDot: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
 });
