@@ -304,27 +304,15 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
 
 ## Pendiente
 
-- **Fase 10, sub-paso 15**, verificación end-to-end con dos celulares contra
-  producción:
-  1. Rana y Gato (en −5 por un bug ya corregido): desde el dueño, ajuste de
-     `+10` a cada uno, sincronizar y confirmar que quedan en 5.
-  2. Segundo vendedor; venta en modo avión que sincroniza al reconectar; venta
-     que deja negativo el inventario del vendedor (debe aceptarse) y aparece
-     la tarjeta roja en `/admin`; liquidación completa que sube el saldo de la
-     cuenta elegida.
-  3. La liquidación reenviada con "Reenviar sincronización": confirmar que
-     "Efectivo" subió $55.000 en el servidor.
-  - Diagnóstico: `ssh mivps`, y en la base `SELECT * FROM
+- **Único caso sin verificar en el celular** (el usuario confirmó el resto el
+  2026-10-09): inventario de vendedor en negativo. El celular nunca deja
+  vender más de lo que ve; se provoca con dos celulares desincronizados —
+  entrega de 1 unidad, el vendedor la vende en modo avión, el dueño registra
+  la devolución de esa unidad, el vendedor reconecta → la venta se acepta,
+  queda en −1 y aparece la tarjeta roja en `/admin`.
+  - Diagnóstico de sync: `ssh mivps`, y en la base `SELECT * FROM
     sync_applied_operations ORDER BY created_at DESC LIMIT 20`. Si la
     operación no aparece, el celular nunca la envió.
-- **Falta verificar en el celular**: Categorías (rediseño), Reportes (rediseño), pantallas del
-  vendedor, POS rediseñado, editar/crear producto, Productos/Inventario/
-  Ajustar stock, Caja y Cuentas, transferencias entre cuentas (desplegar
-  primero la web), importación de Excel, código de proveedor, sync reactiva
-  (login trae datos sin tocar nada; cambio en la web aparece en ≤ 1 min),
-  disparadores automáticos, subida de fotos y fotos remotas.
-- Fase 9 sub-paso 4 (verificación manual de Reportes) quedó sin cerrar
-  formalmente.
 - Diferido a propósito: catálogo de productos por proveedor (mejoraría la
   importación de Excel), reordenar fotos, fotos huérfanas al salir sin
   guardar.
