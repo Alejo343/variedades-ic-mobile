@@ -165,9 +165,12 @@ que la web). El filtro de período solo afecta reportes de flujo; los de estado
 - Timestamps armados en JS para un payload de sync: `toSqliteUtcTimestamp(date)`,
   nunca `toISOString()` (el servidor rechaza la `T…Z`).
 
-## Sincronización (Fase 10)
+## Sincronización con el servidor
 
-Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
+Construida en la Fase 10, completa y verificada en producción con celulares
+reales (2026-10-09). Lo de abajo es el contrato vigente: todo repo o tabla
+nueva tiene que respetarlo (detalle del lado web en el `CLAUDE.md` del repo
+web).
 
 - **Identidad por `uuid`**: toda tabla sincronizable tiene `uuid` único
   (`syncUuid()` en `schema.ts`). Los `id` numéricos son locales a cada base y
@@ -207,6 +210,10 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   cierra.
 - Las contraseñas de vendedores no pasan por la cola: "Acceso a la app" en la
   ficha del vendedor llama directo a la API (requiere internet).
+- **Diagnóstico** cuando algo no sincroniza: `ssh mivps`, y en la base
+  `SELECT * FROM sync_applied_operations ORDER BY created_at DESC LIMIT 20`.
+  Si la operación no aparece ni como `applied` ni como `rejected`, el celular
+  nunca la envió (revisar Más → Configuración en ese celular).
 
 ## Roles
 
@@ -304,20 +311,14 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
 
 ## Pendiente
 
-- Verificación en el celular completa (2026-10-09), incluida una venta sin
-  conexión que dejó el stock principal en negativo (aceptada; tarjeta roja
-  en `/admin`, que solo cuenta stock principal). El negativo del inventario
-  de un vendedor usa el mismo mecanismo y no se probó por separado. El
-  celular nunca deja vender más de lo que ve: el negativo solo aparece con
-  dos dispositivos desincronizados.
-- Diagnóstico de sync: `ssh mivps`, y en la base `SELECT * FROM
-  sync_applied_operations ORDER BY created_at DESC LIMIT 20`. Si la
-  operación no aparece, el celular nunca la envió.
+- **El servidor no tiene respaldos de Postgres** (sin `pg_dump` en cron ni
+  nada en `/var/backups`), y ahora es la única copia de los datos.
+- Sin probar por separado: el inventario de un **vendedor** en negativo (usa
+  el mismo mecanismo que el stock principal, que sí se verificó). Solo pasa
+  con dos dispositivos desincronizados.
 - Diferido a propósito: catálogo de productos por proveedor (mejoraría la
   importación de Excel), reordenar fotos, fotos huérfanas al salir sin
   guardar.
-- **El servidor no tiene respaldos de Postgres** (sin `pg_dump` en cron ni
-  nada en `/var/backups`), y ahora es la única copia de los datos.
 
 ## Comandos
 

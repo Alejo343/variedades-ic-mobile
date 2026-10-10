@@ -2789,3 +2789,15 @@ npm run lint            # expo lint
 - Verificar siempre antes de dar algo por terminado: `npm run test` en
   verde, más una pasada manual en el emulador/dispositivo (en modo avión
   cuando se trate de confirmar que algo funciona offline).
+
+---
+
+## Cierre de la Fase 10 (2026-10-09)
+
+Verificación en el celular completa, incluida una venta sin conexión que dejó
+el stock principal en negativo: se aceptó y apareció la tarjeta roja en
+`/admin` (que solo cuenta stock principal). El celular nunca deja vender más
+de lo que ve; el negativo solo aparece con dos dispositivos desincronizados.
+El negativo del inventario de un vendedor usa el mismo mecanismo y no se
+probó por separado. Con esto la sección "Sincronización" de `CLAUDE.md` pasó
+de fase en curso a contrato vigente.
