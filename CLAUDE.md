@@ -251,7 +251,8 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
 - Rediseñadas con el lenguaje visual nuevo: Inicio, Vender (POS), Reportes,
   pantallas del vendedor, Productos (lista/crear/editar), Inventario, Ajustar
   stock, Caja y Cuentas, Vendedores (lado dueño, todo), Compras,
-  Distribuidores y Categorías (todas las pantallas).
+  Distribuidores, Categorías y el menú Más del dueño (grupos Negocio /
+  Catálogo con un dato en vivo por fila). **Pendiente**: Buscar.
 - Categorías (`components/category-form.tsx`): muestran el prefijo de SKU que
   reciben sus productos (`domain/sku.ts#getSkuPrefix`) y bloquean un nombre o
   slug repetido antes de guardar (slug único en la base). Renombrar una
