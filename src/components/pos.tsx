@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { Minus, Package, Plus, Search, Trash2 } from 'lucide-react-native';
+import { Minus, Package, Plus, Search, Trash2, X } from 'lucide-react-native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
@@ -15,7 +15,15 @@ import { resolveImageUri } from '@/lib/sync/image-url';
 // (sell/index.tsx) and the consignment seller's sale form
 // (components/seller-sale-form.tsx).
 
-export function PosSearchBar({ value, onChangeText }: { value: string; onChangeText: (v: string) => void }) {
+export function PosSearchBar({
+  value,
+  onChangeText,
+  placeholder = 'Buscar productos',
+}: {
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+}) {
   const theme = useTheme();
   return (
     <ThemedView type="backgroundElement" style={[styles.searchBar, Shadow.subtle]}>
@@ -23,10 +31,15 @@ export function PosSearchBar({ value, onChangeText }: { value: string; onChangeT
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder="Buscar productos"
+        placeholder={placeholder}
         placeholderTextColor={theme.textSecondary}
         style={[styles.searchInput, { color: theme.text }]}
       />
+      {value ? (
+        <Pressable onPress={() => onChangeText('')} hitSlop={8} accessibilityLabel="Borrar búsqueda">
+          <X color={theme.textSecondary} size={18} />
+        </Pressable>
+      ) : null}
     </ThemedView>
   );
 }
