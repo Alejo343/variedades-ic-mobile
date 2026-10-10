@@ -1,64 +1,93 @@
 import { File } from 'expo-file-system';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { FileSpreadsheet, PackagePlus, Plus, Trash2, X } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeInDown, FadeOutLeft, LinearTransition } from 'react-native-reanimated';
 import { read, utils } from 'xlsx';
 
+import { FormChip, FormInput, FormSection } from '@/components/form';
+import { NewProductForm } from '@/components/new-product-form';
+import { CartRow, PosSearchBar, ProductCard, ProductGrid } from '@/components/pos';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { distributorsRepo, productsRepo, purchaseOrdersRepo, type Distributor, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 import { parseImportSheet, resolveImportRows } from '@/lib/purchase-import';
 import { purchaseOrderSchema } from '@/lib/validations';
 
-type CartItem = { productId: number; name: string; sku: string; quantity: string; unitCost: string };
+type CartItem = { productId: number; name: string; imageUri: string | null; quantity: number; unitCost: string };
+
+const PAGE_SIZE = 9;
+// The "Producto nuevo" tile takes the first cell, so the first page shows one
+// product less: 1 + 8 = 9 cells fill three rows of three, and each "Ver más"
+// adds 9 more, keeping the rows even.
+const FIRST_PAGE = PAGE_SIZE - 1;
+// A purchase brings stock in, so there's no real upper bound per line.
+const NO_LIMIT = 99999;
 
 export default function NewPurchaseOrderScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  // Opened from a distributor's screen with them preselected.
+  const params = useLocalSearchParams<{ distributorId?: string }>();
   const [distributors, setDistributors] = useState<Distributor[]>([]);
-  const [distributorId, setDistributorId] = useState<number | null>(null);
+  const [distributorId, setDistributorId] = useState<number | null>(params.distributorId ? Number(params.distributorId) : null);
   const [purchaseType, setPurchaseType] = useState<'contado' | 'credito'>('contado');
   const [products, setProducts] = useState<Product[]>([]);
+  // Inactive ones too: their names and slugs still count when creating a
+  // product (slug is unique in the database, and a deactivated product with
+  // the same name is still that product).
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
+  const [visibleCount, setVisibleCount] = useState(FIRST_PAGE);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  // "Producto nuevo" sheet: products ordered for the first time don't exist
+  // yet, so they're created right here and go straight into the order.
+  const [newProductName, setNewProductName] = useState<string | null>(null);
 
   useEffect(() => {
     distributorsRepo.list().then((rows) => setDistributors(rows.filter((d) => d.active)));
-    productsRepo.list().then((rows) => setProducts(rows.filter((p) => p.active)));
+    productsRepo.list().then((rows) => {
+      setAllProducts(rows);
+      setProducts(rows.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name)));
+    });
   }, []);
 
-  const filtered = useMemo(() => {
+  const catalog = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return [];
+    if (!q) return products;
     return products.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
   }, [products, search]);
 
-  const total = useMemo(() => cart.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitCost) || 0), 0), [cart]);
+  const total = cart.reduce((sum, item) => sum + item.quantity * (Number(item.unitCost) || 0), 0);
+  const units = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  function addProduct(product: Product) {
-    setCart((prev) => {
-      const existing = prev.find((item) => item.productId === product.id);
-      if (existing) {
-        return prev.map((item) => (item.productId === product.id ? { ...item, quantity: String((Number(item.quantity) || 0) + 1) } : item));
-      }
-      return [...prev, { productId: product.id, name: product.name, sku: product.sku, quantity: '1', unitCost: String(product.purchasePrice) }];
-    });
-    setSearch('');
+  function toggleProduct(product: Product) {
+    setCart((prev) =>
+      prev.some((item) => item.productId === product.id)
+        ? prev.filter((item) => item.productId !== product.id)
+        : [...prev, { productId: product.id, name: product.name, imageUri: product.primaryImageUri, quantity: 1, unitCost: String(product.purchasePrice) }],
+    );
   }
 
-  function updateItem(productId: number, field: 'quantity' | 'unitCost', value: string) {
-    setCart((prev) => prev.map((item) => (item.productId === productId ? { ...item, [field]: value } : item)));
+  function addToCart(product: Product, quantity: number, unitCost: number) {
+    setCart((prev) =>
+      prev.some((item) => item.productId === product.id)
+        ? prev.map((item) => (item.productId === product.id ? { ...item, quantity: item.quantity + quantity } : item))
+        : [...prev, { productId: product.id, name: product.name, imageUri: product.primaryImageUri, quantity, unitCost: String(unitCost) }],
+    );
   }
 
-  function removeItem(productId: number) {
-    setCart((prev) => prev.filter((item) => item.productId !== productId));
+  function updateItem(productId: number, patch: Partial<CartItem>) {
+    setCart((prev) => prev.map((item) => (item.productId === productId ? { ...item, ...patch } : item)));
   }
 
   function mergeIntoCart(items: CartItem[]) {
@@ -67,7 +96,7 @@ export default function NewPurchaseOrderScreen() {
       for (const item of items) {
         const existingIndex = next.findIndex((c) => c.productId === item.productId);
         if (existingIndex >= 0) {
-          next[existingIndex] = { ...next[existingIndex], quantity: String((Number(next[existingIndex].quantity) || 0) + Number(item.quantity)) };
+          next[existingIndex] = { ...next[existingIndex], quantity: next[existingIndex].quantity + item.quantity };
         } else {
           next.push(item);
         }
@@ -101,13 +130,14 @@ export default function NewPurchaseOrderScreen() {
         return;
       }
 
-      const resolved = resolveImportRows(rows, products);
+      const resolved = resolveImportRows(rows, allProducts);
       const newItems: CartItem[] = [];
       let createdCount = 0;
 
       for (const row of resolved) {
         if (row.kind === 'existing') {
-          newItems.push({ productId: row.productId, name: row.name, sku: row.sku, quantity: String(row.quantity), unitCost: String(row.unitCost) });
+          const product = allProducts.find((p) => p.id === row.productId);
+          newItems.push({ productId: row.productId, name: row.name, imageUri: product?.primaryImageUri ?? null, quantity: row.quantity, unitCost: String(row.unitCost) });
         } else {
           const product = await productsRepo.create({
             name: row.name,
@@ -119,14 +149,15 @@ export default function NewPurchaseOrderScreen() {
             active: true,
           });
           setProducts((prev) => [...prev, product]);
+          setAllProducts((prev) => [...prev, product]);
           createdCount += 1;
-          newItems.push({ productId: product.id, name: product.name, sku: product.sku, quantity: String(row.quantity), unitCost: String(row.unitCost) });
+          newItems.push({ productId: product.id, name: product.name, imageUri: null, quantity: row.quantity, unitCost: String(row.unitCost) });
         }
       }
 
       mergeIntoCart(newItems);
 
-      const summary = [`${resolved.length} producto(s) agregados al carrito.`];
+      const summary = [`${resolved.length} producto(s) agregados al pedido.`];
       if (createdCount > 0) summary.push(`${createdCount} producto(s) nuevo(s) creado(s) en el catálogo.`);
       if (skipped.length > 0) summary.push(`${skipped.length} fila(s) omitida(s) (revisa que tengan nombre, cantidad y valor).`);
       Alert.alert('Importación completa', summary.join('\n'));
@@ -141,12 +172,8 @@ export default function NewPurchaseOrderScreen() {
     const parsed = purchaseOrderSchema.safeParse({
       distributorId,
       purchaseType,
-      notes: notes || undefined,
-      items: cart.map((item) => ({
-        productId: item.productId,
-        quantity: Number(item.quantity),
-        unitCost: Number(item.unitCost),
-      })),
+      notes: notes.trim() || undefined,
+      items: cart.map((item) => ({ productId: item.productId, quantity: item.quantity, unitCost: Number(item.unitCost) })),
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Datos inválidos');
@@ -164,215 +191,300 @@ export default function NewPurchaseOrderScreen() {
     }
   }
 
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.backgroundSelected }];
+  const canSave = cart.length > 0 && !saving;
 
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={[]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ThemedText type="small">Distribuidor (opcional)</ThemedText>
-          <ThemedView style={styles.distributorRow}>
-            <Pressable onPress={() => setDistributorId(null)}>
-              <ThemedView type={distributorId === null ? 'backgroundSelected' : 'backgroundElement'} style={styles.chip}>
-                <ThemedText type="small">Sin distribuidor</ThemedText>
-              </ThemedView>
-            </Pressable>
-            {distributors.map((distributor) => (
-              <Pressable key={distributor.id} onPress={() => setDistributorId(distributor.id)}>
-                <ThemedView type={distributorId === distributor.id ? 'backgroundSelected' : 'backgroundElement'} style={styles.chip}>
-                  <ThemedText type="small">{distributor.name}</ThemedText>
-                </ThemedView>
-              </Pressable>
-            ))}
-          </ThemedView>
-
-          <ThemedText type="small">Tipo de pago</ThemedText>
-          <ThemedView style={styles.typeRow}>
-            <Pressable style={styles.typeFlex} onPress={() => setPurchaseType('contado')}>
-              <ThemedView type={purchaseType === 'contado' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
-                <ThemedText type={purchaseType === 'contado' ? 'linkPrimary' : undefined}>Contado</ThemedText>
-              </ThemedView>
-            </Pressable>
-            <Pressable style={styles.typeFlex} onPress={() => setPurchaseType('credito')}>
-              <ThemedView type={purchaseType === 'credito' ? 'backgroundSelected' : 'backgroundElement'} style={styles.typeButton}>
-                <ThemedText type={purchaseType === 'credito' ? 'linkPrimary' : undefined}>Crédito</ThemedText>
-              </ThemedView>
-            </Pressable>
-          </ThemedView>
-
-          <ThemedText type="small" style={styles.label}>
-            Agregar producto
-          </ThemedText>
-          <Pressable onPress={handleImportExcel} disabled={importing}>
-            <ThemedView type="backgroundElement" style={styles.importButton}>
-              <ThemedText type="small" themeColor={importing ? 'textSecondary' : 'text'}>
-                {importing ? 'Importando…' : 'Importar desde Excel (.xlsx)'}
+      <SafeAreaView style={styles.flex} edges={[]}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <FormSection title="Distribuidor">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                <FormChip label="Sin distribuidor" selected={distributorId === null} onPress={() => setDistributorId(null)} />
+                {distributors.map((d) => (
+                  <FormChip key={d.id} label={d.name} selected={distributorId === d.id} onPress={() => setDistributorId(d.id)} />
+                ))}
+              </ScrollView>
+              <View style={styles.chips}>
+                <FormChip label="De contado" selected={purchaseType === 'contado'} onPress={() => setPurchaseType('contado')} />
+                <FormChip label="A crédito" selected={purchaseType === 'credito'} onPress={() => setPurchaseType('credito')} />
+              </View>
+              <ThemedText type="caption" themeColor="textSecondary">
+                {purchaseType === 'credito'
+                  ? 'Queda como cuenta por pagar; registras los pagos desde el pedido.'
+                  : 'Se paga al recibirlo; no queda deuda pendiente.'}
               </ThemedText>
-            </ThemedView>
-          </Pressable>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.importHint}>
-            Los productos que no existan en tu catálogo se crean automáticamente.
-          </ThemedText>
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Buscar producto por nombre o SKU"
-            placeholderTextColor={theme.textSecondary}
-            style={inputStyle}
-          />
-          {filtered.length > 0 ? (
-            <ThemedView style={styles.productList}>
-              {filtered.map((product) => (
-                <Pressable key={product.id} onPress={() => addProduct(product)}>
-                  <ThemedView type="backgroundElement" style={styles.productRow}>
-                    <ThemedText type="small">{product.name}</ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {product.sku} · costo: {formatCOP(product.purchasePrice)} · stock: {product.stock}
+            </FormSection>
+
+            <Pressable onPress={handleImportExcel} disabled={importing}>
+              <ThemedView type="backgroundElement" style={[styles.importCard, Shadow.subtle]}>
+                <View style={[styles.iconDot, { backgroundColor: withAlpha(theme.primary, 0.12) }]}>
+                  {importing ? <ActivityIndicator color={theme.primary} /> : <FileSpreadsheet color={theme.primary} size={20} />}
+                </View>
+                <View style={styles.flex}>
+                  <ThemedText type="smallBold">{importing ? 'Importando…' : 'Importar desde Excel'}</ThemedText>
+                  <ThemedText type="caption" themeColor="textSecondary">
+                    Columnas: código, nombre, cantidad, valor unitario. Lo que no esté en el catálogo se crea.
+                  </ThemedText>
+                </View>
+              </ThemedView>
+            </Pressable>
+
+            <View>
+              <PosSearchBar
+                value={search}
+                onChangeText={(v) => {
+                  setSearch(v);
+                  setVisibleCount(FIRST_PAGE);
+                }}
+              />
+              <ProductGrid>
+                {(cardWidth) => [
+                  <NewProductTile key="new" width={cardWidth} onPress={() => setNewProductName(search.trim())} />,
+                  ...catalog.slice(0, visibleCount).map((product) => {
+                    const line = cart.find((item) => item.productId === product.id);
+                    return (
+                      <ProductCard
+                        key={product.id}
+                        name={product.name}
+                        price={product.purchasePrice}
+                        imageUri={product.primaryImageUri}
+                        caption={`Stock: ${product.stock}`}
+                        captionTone={product.stock <= 0 ? 'error' : product.minStock > 0 && product.stock <= product.minStock ? 'warning' : 'normal'}
+                        cardWidth={cardWidth}
+                        selected={!!line}
+                        quantity={line?.quantity}
+                        onPress={() => toggleProduct(product)}
+                      />
+                    );
+                  }),
+                ]}
+              </ProductGrid>
+              {catalog.length === 0 && search.trim() ? (
+                <Pressable onPress={() => setNewProductName(search.trim())}>
+                  <View style={[styles.createHint, { borderColor: theme.primary, backgroundColor: theme.primaryLight }]}>
+                    <Plus color={theme.primary} size={16} />
+                    <ThemedText type="smallBold" style={{ color: theme.primary }} numberOfLines={1}>
+                      No está en el catálogo: crear «{search.trim()}»
                     </ThemedText>
+                  </View>
+                </Pressable>
+              ) : null}
+              {visibleCount < catalog.length ? (
+                <Pressable onPress={() => setVisibleCount((c) => c + PAGE_SIZE)}>
+                  <ThemedView type="backgroundElement" style={[styles.moreButton, Shadow.subtle]}>
+                    <ThemedText type="link">Ver más productos</ThemedText>
                   </ThemedView>
                 </Pressable>
-              ))}
-            </ThemedView>
-          ) : null}
+              ) : null}
+            </View>
 
-          <ThemedText type="smallBold" style={styles.sectionTitle}>
-            Productos en el pedido
-          </ThemedText>
-          {cart.length === 0 ? (
-            <ThemedText themeColor="textSecondary" type="small">
-              Ningún producto agregado todavía.
-            </ThemedText>
-          ) : (
-            cart.map((item) => (
-              <ThemedView key={item.productId} type="backgroundElement" style={styles.cartRow}>
-                <ThemedView style={styles.cartRowHeader}>
-                  <ThemedText type="small" style={styles.cartName} numberOfLines={1}>
-                    {item.name}
-                  </ThemedText>
-                  <Pressable onPress={() => removeItem(item.productId)}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      Quitar
+            <ThemedView type="backgroundElement" style={[styles.cartCard, Shadow.subtle]}>
+              <View style={styles.cartHeader}>
+                <ThemedText type="smallBold">{cart.length === 0 ? 'Pedido' : `${units} ${units === 1 ? 'unidad' : 'unidades'}`}</ThemedText>
+                {cart.length > 0 ? (
+                  <Pressable onPress={() => setCart([])} hitSlop={6} style={styles.inline}>
+                    <Trash2 color={theme.error} size={16} />
+                    <ThemedText type="small" style={{ color: theme.error }}>
+                      Vaciar
                     </ThemedText>
                   </Pressable>
-                </ThemedView>
-                <ThemedView style={styles.cartRowFields}>
-                  <ThemedView style={styles.cartField}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      Cantidad
-                    </ThemedText>
-                    <TextInput
-                      value={item.quantity}
-                      onChangeText={(v) => updateItem(item.productId, 'quantity', v)}
-                      keyboardType="numeric"
-                      style={inputStyle}
-                    />
-                  </ThemedView>
-                  <ThemedView style={styles.cartField}>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      Costo unitario
-                    </ThemedText>
-                    <TextInput
-                      value={item.unitCost}
-                      onChangeText={(v) => updateItem(item.productId, 'unitCost', v)}
-                      keyboardType="numeric"
-                      style={inputStyle}
-                    />
-                  </ThemedView>
-                </ThemedView>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Subtotal: {formatCOP((Number(item.quantity) || 0) * (Number(item.unitCost) || 0))}
+                ) : null}
+              </View>
+              {cart.length === 0 ? (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.cartEmpty}>
+                  Toca productos o importa un Excel para armar el pedido.
                 </ThemedText>
-              </ThemedView>
-            ))
-          )}
-
-          <ThemedText type="small" style={styles.label}>
-            Notas (opcional)
-          </ThemedText>
-          <TextInput value={notes} onChangeText={setNotes} style={inputStyle} multiline />
-
-          <ThemedView type="backgroundElement" style={styles.totalBlock}>
-            <ThemedText>Costo total</ThemedText>
-            <ThemedText type="linkPrimary" style={styles.totalAmount}>
-              {formatCOP(total)}
-            </ThemedText>
-          </ThemedView>
-
-          {error ? <ThemedText style={styles.error}>{error}</ThemedText> : null}
-
-          <Pressable onPress={handleSubmit} disabled={saving || cart.length === 0}>
-            <ThemedView type="backgroundSelected" style={styles.submitButton}>
-              <ThemedText type="linkPrimary">{saving ? 'Creando…' : 'Crear pedido'}</ThemedText>
+              ) : (
+                cart.map((item, index) => (
+                  <Animated.View key={item.productId} entering={FadeInDown.duration(200)} exiting={FadeOutLeft.duration(160)} layout={LinearTransition.delay(120)}>
+                    {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.border }]} /> : null}
+                    <CartRow
+                      name={item.name}
+                      imageUri={item.imageUri}
+                      quantity={item.quantity}
+                      max={NO_LIMIT}
+                      lineTotal={item.quantity * (Number(item.unitCost) || 0)}
+                      onIncrement={() => updateItem(item.productId, { quantity: item.quantity + 1 })}
+                      onDecrement={() => updateItem(item.productId, { quantity: Math.max(1, item.quantity - 1) })}
+                      onRemove={() => setCart((prev) => prev.filter((c) => c.productId !== item.productId))}
+                      unitPrice={{ value: item.unitCost, label: 'Costo c/u $', onChange: (v) => updateItem(item.productId, { unitCost: v }) }}
+                    />
+                  </Animated.View>
+                ))
+              )}
             </ThemedView>
-          </Pressable>
-        </ScrollView>
+
+            <FormSection title="Notas">
+              <FormInput value={notes} onChangeText={setNotes} placeholder="Opcional" multiline />
+            </FormSection>
+
+            {error ? (
+              <View style={[styles.errorBox, { backgroundColor: withAlpha(theme.error, 0.08) }]}>
+                <ThemedText type="small" style={{ color: theme.error }}>
+                  {error}
+                </ThemedText>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <ThemedView
+            type="backgroundElement"
+            style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
+            {cart.length > 0 ? (
+              <View style={styles.totalRow}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Costo total
+                </ThemedText>
+                <ThemedText type="cardTitle">{formatCOP(total)}</ThemedText>
+              </View>
+            ) : null}
+            <Pressable onPress={handleSubmit} disabled={!canSave}>
+              <View style={[styles.primaryButton, { backgroundColor: theme.primary }, !canSave && styles.disabled]}>
+                <ThemedText type="cardTitle" style={styles.onPrimary}>
+                  {saving ? 'Creando…' : 'Crear pedido'}
+                </ThemedText>
+              </View>
+            </Pressable>
+          </ThemedView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
+
+      <NewProductSheet
+        initialName={newProductName}
+        onClose={() => setNewProductName(null)}
+        onExisting={(product) => {
+          addToCart(product, 1, product.purchasePrice);
+          setNewProductName(null);
+        }}
+        onCreated={(product, quantity, unitCost) => {
+          setProducts((prev) => [...prev, product].sort((a, b) => a.name.localeCompare(b.name)));
+          setAllProducts((prev) => [...prev, product]);
+          addToCart(product, quantity, unitCost);
+          setSearch('');
+          setNewProductName(null);
+        }}
+      />
     </ThemedView>
+  );
+}
+
+function NewProductTile({ width, onPress }: { width: number; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable onPress={onPress} style={{ width }}>
+      <View style={[styles.newTile, { borderColor: theme.primary, backgroundColor: theme.primaryLight }]}>
+        <PackagePlus color={theme.primary} size={26} />
+        <ThemedText type="smallBold" style={[styles.center, { color: theme.primary }]}>
+          Producto nuevo
+        </ThemedText>
+        <ThemedText type="caption" style={[styles.center, { color: theme.primary }]}>
+          Si aún no está en el catálogo
+        </ThemedText>
+      </View>
+    </Pressable>
+  );
+}
+
+// "Producto nuevo" from an order: the same create-product form as
+// Productos → Nuevo producto, in 'order' mode (no initial stock, a quantity
+// for this order instead), shown as a sheet over the order so nothing typed
+// here is lost.
+function NewProductSheet({
+  initialName,
+  onClose,
+  onExisting,
+  onCreated,
+}: {
+  // null = closed; '' or the search text = open, prefilled.
+  initialName: string | null;
+  onClose: () => void;
+  onExisting: (product: Product) => void;
+  onCreated: (product: Product, quantity: number, unitCost: number) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Modal
+      visible={initialName !== null}
+      animationType="slide"
+      presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : undefined}
+      onRequestClose={onClose}>
+      <ThemedView style={styles.flex}>
+        <View style={[styles.sheetHeader, { borderBottomColor: theme.border }]}>
+          <View style={styles.flex}>
+            <ThemedText type="sectionTitle">Producto nuevo</ThemedText>
+            <ThemedText type="caption" themeColor="textSecondary">
+              Se crea en el catálogo y se agrega a este pedido.
+            </ThemedText>
+          </View>
+          <Pressable onPress={onClose} hitSlop={10} style={[styles.closeButton, { backgroundColor: theme.backgroundElement }]}>
+            <X color={theme.text} size={20} />
+          </Pressable>
+        </View>
+        {initialName !== null ? (
+          <NewProductForm
+            key={initialName}
+            mode="order"
+            initialName={initialName}
+            submitLabel="Crear y agregar al pedido"
+            onCreated={(product, order) => onCreated(product, order?.quantity ?? 1, order?.unitCost ?? product.purchasePrice)}
+            onExisting={onExisting}
+            existingLabel={() => 'Agregar ese al pedido'}
+          />
+        ) : null}
+      </ThemedView>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.two },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  label: { marginTop: Spacing.two },
-  importButton: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
+  flex: { flex: 1 },
+  center: { textAlign: 'center' },
+  scrollContent: { padding: Layout.screenPadding, gap: Layout.cardGap, paddingBottom: Spacing.five },
+  chips: { flexDirection: 'row', gap: Spacing.two },
+  importCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, borderRadius: Radii.card, padding: Spacing.three },
+  iconDot: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  newTile: {
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderRadius: Radii.card,
+    padding: Spacing.two,
     alignItems: 'center',
-    marginBottom: Spacing.one,
-  },
-  importHint: { marginBottom: Spacing.two },
-  distributorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.two },
-  chip: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.five,
-  },
-  typeRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
-  typeFlex: { flex: 1 },
-  typeButton: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
-  },
-  productList: { maxHeight: 200, marginBottom: Spacing.two },
-  productRow: {
-    padding: Spacing.three,
-    borderRadius: Spacing.two,
-    marginBottom: Spacing.one,
-  },
-  sectionTitle: { marginTop: Spacing.two, marginBottom: Spacing.one },
-  cartRow: {
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
-    marginBottom: Spacing.two,
+    justifyContent: 'center',
     gap: Spacing.one,
+    minHeight: 168,
   },
-  cartRowHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cartName: { flex: 1, marginRight: Spacing.two },
-  cartRowFields: { flexDirection: 'row', gap: Spacing.two },
-  cartField: { flex: 1 },
-  totalBlock: {
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    borderRadius: Spacing.three,
+  createHint: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  totalAmount: { fontSize: 20 },
-  error: { color: '#d9534f' },
-  submitButton: {
-    marginTop: Spacing.three,
+    justifyContent: 'center',
+    gap: Spacing.one,
+    borderWidth: 1.5,
+    borderRadius: Radii.button,
     padding: Spacing.three,
-    borderRadius: Spacing.three,
-    alignItems: 'center',
+    marginTop: Spacing.three,
   },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingHorizontal: Layout.screenPadding,
+    paddingVertical: Spacing.three,
+    borderBottomWidth: 1,
+  },
+  closeButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+
+  moreButton: { borderRadius: Radii.button, padding: Spacing.three, alignItems: 'center', marginTop: Spacing.three },
+  cartCard: { borderRadius: Radii.card, paddingHorizontal: Spacing.three, paddingTop: Spacing.three, paddingBottom: Spacing.two },
+  cartHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: Spacing.two },
+  cartEmpty: { paddingBottom: Spacing.two },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
+  divider: { height: 1 },
+  errorBox: { borderRadius: Spacing.three, padding: Spacing.three },
+  bottomBar: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, borderTopWidth: 1, gap: Spacing.two },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  primaryButton: { alignItems: 'center', paddingVertical: Spacing.three, borderRadius: Radii.buttonPrimary },
+  onPrimary: { color: '#FFFFFF' },
+  disabled: { opacity: 0.5 },
 });

@@ -136,7 +136,16 @@ con agregaciones sobre los ledgers, nunca se guardan.
 no cancelado y nunca más de lo pendiente. Importación desde Excel
 (`lib/purchase-import.ts`): columnas por posición A=código, B=nombre,
 C=cantidad, D=valor unitario; empareja por nombre normalizado y crea productos
-nuevos si no hay coincidencia (riesgo conocido de duplicados).
+nuevos si no hay coincidencia (riesgo conocido de duplicados). En "Nuevo
+pedido" también se crea un producto a mano ("Producto nuevo"), con el **mismo
+formulario** de Productos → Nuevo producto (`components/new-product-form.tsx`,
+modo `order`: sin stock inicial — llega al recibir el pedido —, con cantidad
+para el pedido, costo obligatorio y precio de venta opcional = costo). Hay un
+solo formulario de creación de producto en toda la app; no duplicarlo. Ese
+formulario y la importación de Excel usan la misma regla de duplicados
+(`purchase-import.ts#planNewProduct`: un nombre que ya existe ofrece ese
+producto en vez de crear otro) y comparan contra **todo** el catálogo,
+incluidos los desactivados (el slug es único en la base).
 
 **Productos**: varias fotos (`product_images`, una principal garantizada por
 índice único parcial y por `lib/domain/product-images.ts`).
@@ -239,8 +248,11 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   base).
 - Rediseñadas con el lenguaje visual nuevo: Inicio, Vender (POS), Reportes,
   pantallas del vendedor, Productos (lista/crear/editar), Inventario, Ajustar
-  stock, Caja y Cuentas, Vendedores (lado dueño, todo). **Pendientes**:
-  Compras, Distribuidores, Categorías, Respaldo.
+  stock, Caja y Cuentas, Vendedores (lado dueño, todo), Compras y
+  Distribuidores. **Pendientes**: Categorías, Respaldo.
+- Compras: `components/purchase-status.tsx` (etiqueta y color por estado);
+  la lista acepta `?distributorId=` y "Nuevo pedido" también (distribuidor
+  preseleccionado); "Distribuidores" está en el encabezado de Compras.
 - `lib/format.ts#formatCOP` formatea a mano (sin `Intl` de moneda, poco
   confiable en Hermes); igual `formatDateTime`/`formatTime`.
 
@@ -292,8 +304,7 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
   - Diagnóstico: `ssh mivps`, y en la base `SELECT * FROM
     sync_applied_operations ORDER BY created_at DESC LIMIT 20`. Si la
     operación no aparece, el celular nunca la envió.
-- **Falta verificar en el celular**: Vendedores (lado dueño, rediseño
-  completo), Reportes (rediseño), pantallas del
+- **Falta verificar en el celular**: Compras y Distribuidores (rediseño), Reportes (rediseño), pantallas del
   vendedor, POS rediseñado, editar/crear producto, Productos/Inventario/
   Ajustar stock, Caja y Cuentas, transferencias entre cuentas (desplegar
   primero la web), importación de Excel, código de proveedor, sync reactiva

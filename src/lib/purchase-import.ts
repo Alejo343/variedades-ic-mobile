@@ -122,3 +122,20 @@ export function resolveImportRows(rows: ParsedImportRow[], existingProducts: Exi
 
   return resolved;
 }
+
+export type NewProductPlan =
+  | { ok: true; name: string; slug: string }
+  | { ok: false; reason: "empty" }
+  | { ok: false; reason: "duplicate"; existingId: number; existingName: string };
+
+// A product created on the fly from "Nuevo pedido": same rules as the Excel
+// import above — a name that normalizes to an existing product's is that
+// product (so the screen offers to add it instead of duplicating it), and the
+// slug is made unique against every existing one.
+export function planNewProduct(rawName: string, existingProducts: ExistingProductLookup[]): NewProductPlan {
+  const name = rawName.trim().replace(/\s+/g, " ");
+  if (!name) return { ok: false, reason: "empty" };
+  const match = existingProducts.find((p) => normalizeName(p.name) === normalizeName(name));
+  if (match) return { ok: false, reason: "duplicate", existingId: match.id, existingName: match.name };
+  return { ok: true, name, slug: uniqueSlug(toSlug(name), new Set(existingProducts.map((p) => p.slug))) };
+}

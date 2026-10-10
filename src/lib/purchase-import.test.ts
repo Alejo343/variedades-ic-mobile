@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCOPNumber, parseImportSheet, resolveImportRows } from "./purchase-import";
+import { parseCOPNumber, parseImportSheet, planNewProduct, resolveImportRows } from "./purchase-import";
 
 describe("parseCOPNumber", () => {
   it("redondea un número tal cual", () => {
@@ -77,5 +77,41 @@ describe("resolveImportRows", () => {
       [{ id: 2, name: "Otro Producto", sku: "GEN-00002", slug: "mouse-inalambrico" }],
     );
     expect(resolved).toEqual([{ kind: "new", name: "Mouse Inalámbrico!!", slug: "mouse-inalambrico-2", quantity: 1, unitCost: 9000 }]);
+  });
+});
+
+// Creating a product on the fly from "Nuevo pedido": same name rules as the
+// Excel import, so the two never disagree about what counts as a duplicate.
+describe('planNewProduct', () => {
+  const existing = [
+    { id: 1, name: 'Audífonos Bluetooth', sku: 'GEN-00001', slug: 'audifonos-bluetooth' },
+    { id: 2, name: 'Cargador', sku: 'GEN-00002', slug: 'cargador' },
+    { id: 3, name: 'Cargador USB', sku: 'GEN-00003', slug: 'cargador-2' },
+  ];
+
+  it('da un slug libre para un nombre nuevo', () => {
+    expect(planNewProduct('Parlante Mini', existing)).toEqual({ ok: true, name: 'Parlante Mini', slug: 'parlante-mini' });
+  });
+
+  it('trata espacios de más como el mismo nombre y evita slugs ocupados', () => {
+    expect(planNewProduct('Cargador  ', existing)).toEqual({ ok: false, reason: 'duplicate', existingId: 2, existingName: 'Cargador' });
+    expect(planNewProduct('cargador nuevo', [...existing, { id: 4, name: 'X', sku: 'GEN-4', slug: 'cargador-nuevo' }])).toEqual({
+      ok: true,
+      name: 'cargador nuevo',
+      slug: 'cargador-nuevo-2',
+    });
+  });
+
+  it('reconoce un duplicado sin importar tildes ni mayúsculas', () => {
+    expect(planNewProduct('  AUDIFONOS bluetooth ', existing)).toEqual({
+      ok: false,
+      reason: 'duplicate',
+      existingId: 1,
+      existingName: 'Audífonos Bluetooth',
+    });
+  });
+
+  it('rechaza un nombre vacío', () => {
+    expect(planNewProduct('   ', existing)).toEqual({ ok: false, reason: 'empty' });
   });
 });

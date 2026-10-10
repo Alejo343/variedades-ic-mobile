@@ -8,7 +8,7 @@ export default function PurchasesLayout() {
       <Stack.Screen name="[id]" options={{ title: 'Pedido' }} />
       <Stack.Screen name="distributors/index" options={{ title: 'Distribuidores' }} />
       <Stack.Screen name="distributors/new" options={{ title: 'Nuevo distribuidor', presentation: 'modal' }} />
-      <Stack.Screen name="distributors/[id]" options={{ title: 'Editar distribuidor' }} />
+      <Stack.Screen name="distributors/[id]" options={{ title: 'Distribuidor' }} />
       <Stack.Screen name="payments/new" options={{ title: 'Registrar pago', presentation: 'modal' }} />
     </Stack>
   );
