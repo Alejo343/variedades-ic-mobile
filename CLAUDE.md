@@ -304,15 +304,15 @@ Contrato con el servidor (detalle del lado web en el `CLAUDE.md` del repo web).
 
 ## Pendiente
 
-- **Único caso sin verificar en el celular** (el usuario confirmó el resto el
-  2026-10-09): inventario de vendedor en negativo. El celular nunca deja
-  vender más de lo que ve; se provoca con dos celulares desincronizados —
-  entrega de 1 unidad, el vendedor la vende en modo avión, el dueño registra
-  la devolución de esa unidad, el vendedor reconecta → la venta se acepta,
-  queda en −1 y aparece la tarjeta roja en `/admin`.
-  - Diagnóstico de sync: `ssh mivps`, y en la base `SELECT * FROM
-    sync_applied_operations ORDER BY created_at DESC LIMIT 20`. Si la
-    operación no aparece, el celular nunca la envió.
+- Verificación en el celular completa (2026-10-09), incluida una venta sin
+  conexión que dejó el stock principal en negativo (aceptada; tarjeta roja
+  en `/admin`, que solo cuenta stock principal). El negativo del inventario
+  de un vendedor usa el mismo mecanismo y no se probó por separado. El
+  celular nunca deja vender más de lo que ve: el negativo solo aparece con
+  dos dispositivos desincronizados.
+- Diagnóstico de sync: `ssh mivps`, y en la base `SELECT * FROM
+  sync_applied_operations ORDER BY created_at DESC LIMIT 20`. Si la
+  operación no aparece, el celular nunca la envió.
 - Diferido a propósito: catálogo de productos por proveedor (mejoraría la
   importación de Excel), reordenar fotos, fotos huérfanas al salir sin
   guardar.
