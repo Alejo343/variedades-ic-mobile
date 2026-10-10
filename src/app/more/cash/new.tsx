@@ -96,7 +96,6 @@ export default function NewCashMovementScreen() {
                   keyboardType="numeric"
                   placeholder="0"
                   placeholderTextColor={withAlpha(color, 0.35)}
-                  autoFocus
                   style={[styles.amountInput, { color }]}
                 />
               </View>

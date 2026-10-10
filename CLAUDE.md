@@ -261,7 +261,12 @@ web).
   Distribuidores, Categorías y el menú Más del dueño (grupos Negocio /
   Catálogo con un dato en vivo por fila) y Buscar. Buscar usa
   `lib/search.ts` (sin tildes ni mayúsculas, mejor coincidencia primero,
-  "#7" o "7" = exactamente la venta/pedido 7).
+  "#7" o "7" = exactamente la venta/pedido 7). Inicio (dueño) usa
+  `lib/home-summary.ts`: "Vendido hoy" = ventas en local + de vendedores
+  (no caja), gráfico de 7 días por día local, más vendidos de 30 días; su
+  sección Pendientes junta rechazos de sync, agotados, stock bajo, lo que los
+  vendedores de consignación deben liquidar, cuentas por pagar y pedidos en
+  camino.
 - Categorías (`components/category-form.tsx`): muestran el prefijo de SKU que
   reciben sus productos (`domain/sku.ts#getSkuPrefix`) y bloquean un nombre o
   slug repetido antes de guardar (slug único en la base). Renombrar una
