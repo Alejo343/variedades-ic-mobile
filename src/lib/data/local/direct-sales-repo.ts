@@ -1,10 +1,11 @@
 import { desc, eq } from "drizzle-orm";
-import { calculateCommission, type CommissionConfig } from "../../domain/commission";
+import { calculateCommission, type CommissionLine } from "../../domain/commission";
 import { enqueueOperation } from "../../sync/outbox";
 import type { DirectSaleInput } from "../../validations";
 import type { DirectSale, DirectSaleItem, DirectSalesRepo } from "../direct-sales-repo";
 import { recordCashMovementTx } from "./cash-repo";
 import { db } from "./db";
+import { productCommissionBps } from "./product-commission";
 import { cashAccounts, directSaleItems, directSales, sellers } from "./schema";
 import { recordProductMovement } from "./stock-movements";
 
@@ -61,7 +62,7 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         .returning();
 
       let totalAmount = 0;
-      let totalQuantity = 0;
+      const commissionLines: CommissionLine[] = [];
       const items: DirectSaleItem[] = [];
       const outboxItems: { uuid: string; productUuid: string; quantity: number; unitPrice: number; movementUuid: string }[] = [];
 
@@ -77,7 +78,9 @@ export const localDirectSalesRepo: DirectSalesRepo = {
 
         const subtotal = item.quantity * item.unitPrice;
         totalAmount += subtotal;
-        totalQuantity += item.quantity;
+        if (seller) {
+          commissionLines.push({ quantity: item.quantity, unitPrice: item.unitPrice, commissionBps: await productCommissionBps(tx, item.productId) });
+        }
 
         const [row] = await tx
           .insert(directSaleItems)
@@ -87,15 +90,10 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         outboxItems.push({ uuid: row.uuid, productUuid, quantity: item.quantity, unitPrice: item.unitPrice, movementUuid });
       }
 
-      // Local estimate only: the server recomputes the commission with the
-      // seller's current config and the next pull replaces this value.
-      const commissionAmount = seller
-        ? calculateCommission(
-            { type: seller.commissionType as CommissionConfig["type"], value: seller.commissionValue },
-            totalAmount,
-            totalQuantity,
-          )
-        : 0;
+      // Local estimate only: the server recomputes the commission with each
+      // product's current percentage (on the line's already-discounted
+      // unitPrice) and the next pull replaces this value.
+      const commissionAmount = calculateCommission(commissionLines);
       const [updated] = await tx
         .update(directSales)
         .set({ totalAmount, commissionAmount })

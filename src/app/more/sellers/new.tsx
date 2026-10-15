@@ -9,7 +9,6 @@ import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { sellersRepo } from '@/lib/data';
-import { parseCommissionInput } from '@/lib/seller-commission';
 import { sellerSchema } from '@/lib/validations';
 
 export default function NewSellerScreen() {
@@ -19,16 +18,13 @@ export default function NewSellerScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const commissionValue = parseCommissionInput(values.commissionType, values.commission);
-  const canSave = values.name.trim().length > 0 && commissionValue !== null && !saving;
+  const canSave = values.name.trim().length > 0 && !saving;
 
   async function handleSubmit() {
     const parsed = sellerSchema.safeParse({
       name: values.name.trim(),
       phone: values.phone.trim() || undefined,
       city: values.city.trim() || undefined,
-      commissionType: values.commissionType,
-      commissionValue,
       inventoryMode: values.inventoryMode,
       notes: values.notes.trim() || undefined,
     });

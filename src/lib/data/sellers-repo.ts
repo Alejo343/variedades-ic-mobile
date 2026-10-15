@@ -7,8 +7,6 @@ export type Seller = {
   name: string;
   phone: string | null;
   city: string | null;
-  commissionType: "percentage" | "fixed_per_unit";
-  commissionValue: number;
   inventoryMode: SellerInventoryMode;
   active: boolean;
   notes: string | null;

@@ -113,9 +113,27 @@ con agregaciones sobre los ledgers, nunca se guardan.
   una transacción. El descuento se reparte proporcionalmente entre los
   `unitPrice` de las líneas (no hay columna de descuento).
 - Venta de vendedor de consignación (`seller_sales`): descuenta solo su
-  inventario, calcula comisión (`commission.ts`), **no toca caja** (entra al
-  liquidar).
-- `commissionValue` en porcentaje va en puntos base (`1500` = 15%).
+  inventario, calcula comisión, **no toca caja** (entra al liquidar).
+
+**Comisión** (decisión del usuario, 2026-10-14): es **por producto**, un
+porcentaje del precio de venta en `products.commission_bps` (puntos base,
+`1500` = 15%), **igual para todos los vendedores**. Los vendedores ya no
+tienen comisión propia ni existe la fija por unidad.
+- `lib/domain/commission.ts` (copia idéntica de la web): por línea
+  `round(cantidad × unitPrice × bps / 10000)` y la venta suma sus líneas. Se
+  calcula sobre el `unitPrice` cobrado (en tienda, ya con el descuento
+  repartido). `parseCommissionPercent`/`formatCommissionPercent` para formularios
+  y Excel.
+- Obligatoria al crear un producto (formulario único, campo
+  `components/commission-field.tsx`, también en Editar producto). Los productos
+  que existían quedaron en 0%.
+- El celular estima y el servidor recalcula con el % que tenga el producto
+  cuando le llega la venta (el pull reemplaza la estimación). Las ventas ya
+  guardadas no se recalculan al cambiar un %. Liquidaciones y pagos de
+  comisiones siguen sumando `commissionAmount`.
+- `sellers.commission_type`/`commission_value` quedan **sin uso** (se llenan
+  con `'percentage'`/`0` porque son `NOT NULL`) solo mientras haya celulares
+  con la versión anterior; se borran en los dos repos cuando todos actualicen.
 
 **Vendedores**: `sellers.inventory_mode` = `consignment` | `store`.
 - **Tienda**: vende del inventario principal con el mismo POS; su venta es una
@@ -135,8 +153,11 @@ con agregaciones sobre los ledgers, nunca se guardan.
 `stockUpdated`). `totalCost` se calcula de los items. Pagos solo a crédito,
 no cancelado y nunca más de lo pendiente. Importación desde Excel
 (`lib/purchase-import.ts`): columnas por posición A=código, B=nombre,
-C=cantidad, D=valor unitario; empareja por nombre normalizado y crea productos
-nuevos si no hay coincidencia (riesgo conocido de duplicados). En "Nuevo
+C=cantidad, D=valor unitario, E=total (no se lee), F=% de comisión; empareja
+por nombre normalizado y crea productos nuevos si no hay coincidencia (riesgo
+conocido de duplicados). La F solo se usa en los productos nuevos y es
+obligatoria para ellos: si a alguno le falta, no se importa nada
+(`newProductsMissingCommission`); a un producto existente no se le cambia. En "Nuevo
 pedido" también se crea un producto a mano ("Producto nuevo"), con el **mismo
 formulario** de Productos → Nuevo producto (`components/new-product-form.tsx`,
 modo `order`: sin stock inicial — llega al recibir el pedido —, con cantidad
@@ -252,9 +273,7 @@ web).
   (cifras, acciones, inventario, actividad, historial filtrado, acceso a la
   app); editar datos está en `[id]/edit.tsx`. Los historiales (entregas,
   ventas, devoluciones, pérdidas, liquidaciones, `sell/history`) aceptan
-  `?sellerId=` para mostrar solo los de un vendedor. La comisión en porcentaje
-  se escribe como porcentaje (`lib/seller-commission.ts` convierte a puntos
-  base).
+  `?sellerId=` para mostrar solo los de un vendedor.
 - Rediseñadas con el lenguaje visual nuevo: Inicio, Vender (POS), Reportes,
   pantallas del vendedor, Productos (lista/crear/editar), Inventario, Ajustar
   stock, Caja y Cuentas, Vendedores (lado dueño, todo), Compras,
@@ -321,6 +340,12 @@ web).
 - Sin probar por separado: el inventario de un **vendedor** en negativo (usa
   el mismo mecanismo que el stock principal, que sí se verificó). Solo pasa
   con dos dispositivos desincronizados.
+- **Comisión por producto (2026-10-14)**: falta verificarla en el celular y
+  en la web desplegada (lista de pasos en la sesión). Después, llenar el % de
+  los productos existentes (están en 0%: hasta entonces sus ventas dan $0 de
+  comisión y no se recalculan). Cuando todos los celulares tengan la versión
+  nueva, borrar `sellers.commission_type`/`commission_value` en los dos repos
+  (el pull deja de enviarlos).
 - Diferido a propósito: catálogo de productos por proveedor (mejoraría la
   importación de Excel), reordenar fotos, fotos huérfanas al salir sin
   guardar.

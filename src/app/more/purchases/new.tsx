@@ -16,7 +16,7 @@ import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { distributorsRepo, productsRepo, purchaseOrdersRepo, type Distributor, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
-import { parseImportSheet, resolveImportRows } from '@/lib/purchase-import';
+import { newProductsMissingCommission, parseImportSheet, resolveImportRows } from '@/lib/purchase-import';
 import { purchaseOrderSchema } from '@/lib/validations';
 
 type CartItem = { productId: number; name: string; imageUri: string | null; quantity: number; unitCost: string };
@@ -109,7 +109,8 @@ export default function NewPurchaseOrderScreen() {
   // código in column A never matches our auto-generated SKU, so name is the
   // only usable key — see resolveImportRows). Rows with no match create a new
   // product on the spot (price defaults to the imported unit cost since the
-  // sheet has no sale price — editable later from the product's detail screen).
+  // sheet has no sale price — editable later from the product's detail screen;
+  // its sellers' commission comes from column F, required for those rows).
   async function handleImportExcel() {
     const picked = await File.pickFileAsync({
       mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'],
@@ -131,6 +132,15 @@ export default function NewPurchaseOrderScreen() {
       }
 
       const resolved = resolveImportRows(rows, allProducts);
+
+      // All or nothing: a product can't be created without its commission.
+      const missing = newProductsMissingCommission(resolved);
+      if (missing.length > 0) {
+        setError(
+          `No se importó nada: ${missing.length === 1 ? 'este producto nuevo no tiene' : 'estos productos nuevos no tienen'} el % de comisión del vendedor en la columna F: ${missing.join(', ')}. Complétalo en el Excel y vuelve a importarlo.`,
+        );
+        return;
+      }
       const newItems: CartItem[] = [];
       let createdCount = 0;
 
@@ -144,6 +154,8 @@ export default function NewPurchaseOrderScreen() {
             slug: row.slug,
             price: row.unitCost,
             purchasePrice: row.unitCost,
+            // Never null here: newProductsMissingCommission returned early.
+            commissionBps: row.commissionBps ?? 0,
             stock: 0,
             minStock: 0,
             active: true,
@@ -224,7 +236,8 @@ export default function NewPurchaseOrderScreen() {
                 <View style={styles.flex}>
                   <ThemedText type="smallBold">{importing ? 'Importando…' : 'Importar desde Excel'}</ThemedText>
                   <ThemedText type="caption" themeColor="textSecondary">
-                    Columnas: código, nombre, cantidad, valor unitario. Lo que no esté en el catálogo se crea.
+                    Columnas: A código, B nombre, C cantidad, D valor unitario, E total y F % de comisión del vendedor. Lo
+                    que no esté en el catálogo se crea, y para eso necesita su comisión en la F.
                   </ThemedText>
                 </View>
               </ThemedView>

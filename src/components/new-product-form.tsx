@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CommissionField } from '@/components/commission-field';
 import { FormChip, FormField, FormInput, FormRow, FormSection } from '@/components/form';
 import { ProductImageGallery } from '@/components/product-image-gallery';
 import { ThemedText } from '@/components/themed-text';
@@ -9,6 +10,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
+import { parseCommissionPercent } from '@/lib/domain/commission';
 import type { ImageDraft } from '@/lib/domain/product-images';
 import { formatCOP } from '@/lib/format';
 import { planNewProduct } from '@/lib/purchase-import';
@@ -22,7 +24,7 @@ import { productSchema, toSlug } from '@/lib/validations';
 //   a quantity for the order. The cost is required (it's the order line's
 //   cost); the sale price may stay empty and then equals the cost, same as
 //   the Excel import.
-// In both, a name that already exists (planNewProduct: no accents, case or
+// In both, the sellers' commission (%) is required, and a name that already exists (planNewProduct: no accents, case or
 // extra spaces; inactive products included) blocks a duplicate and offers
 // that product instead.
 type Props = {
@@ -57,6 +59,7 @@ export function NewProductForm({ mode, initialName = '', submitLabel, onCreated,
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
+  const [commission, setCommission] = useState('');
   const [distributorCode, setDistributorCode] = useState('');
   const [stock, setStock] = useState('');
   const [orderQuantity, setOrderQuantity] = useState('1');
@@ -81,21 +84,24 @@ export function NewProductForm({ mode, initialName = '', submitLabel, onCreated,
   // In an order the sale price may be left empty: it then equals the cost.
   const salePrice = isOrder && !price.trim() ? cost : typedPrice;
   const quantity = Math.floor(Number(orderQuantity) || 0);
+  const commissionBps = parseCommissionPercent(commission);
   const canSave =
     plan.ok &&
     salePrice !== null &&
+    commissionBps !== null &&
     (!isOrder || (cost !== null && quantity >= 1)) &&
     (purchasePrice.trim() === '' || cost !== null) &&
     !saving;
 
   async function handleSubmit() {
-    if (!plan.ok || salePrice === null) return;
+    if (!plan.ok || salePrice === null || commissionBps === null) return;
     const parsed = productSchema.safeParse({
       name: plan.name,
       slug,
       description: description.trim() || undefined,
       price: salePrice,
       purchasePrice: cost ?? 0,
+      commissionBps,
       categoryId,
       distributorCode: distributorCode.trim() || undefined,
       stock: isOrder ? 0 : Number(stock) || 0,
@@ -182,6 +188,7 @@ export function NewProductForm({ mode, initialName = '', submitLabel, onCreated,
               Si dejas vacío el precio de venta, queda igual al costo. Lo cambias después en el producto.
             </ThemedText>
           ) : null}
+          <CommissionField value={commission} onChange={setCommission} salePrice={salePrice} />
           {showMargin ? (
             <View style={[styles.notice, { backgroundColor: withAlpha(gain < 0 ? theme.error : theme.primary, 0.08) }]}>
               <ThemedText type="small" style={{ color: gain < 0 ? theme.error : theme.primary }}>

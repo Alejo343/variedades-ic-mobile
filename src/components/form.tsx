@@ -41,7 +41,7 @@ export function FormRow({ children }: { children: ReactNode }) {
   return <View style={styles.row}>{children}</View>;
 }
 
-export function FormInput({ prefix, style, multiline, ...props }: TextInputProps & { prefix?: string }) {
+export function FormInput({ prefix, suffix, style, multiline, ...props }: TextInputProps & { prefix?: string; suffix?: string }) {
   const theme = useTheme();
   return (
     <View style={[styles.inputBox, { borderColor: theme.border, backgroundColor: theme.background }, multiline && styles.inputBoxMultiline]}>
@@ -56,6 +56,11 @@ export function FormInput({ prefix, style, multiline, ...props }: TextInputProps
         style={[styles.input, { color: theme.text }, multiline && styles.inputMultiline, style]}
         {...props}
       />
+      {suffix ? (
+        <ThemedText type="default" themeColor="textSecondary">
+          {suffix}
+        </ThemedText>
+      ) : null}
     </View>
   );
 }

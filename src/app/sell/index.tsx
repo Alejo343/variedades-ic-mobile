@@ -8,11 +8,12 @@ import { AnimatedTotal, CartRow, GRID_COLUMNS, gridCardWidth, PosSearchBar, Prod
 import { SellerSaleForm } from '@/components/seller-sale-form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Layout, Radii, Shadow, Spacing } from '@/constants/theme';
+import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useMySeller } from '@/hooks/use-my-seller';
 import { useTheme } from '@/hooks/use-theme';
 import { cashAccountsRepo, categoriesRepo, directSalesRepo, productsRepo, type CashAccount, type Category, type Product } from '@/lib/data';
+import { calculateCommission, formatCommissionPercent } from '@/lib/domain/commission';
 import { formatCOP } from '@/lib/format';
 import { triggerSaleSuccessOverlay } from '@/lib/success-overlay';
 import { directSaleSchema } from '@/lib/validations';
@@ -25,6 +26,8 @@ type CartItem = {
   stock: number;
   quantity: string;
   unitPrice: string;
+  // The product's commission (basis points): what a store seller earns on it.
+  commissionBps: number;
 };
 
 // There's no discount column on direct_sale_items — instead of adding one, the
@@ -175,6 +178,14 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0), [cart]);
   const discountAmount = Math.min(subtotal, Math.max(0, Number(discount) || 0));
   const grandTotal = subtotal - discountAmount;
+  // A store seller's commission: each product's percentage on the line's
+  // price after the discount (same lines the sale is saved with).
+  const commission =
+    sellerId === undefined
+      ? null
+      : calculateCommission(
+          applyDiscount(cart, subtotal, grandTotal).map((line, i) => ({ ...line, commissionBps: cart[i].commissionBps })),
+        );
 
   function toggleDiscount() {
     setShowDiscount((prev) => {
@@ -199,6 +210,7 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
           stock: product.stock,
           quantity: '1',
           unitPrice: String(product.price),
+          commissionBps: product.commissionBps,
         },
       ];
     });
@@ -313,7 +325,9 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
                 ) : null
               }
               renderItem={({ item }) => {
-                const { caption, tone } = stockCaption(item);
+                const stock = stockCaption(item);
+                const caption = sellerId === undefined ? stock.caption : `${stock.caption} · ganas ${formatCommissionPercent(item.commissionBps)}`;
+                const tone = stock.tone;
                 const inCart = quantityById.has(item.id);
                 return (
                   <ProductCard
@@ -382,6 +396,7 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
         onChangeDiscount={setDiscount}
         subtotal={subtotal}
         grandTotal={grandTotal}
+        commission={commission}
         error={error}
         saving={saving}
         onIncrement={(id) => changeQuantity(id, 1)}
@@ -433,6 +448,8 @@ type CheckoutSheetProps = {
   onChangeDiscount: (v: string) => void;
   subtotal: number;
   grandTotal: number;
+  // Only for a store seller: what they earn on this sale (null = the owner).
+  commission: number | null;
   error: string | null;
   saving: boolean;
   onIncrement: (productId: number) => void;
@@ -607,6 +624,16 @@ function CheckoutSheet(props: CheckoutSheetProps) {
               <ThemedText type="cardTitle">Total</ThemedText>
               <AnimatedTotal value={props.grandTotal} color={theme.primary} />
             </View>
+            {props.commission !== null ? (
+              <View style={[styles.commissionRow, { backgroundColor: withAlpha(theme.primary, 0.08) }]}>
+                <ThemedText type="small" style={{ color: theme.primary }}>
+                  Tu comisión por esta venta
+                </ThemedText>
+                <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                  {formatCOP(props.commission)}
+                </ThemedText>
+              </View>
+            ) : null}
 
             {props.error ? <ThemedText style={{ color: theme.error }}>{props.error}</ThemedText> : null}
 
@@ -721,6 +748,14 @@ const styles = StyleSheet.create({
 
   sheetFooter: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three, gap: Spacing.two, borderTopWidth: 1 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  commissionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
   chargeButton: { alignItems: 'center', paddingVertical: Spacing.four, borderRadius: Radii.buttonPrimary, marginTop: Spacing.one },
   disabled: { opacity: 0.5 },
 });

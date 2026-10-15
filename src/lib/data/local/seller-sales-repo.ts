@@ -1,8 +1,9 @@
 import { desc, eq, isNotNull, sql } from "drizzle-orm";
-import { calculateCommission, type CommissionConfig } from "../../domain/commission";
+import { calculateCommission, type CommissionLine } from "../../domain/commission";
 import { enqueueOperation } from "../../sync/outbox";
 import type { SellerSaleInput } from "../../validations";
 import type { SellerSale, SellerSaleItem, SellerSalesRepo } from "../seller-sales-repo";
+import { productCommissionBps } from "./product-commission";
 import { recordSellerMovement } from "./stock-movements";
 import { db } from "./db";
 import { directSales, sellers, sellerSaleItems, sellerSales } from "./schema";
@@ -61,7 +62,7 @@ export const localSellerSalesRepo: SellerSalesRepo = {
         .returning();
 
       let totalAmount = 0;
-      let totalQuantity = 0;
+      const commissionLines: CommissionLine[] = [];
       const items: SellerSaleItem[] = [];
       const outboxItems: { uuid: string; productUuid: string; quantity: number; unitPrice: number; movementUuid: string }[] = [];
 
@@ -78,7 +79,7 @@ export const localSellerSalesRepo: SellerSalesRepo = {
 
         const subtotal = item.quantity * item.unitPrice;
         totalAmount += subtotal;
-        totalQuantity += item.quantity;
+        commissionLines.push({ quantity: item.quantity, unitPrice: item.unitPrice, commissionBps: await productCommissionBps(tx, item.productId) });
 
         const [row] = await tx
           .insert(sellerSaleItems)
@@ -88,8 +89,8 @@ export const localSellerSalesRepo: SellerSalesRepo = {
         outboxItems.push({ uuid: row.uuid, productUuid, quantity: item.quantity, unitPrice: item.unitPrice, movementUuid });
       }
 
-      const commissionConfig: CommissionConfig = { type: seller.commissionType as CommissionConfig["type"], value: seller.commissionValue };
-      const commissionAmount = calculateCommission(commissionConfig, totalAmount, totalQuantity);
+      // Each product's own percentage (domain/commission.ts).
+      const commissionAmount = calculateCommission(commissionLines);
 
       // A diferencia de direct-sales-repo, esto no genera un ingreso en
       // cash_movements: el dinero de la venta lo retiene el vendedor hasta
@@ -101,7 +102,7 @@ export const localSellerSalesRepo: SellerSalesRepo = {
         .returning();
 
       // commissionAmount/totalAmount aren't sent: the server recomputes both
-      // from the seller's current commission config, then the phone's next
+      // from each product's current commission, then the phone's next
       // pull replaces this local estimate (CLAUDE.md, "Fase 10", sub-paso 7
       // parte 2).
       await enqueueOperation(tx, "createSellerSale", {

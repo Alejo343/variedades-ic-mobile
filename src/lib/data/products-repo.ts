@@ -13,6 +13,9 @@ export type Product = {
   sku: string;
   price: number;
   purchasePrice: number;
+  // Sellers' commission, basis points of the sale price (1500 = 15%) — the
+  // same for every seller (domain/commission.ts).
+  commissionBps: number;
   categoryId: number | null;
   distributorCode: string | null;
   stock: number;

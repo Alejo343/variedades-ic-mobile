@@ -28,7 +28,7 @@ describe("applyPullPage: aplica un lote completo del servidor", async () => {
       cash_accounts: [{ uuid: "acc-1", name: "Efectivo", type: "efectivo", active: true, notes: null }],
       products: [{
         uuid: "prod-1", name: "Audífonos", slug: "audifonos", description: null, sku: "TEC-00001", price: 50000,
-        purchasePrice: 30000, categoryUuid: "cat-1", distributorCode: null, stock: 17, minStock: 2, warrantyMonths: null,
+        purchasePrice: 30000, commissionBps: 1250, categoryUuid: "cat-1", distributorCode: null, stock: 17, minStock: 2, warrantyMonths: null,
         active: true, updatedAt: "2026-09-26 10:00:00",
       }],
       product_images: [
@@ -59,9 +59,10 @@ describe("applyPullPage: aplica un lote completo del servidor", async () => {
     await proxy.transaction((tx) => applyPullPage(tx as unknown as AnyTx, page));
 
     const category = one("SELECT id FROM categories WHERE uuid = 'cat-1'");
-    const product = one("SELECT id, category_id, stock FROM products WHERE uuid = 'prod-1'");
+    const product = one("SELECT id, category_id, stock, commission_bps FROM products WHERE uuid = 'prod-1'");
     expect(product.category_id).toBe(category.id);
     expect(product.stock).toBe(17); // el servidor manda, no un valor local
+    expect(product.commission_bps).toBe(1250);
 
     const account = one("SELECT id FROM cash_accounts WHERE uuid = 'acc-1'");
     const sale = one("SELECT id, account_id FROM direct_sales WHERE uuid = 'sale-1'");

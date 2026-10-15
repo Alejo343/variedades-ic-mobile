@@ -13,6 +13,13 @@ export const productSchema = z.object({
   description: z.string().optional(),
   price: z.number().int().min(0, "El precio debe ser mayor a 0"),
   purchasePrice: z.number().int().min(0, "El precio de compra debe ser mayor a 0").optional().default(0),
+  // Sellers' commission, percentage of the sale price in basis points (1500 = 15%).
+  // Required on create; an update without it keeps the current one.
+  commissionBps: z
+    .number({ error: "La comisión del vendedor es obligatoria" })
+    .int()
+    .min(0, "La comisión no puede ser negativa")
+    .max(10000, "La comisión no puede pasar de 100%"),
   categoryId: z.number().int().nullable().optional(),
   distributorCode: z.string().trim().min(1).optional(),
   stock: z.number().int().min(0).optional().default(0),
@@ -70,8 +77,6 @@ export const sellerSchema = z.object({
   name: z.string().min(1, "El nombre es requerido"),
   phone: z.string().optional(),
   city: z.string().optional(),
-  commissionType: z.enum(["percentage", "fixed_per_unit"]),
-  commissionValue: z.number().int().min(0, "El valor de comisión debe ser mayor o igual a 0"),
   inventoryMode: sellerInventoryModeSchema.optional(),
   active: z.boolean().optional().default(true),
   notes: z.string().optional(),

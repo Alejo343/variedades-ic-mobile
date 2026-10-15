@@ -95,9 +95,11 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       await upsert(tx, categories, uuid, { name: row.name, slug: row.slug, description: row.description, active: row.active });
       return;
     case 'sellers':
+      // commissionType/commissionValue are unused (the commission lives on the
+      // product); filled only because the columns are still NOT NULL here.
       await upsert(tx, sellers, uuid, {
-        name: row.name, phone: row.phone, city: row.city, commissionType: row.commissionType,
-        commissionValue: row.commissionValue, inventoryMode: row.inventoryMode, active: row.active, notes: row.notes,
+        name: row.name, phone: row.phone, city: row.city, commissionType: row.commissionType ?? 'percentage',
+        commissionValue: row.commissionValue ?? 0, inventoryMode: row.inventoryMode, active: row.active, notes: row.notes,
       });
       return;
     case 'distributors':
@@ -110,7 +112,7 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       const categoryId = await localIdNullable(tx, categories, row.categoryUuid as string | null);
       await upsert(tx, products, uuid, {
         name: row.name, slug: row.slug, description: row.description, sku: row.sku, price: row.price,
-        purchasePrice: row.purchasePrice, categoryId, distributorCode: row.distributorCode, stock: row.stock,
+        purchasePrice: row.purchasePrice, commissionBps: row.commissionBps, categoryId, distributorCode: row.distributorCode, stock: row.stock,
         minStock: row.minStock, warrantyMonths: row.warrantyMonths, active: row.active, updatedAt: row.updatedAt,
       });
       return;

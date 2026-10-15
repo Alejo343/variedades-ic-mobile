@@ -62,6 +62,9 @@ export const products = sqliteTable("products", {
   sku: text("sku").notNull().unique(),
   price: integer("price").notNull(),
   purchasePrice: integer("purchase_price").notNull().default(0),
+  // Sellers' commission on this product, a percentage of the sale price in
+  // basis points (1500 = 15%) — the same for every seller (domain/commission.ts).
+  commissionBps: integer("commission_bps").notNull().default(0),
   categoryId: integer("category_id").references(() => categories.id),
   // Optional code the distributor assigns to this specific product (their own
   // SKU for it) — not a reference to `distributors.id`, just a free-text
@@ -126,6 +129,8 @@ export const sellers = sqliteTable("sellers", {
   name: text("name").notNull(),
   phone: text("phone"),
   city: text("city"),
+  // Unused since the commission moved to products.commissionBps; kept only
+  // until the server stops sending them (both repos drop them together).
   commissionType: text("commission_type").notNull(),
   commissionValue: integer("commission_value").notNull(),
   // 'consignment': sells only their own consigned stock and settles later.

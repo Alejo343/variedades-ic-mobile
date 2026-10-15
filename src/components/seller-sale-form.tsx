@@ -11,7 +11,7 @@ import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useMySeller } from '@/hooks/use-my-seller';
 import { useTheme } from '@/hooks/use-theme';
-import { calculateCommission, type CommissionConfig } from '@/lib/domain/commission';
+import { calculateCommission, formatCommissionPercent } from '@/lib/domain/commission';
 import { productsRepo, sellersRepo, sellerSalesRepo, type Seller } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 import { triggerSaleSuccessOverlay } from '@/lib/success-overlay';
@@ -24,6 +24,8 @@ type InventoryOption = {
   imageUri: string | null;
   available: number;
   defaultPrice: number;
+  // The product's commission (basis points) — every seller earns it.
+  commissionBps: number;
 };
 type CartItem = {
   productId: number;
@@ -32,6 +34,7 @@ type CartItem = {
   available: number;
   quantity: number;
   unitPrice: string;
+  commissionBps: number;
 };
 
 const PAGE_SIZE = 6;
@@ -75,6 +78,7 @@ export function SellerSaleForm({ sellerId, onSaved }: { sellerId: number; onSave
             sku: productById[line.productId]?.sku ?? '',
             imageUri: productById[line.productId]?.primaryImageUri ?? null,
             defaultPrice: productById[line.productId]?.price ?? 0,
+            commissionBps: productById[line.productId]?.commissionBps ?? 0,
           })),
         );
         setLoaded(true);
@@ -94,16 +98,16 @@ export function SellerSaleForm({ sellerId, onSaved }: { sellerId: number; onSave
   const unitsHeld = options.reduce((sum, o) => sum + o.available, 0);
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.quantity * (Number(item.unitPrice) || 0), 0), [cart]);
-  const totalQuantity = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
 
-  const estimatedCommission = useMemo(() => {
-    if (!seller) return 0;
-    const config: CommissionConfig = {
-      type: seller.commissionType,
-      value: seller.commissionValue,
-    };
-    return calculateCommission(config, total, totalQuantity);
-  }, [seller, total, totalQuantity]);
+  // Same rule as the repo (and the server): each product's own percentage on
+  // the price actually charged on its line.
+  const estimatedCommission = useMemo(
+    () =>
+      calculateCommission(
+        cart.map((item) => ({ quantity: item.quantity, unitPrice: Number(item.unitPrice) || 0, commissionBps: item.commissionBps })),
+      ),
+    [cart],
+  );
 
   function toggleProduct(option: InventoryOption) {
     setCart((prev) => {
@@ -119,6 +123,7 @@ export function SellerSaleForm({ sellerId, onSaved }: { sellerId: number; onSave
           available: option.available,
           quantity: 1,
           unitPrice: String(option.defaultPrice),
+          commissionBps: option.commissionBps,
         },
       ];
     });
@@ -228,7 +233,7 @@ export function SellerSaleForm({ sellerId, onSaved }: { sellerId: number; onSave
                       name={option.name}
                       price={option.defaultPrice}
                       imageUri={option.imageUri}
-                      caption={`${isSeller ? 'Tienes' : 'Tiene'} ${option.available}`}
+                      caption={`${isSeller ? 'Tienes' : 'Tiene'} ${option.available} · ${isSeller ? 'ganas' : 'gana'} ${formatCommissionPercent(option.commissionBps)}`}
                       cardWidth={cardWidth}
                       selected={cart.some((item) => item.productId === option.productId)}
                       quantity={cart.find((item) => item.productId === option.productId)?.quantity}

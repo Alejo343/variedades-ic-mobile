@@ -51,21 +51,23 @@ describe("cada repo local encola su operación (sub-paso 10)", async () => {
     const catRow = raw.prepare("SELECT uuid FROM categories WHERE id = ?").get(category.id) as { uuid: string };
     expect(lastPayload()).toMatchObject({ uuid: catRow.uuid, name: "Hogar", active: true });
 
-    const product = await localProductsRepo.create({ name: "Cable", slug: "cable", price: 5000, purchasePrice: 0, stock: 0, minStock: 0, active: true, categoryId: 1 });
+    const product = await localProductsRepo.create({ name: "Cable", slug: "cable", price: 5000, purchasePrice: 0, commissionBps: 1500, stock: 0, minStock: 0, active: true, categoryId: 1 });
     expect(last().type).toBe("upsertProduct");
     const prodRow = raw.prepare("SELECT uuid FROM products WHERE id = ?").get(product.id) as { uuid: string };
     // sku/stock aren't in the payload at all — the server owns both.
-    expect(lastPayload()).toMatchObject({ uuid: prodRow.uuid, name: "Cable", categoryUuid: "cat-1" });
+    expect(lastPayload()).toMatchObject({ uuid: prodRow.uuid, name: "Cable", categoryUuid: "cat-1", commissionBps: 1500 });
     expect(lastPayload()).not.toHaveProperty("sku");
     expect(lastPayload()).not.toHaveProperty("stock");
     // Se creó sin fotos: nada pendiente de subir, así que la galería (vacía)
     // ya viaja en este mismo mensaje — no hace falta esperar al sub-paso 13.
     expect(lastPayload()).toMatchObject({ images: [] });
 
-    const seller = await localSellersRepo.create({ name: "Pedro", commissionType: "percentage", commissionValue: 500, active: true });
+    const seller = await localSellersRepo.create({ name: "Pedro", active: true });
     expect(last().type).toBe("upsertSeller");
     const sellerRow = raw.prepare("SELECT uuid FROM sellers WHERE id = ?").get(seller.id) as { uuid: string };
     expect(lastPayload()).toMatchObject({ uuid: sellerRow.uuid, name: "Pedro" });
+    // The commission lives on the product: the seller no longer carries one.
+    expect(lastPayload()).not.toHaveProperty("commissionType");
 
     const distributor = await localDistributorsRepo.create({ name: "Proveedor Y", active: true });
     expect(last().type).toBe("upsertDistributor");
@@ -84,7 +86,7 @@ describe("cada repo local encola su operación (sub-paso 10)", async () => {
 
   it("crear un producto con stock inicial > 0 también encola un ajuste (el servidor nunca toma el stock del upsertProduct)", async () => {
     const before = outboxCount();
-    const product = await localProductsRepo.create({ name: "Taza", slug: "taza", price: 10000, purchasePrice: 0, stock: 7, minStock: 0, active: true });
+    const product = await localProductsRepo.create({ name: "Taza", slug: "taza", price: 10000, purchasePrice: 0, commissionBps: 0, stock: 7, minStock: 0, active: true });
     // Dos operaciones nuevas: upsertProduct (sin stock, como siempre) y, justo
     // después, el ajuste que sí sincroniza el 7 inicial con un movimiento real.
     expect(outboxCount()).toBe(before + 2);

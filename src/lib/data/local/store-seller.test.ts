@@ -4,15 +4,16 @@ import { createMigratedTestDb } from "./test-db";
 
 // A 'store' seller sells the principal inventory: their sale is a direct_sale
 // tagged with them (stock from products.stock, income in the chosen account,
-// commission with their config). A 'consignment' seller can't, can't receive
+// commission with each product's percentage). A 'consignment' seller can't, can't receive
 // deliveries once they're 'store', and can't become 'store' while holding
 // consigned stock.
 
 const { raw, db: proxy } = createMigratedTestDb();
 raw.exec(`
-    INSERT INTO products (uuid, name, slug, sku, price, purchase_price, stock) VALUES ('prod-1', 'Audifonos', 'audifonos', 'AUD-00001', 5000, 3000, 10);
-    INSERT INTO sellers (uuid, name, commission_type, commission_value, inventory_mode) VALUES ('sel-store', 'Tienda', 'percentage', 1000, 'store');
-    INSERT INTO sellers (uuid, name, commission_type, commission_value) VALUES ('sel-cons', 'Viajero', 'percentage', 1000);
+    INSERT INTO products (uuid, name, slug, sku, price, purchase_price, commission_bps, stock) VALUES ('prod-1', 'Audifonos', 'audifonos', 'AUD-00001', 5000, 3000, 1000, 10);
+    INSERT INTO products (uuid, name, slug, sku, price, purchase_price, commission_bps, stock) VALUES ('prod-2', 'Cable', 'cable', 'CAB-00001', 1000, 500, 2000, 10);
+    INSERT INTO sellers (uuid, name, commission_type, commission_value, inventory_mode) VALUES ('sel-store', 'Tienda', 'percentage', 0, 'store');
+    INSERT INTO sellers (uuid, name, commission_type, commission_value) VALUES ('sel-cons', 'Viajero', 'percentage', 0);
     INSERT INTO cash_accounts (uuid, name) VALUES ('acc-1', 'Caja');
   `);
 
@@ -20,6 +21,7 @@ vi.mock("./db", () => ({ get db() { return proxy; } }));
 
 const id = (table: string, uuid: string) => (raw.prepare(`SELECT id FROM ${table} WHERE uuid = ?`).get(uuid) as { id: number }).id;
 const productId = id("products", "prod-1");
+const cableId = id("products", "prod-2");
 const storeId = id("sellers", "sel-store");
 const consId = id("sellers", "sel-cons");
 const accountId = id("cash_accounts", "acc-1");
@@ -35,6 +37,7 @@ describe("vendedor de tienda", async () => {
   const { localSellerDeliveriesRepo } = await import("./seller-deliveries-repo");
   const { localSellerReturnsRepo } = await import("./seller-returns-repo");
   const { localCommissionPaymentsRepo } = await import("./commission-payments-repo");
+  const { localSellerSalesRepo } = await import("./seller-sales-repo");
 
   it("vende del inventario principal, entra a caja y lleva su comisión y su uuid al servidor", async () => {
     const sale = await localDirectSalesRepo.create({ accountId, sellerId: storeId, items: [{ productId, quantity: 3, unitPrice: 5000 }] });
@@ -80,6 +83,26 @@ describe("vendedor de tienda", async () => {
     const sale = await localDirectSalesRepo.create({ accountId, items: [{ productId, quantity: 1, unitPrice: 5000 }] });
     expect(sale).toMatchObject({ sellerId: null, commissionAmount: 0 });
     expect(lastOp().payload).not.toHaveProperty("sellerUuid");
+  });
+
+  it("cada producto paga su propio porcentaje, sobre el precio ya descontado", async () => {
+    // Audífonos al 10% y cable al 20%: 4.500 × 10% + 2 × 900 × 20% = 450 + 360
+    const sale = await localDirectSalesRepo.create({
+      accountId,
+      sellerId: storeId,
+      items: [
+        { productId, quantity: 1, unitPrice: 4500 },
+        { productId: cableId, quantity: 2, unitPrice: 900 },
+      ],
+    });
+    expect(sale.commissionAmount).toBe(810);
+    raw.exec(`UPDATE direct_sales SET sale_date = '2099-01-02 10:00:00' WHERE id = ${sale.id}`);
+  });
+
+  it("venta de consignación: también con el porcentaje de cada producto", async () => {
+    await localSellerDeliveriesRepo.create({ sellerId: consId, items: [{ productId: cableId, quantity: 1, unitCost: 500 }] });
+    const sale = await localSellerSalesRepo.create({ sellerId: consId, items: [{ productId: cableId, quantity: 1, unitPrice: 1200 }] });
+    expect(sale.commissionAmount).toBe(240);
   });
 
   it("un vendedor de consignación no puede registrar una venta en local", async () => {

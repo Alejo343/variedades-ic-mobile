@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `commission_bps` integer DEFAULT 0 NOT NULL;

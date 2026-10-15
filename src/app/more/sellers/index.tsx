@@ -13,7 +13,6 @@ import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useTheme } from '@/hooks/use-theme';
 import { commissionPaymentsRepo, sellersRepo, settlementsRepo, type Seller } from '@/lib/data';
 import { formatCOP, todayLocalDateString } from '@/lib/format';
-import { describeCommission } from '@/lib/seller-commission';
 
 type Filter = 'all' | 'consignment' | 'store' | 'inactive';
 
@@ -127,7 +126,7 @@ export default function SellersScreen() {
                             {seller.name}
                           </ThemedText>
                           <ThemedText type="caption" themeColor="textSecondary" numberOfLines={1}>
-                            {isStore ? 'Tienda' : 'Consignación'} · {describeCommission(seller.commissionType, seller.commissionValue)}
+                            {isStore ? 'Tienda' : 'Consignación'}
                             {seller.city ? ` · ${seller.city}` : ''}
                           </ThemedText>
                         </View>

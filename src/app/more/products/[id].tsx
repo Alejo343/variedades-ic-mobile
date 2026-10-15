@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState, type ComponentType } from 'reac
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CommissionField, commissionToText } from '@/components/commission-field';
 import { FormChip, FormField, FormInput, FormRow, FormSection } from '@/components/form';
 import { ProductImageGallery } from '@/components/product-image-gallery';
 import { ThemedText } from '@/components/themed-text';
@@ -11,6 +12,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
+import { parseCommissionPercent } from '@/lib/domain/commission';
 import type { ImageDraft } from '@/lib/domain/product-images';
 import { formatCOP } from '@/lib/format';
 import { pendingUuidsForType } from '@/lib/sync/outbox';
@@ -25,6 +27,7 @@ type FormValues = {
   categoryId: number | null;
   price: string;
   purchasePrice: string;
+  commission: string;
   distributorCode: string;
   minStock: string;
   warrantyMonths: string;
@@ -39,6 +42,7 @@ function valuesFrom(product: Product & { images: { url: string; isPrimary: boole
     categoryId: product.categoryId,
     price: String(product.price),
     purchasePrice: String(product.purchasePrice),
+    commission: commissionToText(product.commissionBps),
     distributorCode: product.distributorCode ?? '',
     minStock: String(product.minStock),
     warrantyMonths: product.warrantyMonths != null ? String(product.warrantyMonths) : '',
@@ -107,12 +111,18 @@ export default function EditProductScreen() {
 
   async function handleSubmit() {
     if (!values) return;
+    const commissionBps = parseCommissionPercent(values.commission);
+    if (commissionBps === null) {
+      setError('Escribe la comisión del vendedor: un porcentaje entre 0 y 100, ej. 15 o 12,5.');
+      return;
+    }
     const parsed = productSchema.safeParse({
       name: values.name,
       slug: values.slug,
       description: values.description || undefined,
       price: Number(values.price),
       purchasePrice: values.purchasePrice ? Number(values.purchasePrice) : 0,
+      commissionBps,
       categoryId: values.categoryId,
       distributorCode: values.distributorCode.trim() || undefined,
       minStock: Number(values.minStock) || 0,
@@ -260,6 +270,7 @@ export default function EditProductScreen() {
                   />
                 </FormField>
               </FormRow>
+              <CommissionField value={values.commission} onChange={(v) => set('commission', v)} salePrice={price > 0 ? price : null} />
             </FormSection>
 
             <FormSection title="Inventario">

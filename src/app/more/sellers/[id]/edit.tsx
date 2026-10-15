@@ -10,10 +10,9 @@ import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { sellersRepo } from '@/lib/data';
-import { commissionToInput, parseCommissionInput } from '@/lib/seller-commission';
 import { sellerSchema } from '@/lib/validations';
 
-// The owner's edit form for a seller (data, mode, commission) plus
+// The owner's edit form for a seller (data and mode) plus
 // deactivate/reactivate. The seller's profile is [id]/index.tsx.
 export default function EditSellerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -39,8 +38,6 @@ export default function EditSellerScreen() {
           phone: seller.phone ?? '',
           city: seller.city ?? '',
           inventoryMode: seller.inventoryMode,
-          commissionType: seller.commissionType,
-          commission: commissionToInput(seller.commissionType, seller.commissionValue),
           notes: seller.notes ?? '',
         };
         setValues(loaded);
@@ -61,9 +58,8 @@ export default function EditSellerScreen() {
     );
   }
 
-  const commissionValue = parseCommissionInput(values.commissionType, values.commission);
   const dirty = JSON.stringify(values) !== JSON.stringify(saved);
-  const canSave = dirty && values.name.trim().length > 0 && commissionValue !== null && !saving;
+  const canSave = dirty && values.name.trim().length > 0 && !saving;
 
   async function handleSubmit() {
     if (!values) return;
@@ -71,8 +67,6 @@ export default function EditSellerScreen() {
       name: values.name.trim(),
       phone: values.phone.trim() || undefined,
       city: values.city.trim() || undefined,
-      commissionType: values.commissionType,
-      commissionValue,
       inventoryMode: values.inventoryMode,
       notes: values.notes.trim() || undefined,
       active,

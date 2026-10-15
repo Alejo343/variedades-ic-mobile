@@ -39,7 +39,6 @@ import {
   type Seller,
 } from '@/lib/data';
 import { formatCOP, formatDateTime, todayLocalDateString } from '@/lib/format';
-import { describeCommission } from '@/lib/seller-commission';
 
 type Tone = 'primary' | 'info' | 'warning' | 'error' | 'purple';
 
@@ -260,7 +259,7 @@ function SellerProfile({ sellerId }: { sellerId: number }) {
               <View style={styles.flex}>
                 <ThemedText type="cardTitle">{seller.name}</ThemedText>
                 <ThemedText type="caption" themeColor="textSecondary">
-                  {describeCommission(seller.commissionType, seller.commissionValue)}
+                  Comisión según el porcentaje de cada producto
                 </ThemedText>
               </View>
             </View>
