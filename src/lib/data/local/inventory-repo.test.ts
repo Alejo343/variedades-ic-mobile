@@ -13,7 +13,7 @@ raw.exec(`
   INSERT INTO products (uuid, name, slug, sku, price, stock, min_stock) VALUES ('p-zero', 'Cero', 'cero', 'GEN-00002', 100, 0, 0);
   INSERT INTO products (uuid, name, slug, sku, price, stock, min_stock) VALUES ('p-neg', 'Negativo', 'negativo', 'GEN-00003', 100, -2, 0);
   INSERT INTO products (uuid, name, slug, sku, price, stock, min_stock, active) VALUES ('p-off', 'Inactivo', 'inactivo', 'GEN-00004', 100, -1, 0, 0);
-  INSERT INTO sellers (uuid, name, commission_type, commission_value) VALUES ('s-1', 'Viajero', 'percentage', 1000);
+  INSERT INTO sellers (uuid, name) VALUES ('s-1', 'Viajero');
 `);
 
 vi.mock("./db", () => ({ get db() { return proxy; } }));

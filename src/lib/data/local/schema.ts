@@ -129,10 +129,6 @@ export const sellers = sqliteTable("sellers", {
   name: text("name").notNull(),
   phone: text("phone"),
   city: text("city"),
-  // Unused since the commission moved to products.commissionBps; kept only
-  // until the server stops sending them (both repos drop them together).
-  commissionType: text("commission_type").notNull(),
-  commissionValue: integer("commission_value").notNull(),
   // 'consignment': sells only their own consigned stock and settles later.
   // 'store': works at the main store — sells the principal inventory and the
   // money goes straight to a cash account (a direct_sale tagged with them).

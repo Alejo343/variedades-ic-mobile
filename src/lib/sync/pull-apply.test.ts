@@ -24,7 +24,7 @@ describe("applyPullPage: aplica un lote completo del servidor", async () => {
   const page = {
     changes: {
       categories: [{ uuid: "cat-1", name: "Tecnología", slug: "tec", description: null, active: true }],
-      sellers: [{ uuid: "sel-1", name: "Maria", phone: null, city: "Bogotá", commissionType: "percentage", commissionValue: 1000, inventoryMode: "store", active: true, notes: null }],
+      sellers: [{ uuid: "sel-1", name: "Maria", phone: null, city: "Bogotá", inventoryMode: "store", active: true, notes: null }],
       cash_accounts: [{ uuid: "acc-1", name: "Efectivo", type: "efectivo", active: true, notes: null }],
       products: [{
         uuid: "prod-1", name: "Audífonos", slug: "audifonos", description: null, sku: "TEC-00001", price: 50000,

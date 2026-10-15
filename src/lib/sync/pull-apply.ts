@@ -95,11 +95,8 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       await upsert(tx, categories, uuid, { name: row.name, slug: row.slug, description: row.description, active: row.active });
       return;
     case 'sellers':
-      // commissionType/commissionValue are unused (the commission lives on the
-      // product); filled only because the columns are still NOT NULL here.
       await upsert(tx, sellers, uuid, {
-        name: row.name, phone: row.phone, city: row.city, commissionType: row.commissionType ?? 'percentage',
-        commissionValue: row.commissionValue ?? 0, inventoryMode: row.inventoryMode, active: row.active, notes: row.notes,
+        name: row.name, phone: row.phone, city: row.city, inventoryMode: row.inventoryMode, active: row.active, notes: row.notes,
       });
       return;
     case 'distributors':

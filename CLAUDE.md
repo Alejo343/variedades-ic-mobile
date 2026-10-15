@@ -131,9 +131,9 @@ tienen comisión propia ni existe la fija por unidad.
   cuando le llega la venta (el pull reemplaza la estimación). Las ventas ya
   guardadas no se recalculan al cambiar un %. Liquidaciones y pagos de
   comisiones siguen sumando `commissionAmount`.
-- `sellers.commission_type`/`commission_value` quedan **sin uso** (se llenan
-  con `'percentage'`/`0` porque son `NOT NULL`) solo mientras haya celulares
-  con la versión anterior; se borran en los dos repos cuando todos actualicen.
+- `sellers.commission_type`/`commission_value` se borraron en los dos repos
+  (migración `0023` aquí, `0027` en la web) cuando todos los celulares
+  tuvieron la versión nueva.
 
 **Vendedores**: `sellers.inventory_mode` = `consignment` | `store`.
 - **Tienda**: vende del inventario principal con el mismo POS; su venta es una
@@ -340,12 +340,6 @@ web).
 - Sin probar por separado: el inventario de un **vendedor** en negativo (usa
   el mismo mecanismo que el stock principal, que sí se verificó). Solo pasa
   con dos dispositivos desincronizados.
-- **Comisión por producto (2026-10-14)**: falta verificarla en el celular y
-  en la web desplegada (lista de pasos en la sesión). Después, llenar el % de
-  los productos existentes (están en 0%: hasta entonces sus ventas dan $0 de
-  comisión y no se recalculan). Cuando todos los celulares tengan la versión
-  nueva, borrar `sellers.commission_type`/`commission_value` en los dos repos
-  (el pull deja de enviarlos).
 - Diferido a propósito: catálogo de productos por proveedor (mejoraría la
   importación de Excel), reordenar fotos, fotos huérfanas al salir sin
   guardar.

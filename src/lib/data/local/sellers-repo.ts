@@ -70,9 +70,6 @@ export const localSellersRepo: SellersRepo = {
           name: data.name,
           phone: data.phone ?? null,
           city: data.city ?? null,
-          // Unused columns, still NOT NULL (see schema.ts): the commission is per product.
-          commissionType: "percentage",
-          commissionValue: 0,
           inventoryMode: data.inventoryMode ?? "consignment",
           active: data.active ?? true,
           notes: data.notes ?? null,

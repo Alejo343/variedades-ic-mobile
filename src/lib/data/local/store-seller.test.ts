@@ -12,8 +12,8 @@ const { raw, db: proxy } = createMigratedTestDb();
 raw.exec(`
     INSERT INTO products (uuid, name, slug, sku, price, purchase_price, commission_bps, stock) VALUES ('prod-1', 'Audifonos', 'audifonos', 'AUD-00001', 5000, 3000, 1000, 10);
     INSERT INTO products (uuid, name, slug, sku, price, purchase_price, commission_bps, stock) VALUES ('prod-2', 'Cable', 'cable', 'CAB-00001', 1000, 500, 2000, 10);
-    INSERT INTO sellers (uuid, name, commission_type, commission_value, inventory_mode) VALUES ('sel-store', 'Tienda', 'percentage', 0, 'store');
-    INSERT INTO sellers (uuid, name, commission_type, commission_value) VALUES ('sel-cons', 'Viajero', 'percentage', 0);
+    INSERT INTO sellers (uuid, name, inventory_mode) VALUES ('sel-store', 'Tienda', 'store');
+    INSERT INTO sellers (uuid, name) VALUES ('sel-cons', 'Viajero');
     INSERT INTO cash_accounts (uuid, name) VALUES ('acc-1', 'Caja');
   `);
 
