@@ -265,7 +265,7 @@ export default function PurchaseOrderDetailScreen() {
                   ? run(() => purchaseOrdersRepo.markInTransit(orderId), 'No se pudo actualizar el pedido')
                   : run(() => purchaseOrdersRepo.markReceived(orderId), 'No se pudo recibir el pedido')
               }>
-              <View style={[styles.primaryButton, { backgroundColor: order.status === 'pendiente' ? theme.info : theme.primary }, saving && styles.disabled]}>
+              <View style={[styles.primaryButton, { backgroundColor: order.status === 'pendiente' ? theme.info : theme.primary }, saving && styles.disabled]} collapsable={false}>
                 <ThemedText type="cardTitle" style={styles.onPrimary}>
                   {saving ? 'Guardando…' : order.status === 'pendiente' ? 'Marcar en camino' : 'Marcar recibido'}
                 </ThemedText>

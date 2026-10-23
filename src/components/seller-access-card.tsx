@@ -121,7 +121,7 @@ export function SellerAccessCard({ sellerUuid }: { sellerUuid: string }) {
             <FormInput value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" placeholder="Mínimo 8 caracteres" />
           </FormField>
           <Pressable onPress={changePassword} disabled={busy || password.length === 0}>
-            <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (busy || password.length === 0) && styles.disabled]}>
+            <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (busy || password.length === 0) && styles.disabled]} collapsable={false}>
               <ThemedText type="smallBold" style={styles.onPrimary}>
                 {busy ? 'Guardando…' : 'Cambiar contraseña'}
               </ThemedText>
@@ -148,7 +148,7 @@ export function SellerAccessCard({ sellerUuid }: { sellerUuid: string }) {
             <FormInput value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" placeholder="Mínimo 8 caracteres" />
           </FormField>
           <Pressable onPress={createAccess} disabled={busy || !username || !password}>
-            <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (busy || !username || !password) && styles.disabled]}>
+            <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (busy || !username || !password) && styles.disabled]} collapsable={false}>
               <ThemedText type="smallBold" style={styles.onPrimary}>
                 {busy ? 'Creando…' : 'Crear acceso'}
               </ThemedText>

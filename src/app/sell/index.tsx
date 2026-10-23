@@ -638,7 +638,7 @@ function CheckoutSheet(props: CheckoutSheetProps) {
             {props.error ? <ThemedText style={{ color: theme.error }}>{props.error}</ThemedText> : null}
 
             <Pressable onPress={props.onSubmit} disabled={!canCharge}>
-              <View style={[styles.chargeButton, { backgroundColor: theme.primary }, !canCharge && styles.disabled]}>
+              <View style={[styles.chargeButton, { backgroundColor: theme.primary }, !canCharge && styles.disabled]} collapsable={false}>
                 <ThemedText type="sectionTitle" style={styles.onPrimary}>
                   {saving ? 'Cobrando…' : `Cobrar ${formatCOP(props.grandTotal)}`}
                 </ThemedText>

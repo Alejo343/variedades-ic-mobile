@@ -258,7 +258,7 @@ export function StockCartForm({
               </View>
             ) : null}
             <Pressable onPress={handleSubmit} disabled={!canSubmit}>
-              <View style={[styles.primaryButton, { backgroundColor: color }, !canSubmit && styles.disabled]}>
+              <View style={[styles.primaryButton, { backgroundColor: color }, !canSubmit && styles.disabled]} collapsable={false}>
                 <ThemedText type="cardTitle" style={styles.onPrimary}>
                   {saving ? 'Guardando…' : submitLabel}
                 </ThemedText>

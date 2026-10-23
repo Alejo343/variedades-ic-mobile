@@ -148,7 +148,7 @@ export default function NewCommissionPaymentScreen() {
           type="backgroundElement"
           style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
           <Pressable onPress={handleSubmit} disabled={!canPay}>
-            <View style={[styles.primaryButton, { backgroundColor: theme.purple }, !canPay && styles.disabled]}>
+            <View style={[styles.primaryButton, { backgroundColor: theme.purple }, !canPay && styles.disabled]} collapsable={false}>
               <ThemedText type="cardTitle" style={styles.onPrimary}>
                 {saving ? 'Pagando…' : amount > 0 ? `Pagar ${formatCOP(amount)}` : 'Pagar comisiones'}
               </ThemedText>

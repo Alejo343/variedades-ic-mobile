@@ -155,7 +155,7 @@ export default function SettlementDetailScreen() {
                 })}
               </View>
               <Pressable onPress={handleMarkSettled} disabled={saving || accountId === null}>
-                <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (saving || accountId === null) && styles.disabled]}>
+                <View style={[styles.primaryButton, { backgroundColor: theme.primary }, (saving || accountId === null) && styles.disabled]} collapsable={false}>
                   <ThemedText type="cardTitle" style={styles.primaryLabel}>
                     {saving ? 'Liquidando…' : 'Marcar como liquidada'}
                   </ThemedText>

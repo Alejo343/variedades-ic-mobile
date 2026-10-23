@@ -121,7 +121,7 @@ export function LoginScreen() {
               ) : null}
 
               <Pressable onPress={handleSubmit} disabled={!canSubmit}>
-                <View style={[styles.primaryButton, { backgroundColor: theme.primary }, !canSubmit && styles.disabled]}>
+                <View style={[styles.primaryButton, { backgroundColor: theme.primary }, !canSubmit && styles.disabled]} collapsable={false}>
                   {loading ? <ActivityIndicator color="#FFFFFF" /> : null}
                   <ThemedText type="cardTitle" style={styles.onPrimary}>
                     {loading ? 'Entrando…' : 'Iniciar sesión'}

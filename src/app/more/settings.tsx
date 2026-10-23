@@ -128,7 +128,7 @@ function SyncSection() {
         </ThemedText>
 
         <Pressable onPress={handleSync} disabled={status.running}>
-          <View style={[styles.primaryButton, { backgroundColor: theme.primary }, status.running && styles.disabled]}>
+          <View style={[styles.primaryButton, { backgroundColor: theme.primary }, status.running && styles.disabled]} collapsable={false}>
             {status.running ? <ActivityIndicator color="#FFFFFF" /> : <RefreshCw color="#FFFFFF" size={18} />}
             <ThemedText type="cardTitle" style={styles.onPrimary}>
               {status.running ? 'Sincronizando…' : 'Sincronizar ahora'}

@@ -345,7 +345,7 @@ export default function EditProductScreen() {
             type="backgroundElement"
             style={[styles.saveBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
             <Pressable onPress={handleSubmit} disabled={saving || !dirty}>
-              <View style={[styles.saveButton, { backgroundColor: theme.primary }, (saving || !dirty) && styles.disabled]}>
+              <View style={[styles.saveButton, { backgroundColor: theme.primary }, (saving || !dirty) && styles.disabled]} collapsable={false}>
                 <ThemedText type="cardTitle" style={styles.onPrimary}>
                   {saving ? 'Guardando…' : dirty ? 'Guardar cambios' : 'Sin cambios'}
                 </ThemedText>

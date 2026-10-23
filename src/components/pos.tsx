@@ -129,7 +129,7 @@ export function ProductCard({
               reduced opacity shows its shadow through itself as a dark ring
               inside the edge, and a shadowless dimmed card blends into the
               screen background. */}
-          <View style={[styles.productCardContent, disabled && styles.cardDisabled]}>
+          <View style={[styles.productCardContent, disabled && styles.cardDisabled]} collapsable={false}>
             <ProductThumb uri={imageUri} style={styles.productImage} iconSize={22} />
             <ThemedText type="small" numberOfLines={2} style={styles.productName}>
               {name}

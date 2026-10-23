@@ -212,7 +212,7 @@ export default function EditDistributorScreen() {
             type="backgroundElement"
             style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
             <Pressable onPress={handleSubmit} disabled={!canSave}>
-              <View style={[styles.primaryButton, { backgroundColor: theme.primary }, !canSave && styles.disabled]}>
+              <View style={[styles.primaryButton, { backgroundColor: theme.primary }, !canSave && styles.disabled]} collapsable={false}>
                 <ThemedText type="cardTitle" style={styles.onPrimary}>
                   {saving ? 'Guardando…' : dirty ? 'Guardar cambios' : 'Sin cambios'}
                 </ThemedText>

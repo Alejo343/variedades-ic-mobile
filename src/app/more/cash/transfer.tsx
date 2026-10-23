@@ -155,7 +155,7 @@ export default function TransferScreen() {
             type="backgroundElement"
             style={[styles.bottomBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
             <Pressable onPress={handleSubmit} disabled={!canSave}>
-              <View style={[styles.primaryButton, { backgroundColor: theme.info }, !canSave && styles.disabled]}>
+              <View style={[styles.primaryButton, { backgroundColor: theme.info }, !canSave && styles.disabled]} collapsable={false}>
                 <ThemedText type="cardTitle" style={styles.onPrimary}>
                   {saving ? 'Guardando…' : value > 0 ? `Transferir ${formatCOP(value)}` : 'Transferir'}
                 </ThemedText>

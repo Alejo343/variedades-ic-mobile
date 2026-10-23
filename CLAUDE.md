@@ -294,13 +294,18 @@ web).
 - Compras: `components/purchase-status.tsx` (etiqueta y color por estado);
   la lista acepta `?distributorId=` y "Nuevo pedido" también (distribuidor
   preseleccionado); "Distribuidores" está en el encabezado de Compras.
-- **Nunca actualizar estado en una pantalla después de `router.back()`**
-  (ni `finally { setSaving(false) }`): en Android, un commit de React sobre la
-  pantalla que se está cerrando durante su animación de salida cierra la app
-  en el APK (`addViewAt: ... The specified child already has a parent`, bug
-  de `react-native-screens` 4.25–4.26 con Fabric; en Expo Go no se
-  reproduce). Al guardar bien se navega y ya; `setSaving(false)` solo en el
-  `catch` o en las ramas que se quedan en la pantalla.
+- **Una vista con `opacity` condicional lleva `collapsable={false}`** (botones
+  de guardar con `!canSave && styles.disabled`, tarjeta del POS). En Fabric,
+  una vista con solo fondo/borde existe pero sus hijos cuelgan del ancestro
+  que forma *stacking context*; la opacidad lo forma, así que al cambiarla
+  React mueve los hijos de padre. Si eso cae durante la animación de salida
+  de la pantalla, Android cierra la app en el APK (`addViewAt: ... The
+  specified child already has a parent`; `react-native-screens` 4.26 +
+  Fabric; en Expo Go no se reproduce). Diagnosticado con el volcado del
+  árbol de vistas en logcat (`adb logcat -G 16M` antes de reproducir). Las
+  vistas con `Shadow.subtle` ya forman stacking context y no lo necesitan.
+  Además, no actualizar estado después de `router.back()`: `setSaving(false)`
+  solo en el `catch` o en las ramas que se quedan en la pantalla.
 - `lib/format.ts#formatCOP` formatea a mano (sin `Intl` de moneda, poco
   confiable en Hermes); igual `formatDateTime`/`formatTime`.
 

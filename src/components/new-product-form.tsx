@@ -252,7 +252,7 @@ export function NewProductForm({ mode, initialName = '', submitLabel, onCreated,
 
       <ThemedView type="backgroundElement" style={[styles.saveBar, { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom }]}>
         <Pressable onPress={handleSubmit} disabled={!canSave}>
-          <View style={[styles.saveButton, { backgroundColor: theme.primary }, !canSave && styles.disabled]}>
+          <View style={[styles.saveButton, { backgroundColor: theme.primary }, !canSave && styles.disabled]} collapsable={false}>
             <ThemedText type="cardTitle" style={styles.onPrimary}>
               {saving ? 'Guardando…' : submitLabel}
             </ThemedText>
