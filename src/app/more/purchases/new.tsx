@@ -198,7 +198,8 @@ export default function NewPurchaseOrderScreen() {
       router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo crear el pedido');
-    } finally {
+      // Re-enabled only on failure: a state update on a screen that
+      // router.back() is closing crashes Android (see CLAUDE.md).
       setSaving(false);
     }
   }

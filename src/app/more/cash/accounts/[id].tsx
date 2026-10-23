@@ -79,7 +79,8 @@ export default function EditCashAccountScreen() {
       router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar la cuenta');
-    } finally {
+      // Re-enabled only on failure: a state update on a screen that
+      // router.back() is closing crashes Android (see CLAUDE.md).
       setSaving(false);
     }
   }
@@ -91,13 +92,15 @@ export default function EditCashAccountScreen() {
       if (next) {
         await cashAccountsRepo.update(accountId, { active: true });
         setActive(true);
+        setSaving(false);
       } else {
         await cashAccountsRepo.deactivate(accountId);
         router.back();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cambiar el estado de la cuenta');
-    } finally {
+      // Re-enabled only on failure: a state update on a screen that
+      // router.back() is closing crashes Android (see CLAUDE.md).
       setSaving(false);
     }
   }

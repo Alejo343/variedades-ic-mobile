@@ -63,7 +63,8 @@ export default function NewSettlementScreen() {
       router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo crear la liquidación');
-    } finally {
+      // Re-enabled only on failure: a state update on a screen that
+      // router.back() is closing crashes Android (see CLAUDE.md).
       setSaving(false);
     }
   }

@@ -121,14 +121,17 @@ export function NewProductForm({ mode, initialName = '', submitLabel, onCreated,
         if (existing) {
           setError(`Ya existe un producto con este código de proveedor: ${existing.name}`);
           setConflict(existing);
+          setSaving(false);
           return;
         }
       }
       const product = await productsRepo.create(parsed.data, images);
+      // No setSaving(false) here: onCreated closes this form (router.back()
+      // or the order modal), and a state update on a screen that
+      // router.back() is closing crashes Android (see CLAUDE.md).
       onCreated(product, isOrder ? { quantity, unitCost: cost ?? 0 } : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el producto');
-    } finally {
       setSaving(false);
     }
   }

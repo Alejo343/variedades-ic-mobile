@@ -142,6 +142,7 @@ export default function EditProductScreen() {
         if (existing && existing.id !== productId) {
           setError(`Ya existe un producto con este código de proveedor: ${existing.name}`);
           setConflict(existing);
+          setSaving(false);
           return;
         }
       }
@@ -150,7 +151,8 @@ export default function EditProductScreen() {
       router.back();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el producto');
-    } finally {
+      // Re-enabled only on failure: a state update on a screen that
+      // router.back() is closing crashes Android (see CLAUDE.md).
       setSaving(false);
     }
   }
@@ -162,13 +164,15 @@ export default function EditProductScreen() {
       if (next) {
         await productsRepo.update(productId, { active: true });
         setActive(true);
+        setSaving(false);
       } else {
         await productsRepo.deactivate(productId);
         router.back();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cambiar el estado del producto');
-    } finally {
+      // Re-enabled only on failure: a state update on a screen that
+      // router.back() is closing crashes Android (see CLAUDE.md).
       setSaving(false);
     }
   }
