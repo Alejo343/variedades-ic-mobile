@@ -121,11 +121,27 @@ export function ProductCard({
 
   return (
     <Pressable onPress={handlePress} disabled={disabled} style={{ width: cardWidth }}>
-      <Animated.View style={[animatedStyle, disabled && styles.cardDisabled]}>
+      <Animated.View style={animatedStyle}>
         <ThemedView
           type={selected ? 'backgroundSelected' : 'backgroundElement'}
           style={[styles.productCard, Shadow.subtle, { borderColor: selected ? theme.primary : 'transparent' }]}>
-          <ProductThumb uri={imageUri} style={styles.productImage} iconSize={22} />
+          {/* Dim the contents, not the card: on Android an elevated view with
+              reduced opacity shows its shadow through itself as a dark ring
+              inside the edge, and a shadowless dimmed card blends into the
+              screen background. */}
+          <View style={[styles.productCardContent, disabled && styles.cardDisabled]}>
+            <ProductThumb uri={imageUri} style={styles.productImage} iconSize={22} />
+            <ThemedText type="small" numberOfLines={2} style={styles.productName}>
+              {name}
+            </ThemedText>
+            <ThemedText type="smallBold">{formatCOP(price)}</ThemedText>
+            <ThemedText
+              type="caption"
+              themeColor={captionTone === 'normal' ? 'textSecondary' : undefined}
+              style={captionTone === 'warning' ? { color: theme.warning } : captionTone === 'error' ? { color: theme.error } : undefined}>
+              {caption}
+            </ThemedText>
+          </View>
           {selected && quantity ? (
             <View style={[styles.qtyBadge, { backgroundColor: theme.primary, borderColor: theme.backgroundElement }]}>
               <ThemedText type="caption" style={styles.qtyBadgeLabel}>
@@ -133,16 +149,6 @@ export function ProductCard({
               </ThemedText>
             </View>
           ) : null}
-          <ThemedText type="small" numberOfLines={2} style={styles.productName}>
-            {name}
-          </ThemedText>
-          <ThemedText type="smallBold">{formatCOP(price)}</ThemedText>
-          <ThemedText
-            type="caption"
-            themeColor={captionTone === 'normal' ? 'textSecondary' : undefined}
-            style={captionTone === 'warning' ? { color: theme.warning } : captionTone === 'error' ? { color: theme.error } : undefined}>
-            {caption}
-          </ThemedText>
         </ThemedView>
       </Animated.View>
     </Pressable>
@@ -292,8 +298,8 @@ const styles = StyleSheet.create({
     borderRadius: Radii.card,
     borderWidth: 1.5,
     padding: Spacing.two,
-    gap: Spacing.half,
   },
+  productCardContent: { gap: Spacing.half },
   cardDisabled: { opacity: 0.45 },
   qtyBadge: {
     position: 'absolute',
