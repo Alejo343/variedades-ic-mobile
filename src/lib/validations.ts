@@ -78,6 +78,11 @@ export const sellerSchema = z.object({
   phone: z.string().optional(),
   city: z.string().optional(),
   inventoryMode: sellerInventoryModeSchema.optional(),
+  // Absent in an update keeps the current pay configuration. Checked as a
+  // whole, with the mode, by lib/domain/salary.ts#sellerPayConfigError.
+  payType: z.enum(["commission", "salary"]).optional(),
+  salaryAmount: z.number().int("El sueldo debe ser un valor entero").positive("El sueldo debe ser mayor que cero").nullable().optional(),
+  salaryPeriod: z.enum(["weekly", "monthly"]).nullable().optional(),
   active: z.boolean().optional().default(true),
   notes: z.string().optional(),
 });

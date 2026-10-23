@@ -215,7 +215,7 @@ export default function SearchScreen() {
             icon={Users}
             color={theme.purple}
             title={s.name}
-            subtitle={[s.inventoryMode === 'store' ? 'Tienda' : 'Consignación', s.city, s.phone].filter(Boolean).join(' · ')}
+            subtitle={[s.inventoryMode !== 'store' ? 'Consignación' : s.payType === 'salary' ? 'Tienda · sueldo' : 'Tienda', s.city, s.phone].filter(Boolean).join(' · ')}
             dim={!s.active}
           />
         ));

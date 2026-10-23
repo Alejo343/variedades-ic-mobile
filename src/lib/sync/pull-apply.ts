@@ -15,6 +15,7 @@ import {
   purchaseOrderItems,
   purchaseOrders,
   purchasePayments,
+  salaryPayments,
   sellerDeliveries,
   sellerDeliveryItems,
   sellerLossItems,
@@ -82,7 +83,7 @@ async function upsert(tx: Tx, table: UuidTable, uuid: string, allValues: Row): P
 // by then.
 const TABLE_ORDER = [
   'categories', 'sellers', 'distributors', 'cash_accounts', 'products', 'product_images',
-  'commission_payments', 'direct_sales', 'direct_sale_items', 'purchase_orders', 'purchase_order_items', 'purchase_payments',
+  'commission_payments', 'salary_payments', 'direct_sales', 'direct_sale_items', 'purchase_orders', 'purchase_order_items', 'purchase_payments',
   'seller_deliveries', 'seller_delivery_items', 'seller_returns', 'seller_return_items',
   'settlements', 'seller_losses', 'seller_loss_items', 'seller_sales', 'seller_sale_items',
   'inventory_movements', 'cash_movements',
@@ -96,7 +97,9 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       return;
     case 'sellers':
       await upsert(tx, sellers, uuid, {
-        name: row.name, phone: row.phone, city: row.city, inventoryMode: row.inventoryMode, active: row.active, notes: row.notes,
+        name: row.name, phone: row.phone, city: row.city, inventoryMode: row.inventoryMode, payType: row.payType,
+        salaryAmount: row.salaryAmount, salaryPeriod: row.salaryPeriod, salaryStartDate: row.salaryStartDate,
+        active: row.active, notes: row.notes,
       });
       return;
     case 'distributors':
@@ -125,6 +128,14 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       await upsert(tx, commissionPayments, uuid, {
         sellerId, periodDate: row.periodDate, saleCount: row.saleCount, totalCommission: row.totalCommission,
         accountId, paidAt: row.paidAt, notes: row.notes,
+      });
+      return;
+    }
+    case 'salary_payments': {
+      const sellerId = await localId(tx, sellers, row.sellerUuid as string);
+      const accountId = await localId(tx, cashAccounts, row.accountUuid as string);
+      await upsert(tx, salaryPayments, uuid, {
+        sellerId, period: row.period, periodStart: row.periodStart, amount: row.amount, accountId, paidAt: row.paidAt, notes: row.notes,
       });
       return;
     }
@@ -236,9 +247,10 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
     case 'cash_movements': {
       const accountId = await localId(tx, cashAccounts, row.accountUuid as string);
       // sourceUuid is polymorphic — which table it points into depends on
-      // sourceType, and only these three ever set it on the server's pull.
+      // sourceType, and only these ever set it on the server's pull.
       const sourceTables = {
         direct_sale: directSales, settlement: settlements, purchase_payment: purchasePayments, commission_payment: commissionPayments,
+        salary_payment: salaryPayments,
       } as const;
       const sourceTable = sourceTables[row.sourceType as keyof typeof sourceTables];
       const sourceId = sourceTable ? await localIdNullable(tx, sourceTable, row.sourceUuid as string | null) : null;
@@ -257,7 +269,7 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
 
 const TOMBSTONE_TABLES: Record<string, UuidTable> = {
   categories, sellers, distributors, cash_accounts: cashAccounts, products, product_images: productImages,
-  commission_payments: commissionPayments, direct_sales: directSales, direct_sale_items: directSaleItems, purchase_orders: purchaseOrders,
+  commission_payments: commissionPayments, salary_payments: salaryPayments, direct_sales: directSales, direct_sale_items: directSaleItems, purchase_orders: purchaseOrders,
   purchase_order_items: purchaseOrderItems, purchase_payments: purchasePayments,
   seller_deliveries: sellerDeliveries, seller_delivery_items: sellerDeliveryItems,
   seller_returns: sellerReturns, seller_return_items: sellerReturnItems,

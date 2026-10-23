@@ -25,6 +25,7 @@ import m0020 from './0020_spotty_morbius.sql';
 import m0021 from './0021_organic_avengers.sql';
 import m0022 from './0022_product_commission.sql';
 import m0023 from './0023_drop_seller_commission.sql';
+import m0024 from './0024_salary_sellers.sql';
 
   export default {
     journal,
@@ -52,7 +53,8 @@ m0019,
 m0020,
 m0021,
 m0022,
-m0023
+m0023,
+m0024
     }
   }
   

@@ -78,7 +78,8 @@ export const localDirectSalesRepo: DirectSalesRepo = {
 
         const subtotal = item.quantity * item.unitPrice;
         totalAmount += subtotal;
-        if (seller) {
+        // A salaried seller earns no commission (lib/domain/salary.ts).
+        if (seller && seller.payType !== "salary") {
           commissionLines.push({ quantity: item.quantity, unitPrice: item.unitPrice, commissionBps: await productCommissionBps(tx, item.productId) });
         }
 

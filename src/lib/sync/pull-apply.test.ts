@@ -101,6 +101,43 @@ describe("applyPullPage: aplica un lote completo del servidor", async () => {
     expect(one("SELECT id FROM product_images WHERE uuid = 'img-1'")).toBeDefined();
   });
 
+  it("vendedor con sueldo: trae su forma de pago, sus pagos y el gasto que apunta a cada uno", async () => {
+    await proxy.transaction((tx) =>
+      applyPullPage(tx as unknown as AnyTx, {
+        changes: {
+          sellers: [{
+            uuid: "sel-sal", name: "Ana", phone: null, city: null, inventoryMode: "store", payType: "salary",
+            salaryAmount: 300000, salaryPeriod: "weekly", salaryStartDate: "2026-10-14", active: true, notes: null,
+          }],
+          salary_payments: [{
+            uuid: "sp-1", sellerUuid: "sel-sal", period: "weekly", periodStart: "2026-10-12", amount: 280000,
+            accountUuid: "acc-1", paidAt: "2026-10-19 20:00:00", notes: "descontado 1 día",
+          }],
+          cash_movements: [{
+            uuid: "cash-sp-1", type: "gasto", amount: 280000, concept: "Sueldo Ana · 12–18 oct 2026", movementDate: "2026-10-19 20:00:00",
+            sourceType: "salary_payment", sourceUuid: "sp-1", accountUuid: "acc-1", notes: null,
+          }],
+        },
+        tombstones: [],
+      }),
+    );
+
+    const seller = one("SELECT id, pay_type, salary_amount, salary_period, salary_start_date FROM sellers WHERE uuid = 'sel-sal'");
+    expect(seller).toMatchObject({ pay_type: "salary", salary_amount: 300000, salary_period: "weekly", salary_start_date: "2026-10-14" });
+    const payment = one("SELECT id, seller_id, period, period_start, amount, notes FROM salary_payments WHERE uuid = 'sp-1'");
+    expect(payment).toMatchObject({ seller_id: seller.id, period: "weekly", period_start: "2026-10-12", amount: 280000, notes: "descontado 1 día" });
+    expect(one("SELECT source_id FROM cash_movements WHERE uuid = 'cash-sp-1'").source_id).toBe(payment.id);
+
+    // A server that predates the pay fields never resets them.
+    await proxy.transaction((tx) =>
+      applyPullPage(tx as unknown as AnyTx, {
+        changes: { sellers: [{ uuid: "sel-sal", name: "Ana", phone: null, city: null, inventoryMode: "store", active: true, notes: null }] },
+        tombstones: [],
+      }),
+    );
+    expect(one("SELECT pay_type FROM sellers WHERE uuid = 'sel-sal'").pay_type).toBe("salary");
+  });
+
   it("una segunda página que actualiza la misma fila hace update, no crea otra", async () => {
     await proxy.transaction((tx) => applyPullPage(tx as unknown as AnyTx, {
       changes: { categories: [{ uuid: "cat-1", name: "Tecnología y hogar", slug: "tec", description: "actualizada", active: true }] },

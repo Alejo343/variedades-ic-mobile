@@ -147,6 +147,26 @@ tienen comisión propia ni existe la fija por unidad.
   `commission_payment_id`). Lo que llega tarde entra en el siguiente.
 - Liquidación: `amountDue = totalSales − totalCommission + totalLosses`;
   transición con `canTransitionSettlement`; al liquidar se elige cuenta.
+- **Tienda con sueldo fijo** (decisión del usuario, 2026-10-23): un vendedor
+  de tienda se paga por comisión o por sueldo (`sellers.pay_type` =
+  `commission` | `salary`, + `salary_amount`, `salary_period` `weekly` |
+  `monthly`, `salary_start_date`). Lógica en `lib/domain/salary.ts` (copia
+  idéntica de la web). Sigue siendo `store` (mismo POS, mismo alcance de
+  sync); sus ventas llevan `commissionAmount = 0` (celular y servidor).
+  - Semana = lunes a domingo; mes = calendario. El primer período es el que
+    contiene `salary_start_date` = el día en que se configuró; se reinicia si
+    cambia el período, no si cambia el monto (`nextSalaryStartDate`). El
+    celular manda su fecha en `upsertSeller` y el servidor la conserva.
+  - `salary_payments`: un pago = **un período** (`period` + `periodStart`),
+    monto editable (por defecto el sueldo), gasto en caja `sourceType =
+    'salary_payment'`, nunca dos veces el mismo período (el repo y el
+    `UNIQUE` del servidor; **sin** índice único local a propósito, ver
+    `schema.ts`). Operación `createSalaryPayment`, solo dueño.
+  - "Por pagar" = períodos **terminados** sin pago × sueldo actual
+    (`lib/salary-summary.ts`); el período en curso se puede pagar pero no se
+    debe todavía.
+  - No se pasa a sueldo con comisiones sin pagar (`PENDING_COMMISSION_BLOCKS_SALARY`).
+    Volver a comisión borra los campos del sueldo.
 
 **Compras**: `purchase_orders` `pendiente → en_viaje → recibido | cancelado`
 (`canTransitionPurchaseOrder`; `recibido` es terminal, por eso no hay

@@ -14,12 +14,16 @@ import {
   cashAccountsRepo,
   commissionPaymentsRepo,
   productsRepo,
+  salaryPaymentsRepo,
   sellersRepo,
   type CommissionPayment,
   type CommissionPaymentPreview,
+  type SalaryPayment,
   type Seller,
 } from '@/lib/data';
+import { formatSalaryPeriod } from '@/lib/domain/salary';
 import { formatCOP, formatDateTime, todayLocalDateString } from '@/lib/format';
+import { salarySummary } from '@/lib/salary-summary';
 
 function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
@@ -44,7 +48,8 @@ export function MySellerView({ sellerId }: { sellerId: number }) {
   );
 
   if (!seller) return <ThemedView style={styles.container} />;
-  return seller.inventoryMode === 'store' ? <MyCommissions seller={seller} /> : <MyInventory seller={seller} />;
+  if (seller.inventoryMode !== 'store') return <MyInventory seller={seller} />;
+  return seller.payType === 'salary' ? <MySalary seller={seller} /> : <MyCommissions seller={seller} />;
 }
 
 type Line = { productId: number; name: string; sku: string; price: number; imageUri: string | null; quantity: number };
@@ -266,6 +271,101 @@ function MyCommissions({ seller }: { seller: Seller }) {
                       </ThemedText>
                     </View>
                     <ThemedText type="smallBold">{formatCOP(payment.totalCommission)}</ThemedText>
+                  </View>
+                ))}
+              </ThemedView>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </ThemedView>
+  );
+}
+
+function MySalary({ seller }: { seller: Seller }) {
+  const theme = useTheme();
+  const [payments, setPayments] = useState<SalaryPayment[]>([]);
+  const [accountNames, setAccountNames] = useState<Record<number, string>>({});
+
+  useDataFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      Promise.all([salaryPaymentsRepo.listForSeller(seller.id), cashAccountsRepo.list()]).then(([rows, accounts]) => {
+        if (cancelled) return;
+        setPayments(rows);
+        setAccountNames(Object.fromEntries(accounts.map((a) => [a.id, a.name])));
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [seller.id]),
+  );
+
+  const salary = salarySummary(seller, payments, todayLocalDateString());
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const unit = salary?.period === 'monthly' ? ['mes', 'meses'] : ['semana', 'semanas'];
+
+  return (
+    <ThemedView style={styles.container}>
+      <Stack.Screen options={{ title: 'Mi sueldo' }} />
+      <SafeAreaView style={styles.safeArea} edges={[]}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+            <ThemedText type="secondary" themeColor="textSecondary">
+              Por cobrar
+            </ThemedText>
+            <ThemedText type="bigNumber" style={{ color: theme.primary }} adjustsFontSizeToFit numberOfLines={1}>
+              {formatCOP(salary?.owedAmount ?? 0)}
+            </ThemedText>
+            <ThemedText type="secondary" themeColor="textSecondary">
+              {salary && salary.owed.length > 0
+                ? `${plural(salary.owed.length, unit[0], unit[1])} sin pagar: ${salary.owed.map((p) => formatSalaryPeriod(p.start, salary.period)).join(', ')}`
+                : 'Estás al día'}
+            </ThemedText>
+          </ThemedView>
+
+          {salary ? (
+            <ThemedText type="caption" themeColor="textSecondary">
+              Tu sueldo es de {formatCOP(salary.amount)} {salary.period === 'weekly' ? 'cada semana (lunes a domingo)' : 'cada mes'}. Tus
+              ventas no generan comisión. Cada pago del dueño cubre un período.
+            </ThemedText>
+          ) : null}
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <ThemedText type="sectionTitle" style={styles.flex}>
+                Pagos recibidos
+              </ThemedText>
+              {payments.length > 0 ? (
+                <ThemedText type="caption" themeColor="textSecondary">
+                  {formatCOP(totalPaid)} en total
+                </ThemedText>
+              ) : null}
+            </View>
+            {payments.length === 0 ? (
+              <ThemedView type="backgroundElement" style={[styles.emptyCard, Shadow.subtle]}>
+                <View style={[styles.emptyIcon, { backgroundColor: withAlpha(theme.purple, 0.12) }]}>
+                  <HandCoins color={theme.purple} size={28} />
+                </View>
+                <ThemedText type="secondary" themeColor="textSecondary" style={styles.center}>
+                  Todavía no te han pagado el sueldo.
+                </ThemedText>
+              </ThemedView>
+            ) : (
+              <ThemedView type="backgroundElement" style={[styles.listCard, Shadow.subtle]}>
+                {payments.map((payment, i) => (
+                  <View key={payment.id} style={[styles.lineRow, i > 0 && { borderTopWidth: 1, borderTopColor: theme.border }]}>
+                    <View style={[styles.actionIcon, { backgroundColor: withAlpha(theme.purple, 0.12) }]}>
+                      <HandCoins color={theme.purple} size={18} />
+                    </View>
+                    <View style={styles.flex}>
+                      <ThemedText type="small">{formatSalaryPeriod(payment.periodStart, payment.period)}</ThemedText>
+                      <ThemedText type="caption" themeColor="textSecondary">
+                        Pagado el {formatDateTime(payment.paidAt)} · {accountNames[payment.accountId] ?? 'Cuenta'}
+                        {payment.notes ? ` · ${payment.notes}` : ''}
+                      </ThemedText>
+                    </View>
+                    <ThemedText type="smallBold">{formatCOP(payment.amount)}</ThemedText>
                   </View>
                 ))}
               </ThemedView>

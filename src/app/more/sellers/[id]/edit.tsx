@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { SellerForm, type SellerFormValues } from '@/components/seller-form';
+import { SellerForm, sellerPayInput, type SellerFormValues } from '@/components/seller-form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Spacing, withAlpha } from '@/constants/theme';
@@ -38,6 +38,9 @@ export default function EditSellerScreen() {
           phone: seller.phone ?? '',
           city: seller.city ?? '',
           inventoryMode: seller.inventoryMode,
+          payType: seller.payType,
+          salaryAmount: seller.salaryAmount ? String(seller.salaryAmount) : '',
+          salaryPeriod: seller.salaryPeriod ?? 'weekly',
           notes: seller.notes ?? '',
         };
         setValues(loaded);
@@ -68,6 +71,7 @@ export default function EditSellerScreen() {
       phone: values.phone.trim() || undefined,
       city: values.city.trim() || undefined,
       inventoryMode: values.inventoryMode,
+      ...sellerPayInput(values),
       notes: values.notes.trim() || undefined,
       active,
     });

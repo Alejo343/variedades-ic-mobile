@@ -14,21 +14,25 @@ import { useSyncSession } from '@/hooks/use-sync-session';
 import {
   commissionPaymentsRepo,
   directSalesRepo,
+  salaryPaymentsRepo,
   sellersRepo,
   sellerSalesRepo,
   settlementsRepo,
   type Seller,
 } from '@/lib/data';
+import { SALARY_PERIOD_LABEL } from '@/lib/domain/salary';
 import { formatCOP, isOnLocalDay, todayLocalDateString } from '@/lib/format';
+import { salarySummary } from '@/lib/salary-summary';
 
 type Summary = {
-  // Hero number: what they owe at the next settlement (consignment) or the
-  // commission still to be paid to them (store).
+  // Hero number: what they owe at the next settlement (consignment), the
+  // commission still to be paid to them (store) or their unpaid salary.
   hero: number;
   heroCaption: string;
   todayTotal: number;
   todayCount: number;
-  // Second tile: units held (consignment) or today's commission (store).
+  // Second tile: units held (consignment), today's commission (store) or
+  // their salary.
   side: string;
   sideCaption: string;
   productCount: number;
@@ -41,6 +45,24 @@ function plural(n: number, one: string, many: string) {
 
 async function loadSummary(seller: Seller): Promise<Summary> {
   const today = todayLocalDateString();
+
+  if (seller.inventoryMode === 'store' && seller.payType === 'salary') {
+    const [payments, sales] = await Promise.all([salaryPaymentsRepo.listForSeller(seller.id), directSalesRepo.list()]);
+    const todays = sales.filter((s) => s.sellerId === seller.id && isOnLocalDay(s.saleDate, today));
+    const salary = salarySummary(seller, payments, today);
+    const owed = salary?.owed.length ?? 0;
+    const unit = salary?.period === 'monthly' ? ['mes', 'meses'] : ['semana', 'semanas'];
+    return {
+      hero: salary?.owedAmount ?? 0,
+      heroCaption: owed > 0 ? `${plural(owed, unit[0], unit[1])} sin pagar todavía` : 'Estás al día',
+      todayTotal: todays.reduce((sum, s) => sum + s.totalAmount, 0),
+      todayCount: todays.length,
+      side: formatCOP(salary?.amount ?? 0),
+      sideCaption: salary ? `Tu sueldo ${SALARY_PERIOD_LABEL[salary.period]}` : 'Tu sueldo',
+      productCount: 0,
+      unitCount: 0,
+    };
+  }
 
   if (seller.inventoryMode === 'store') {
     const [pending, sales] = await Promise.all([commissionPaymentsRepo.preview(seller.id, today), directSalesRepo.list()]);
@@ -87,6 +109,7 @@ export function SellerHome({ seller, loading }: { seller: Seller | null; loading
   const session = useSyncSession();
   const [summary, setSummary] = useState<Summary | null>(null);
   const isStore = seller?.inventoryMode === 'store';
+  const isSalaried = isStore && seller?.payType === 'salary';
 
   useDataFocusEffect(
     useCallback(() => {
@@ -134,7 +157,7 @@ export function SellerHome({ seller, loading }: { seller: Seller | null; loading
             <>
               <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
                 <ThemedText type="secondary" themeColor="textSecondary">
-                  {isStore ? 'Comisión por cobrar' : 'Por entregar en la próxima liquidación'}
+                  {isSalaried ? 'Sueldo por cobrar' : isStore ? 'Comisión por cobrar' : 'Por entregar en la próxima liquidación'}
                 </ThemedText>
                 <ThemedText type="bigNumber" style={{ color: theme.primary }} adjustsFontSizeToFit numberOfLines={1}>
                   {formatCOP(summary?.hero ?? 0)}
@@ -170,7 +193,7 @@ export function SellerHome({ seller, loading }: { seller: Seller | null; loading
                         href={`/more/sellers/${seller.id}`}
                         icon={HandCoins}
                         color={theme.purple}
-                        title="Mis comisiones"
+                        title={isSalaried ? 'Mi sueldo' : 'Mis comisiones'}
                         subtitle="Lo pendiente y los pagos que te han hecho"
                         divider
                       />

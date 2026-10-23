@@ -53,6 +53,7 @@ function sourceIcon(movement: CashMovement): ComponentType<LucideProps> {
     case 'purchase_payment':
       return Truck;
     case 'commission_payment':
+    case 'salary_payment':
       return HandCoins;
     default:
       return movement.type === 'ingreso' ? ArrowDownLeft : ArrowUpRight;

@@ -135,6 +135,14 @@ export const sellers = sqliteTable("sellers", {
   // No CHECK here (adding one would rebuild the table); validations.ts and the
   // server's CHECK guard the values.
   inventoryMode: text("inventory_mode").notNull().default("consignment"),
+  // How a 'store' seller is paid (lib/domain/salary.ts): 'commission' on each
+  // sale, or a fixed 'salary' (then their sales carry no commission and the
+  // salary is paid per period, salary_payments). Validated like inventoryMode.
+  payType: text("pay_type").notNull().default("commission"),
+  salaryAmount: integer("salary_amount"),
+  salaryPeriod: text("salary_period"),
+  // 'YYYY-MM-DD': the first period is the one containing this day.
+  salaryStartDate: text("salary_start_date"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   notes: text("notes"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
@@ -415,6 +423,35 @@ export const commissionPayments = sqliteTable("commission_payments", {
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   syncStatus: text("sync_status").notNull().default("local"),
 });
+
+// The owner paying a salaried store seller one period of their salary (a week
+// from its Monday, or a calendar month; periodStart 'YYYY-MM-DD' is its first
+// day). The amount defaults to the seller's salary but may differ. Paid on
+// creation — an expense in the chosen account (sourceType 'salary_payment').
+// "A period is paid only once" is checked by the repo and by the server's
+// UNIQUE, deliberately not by a local index: two phones paying the same
+// period offline would leave this device's rejected row next to the
+// server's, and a local UNIQUE would then fail every pull page.
+export const salaryPayments = sqliteTable(
+  "salary_payments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: syncUuid(),
+    sellerId: integer("seller_id")
+      .notNull()
+      .references(() => sellers.id),
+    period: text("period").notNull(),
+    periodStart: text("period_start").notNull(),
+    amount: integer("amount").notNull(),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => cashAccounts.id),
+    paidAt: text("paid_at").notNull().default(sql`(current_timestamp)`),
+    notes: text("notes"),
+    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+  },
+  (table) => [check("salary_payments_amount_positive", sql`${table.amount} > 0`)],
+);
 
 export const settlements = sqliteTable(
   "settlements",

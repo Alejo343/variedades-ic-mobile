@@ -30,6 +30,7 @@ import {
   commissionPaymentsRepo,
   directSalesRepo,
   productsRepo,
+  salaryPaymentsRepo,
   sellerDeliveriesRepo,
   sellerLossesRepo,
   sellerReturnsRepo,
@@ -38,7 +39,9 @@ import {
   settlementsRepo,
   type Seller,
 } from '@/lib/data';
+import { formatSalaryPeriod, SALARY_PERIOD_LABEL } from '@/lib/domain/salary';
 import { formatCOP, formatDateTime, todayLocalDateString } from '@/lib/format';
+import { salarySummary, type SalarySummary } from '@/lib/salary-summary';
 
 type Tone = 'primary' | 'info' | 'warning' | 'error' | 'purple';
 
@@ -51,15 +54,20 @@ type Profile = {
   // Consignment: what they hold and what the next settlement collects.
   inventory: InventoryLine[];
   amountDue: number;
-  // Store: commissions not yet paid.
+  // Store: commissions not yet paid, or the salary (null = paid by commission).
   pendingCommission: number;
   pendingCommissionSales: number;
+  salary: SalarySummary | null;
   totalSold: number;
   activity: Activity[];
 };
 
 function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+function periodCount(salary: SalarySummary, n: number) {
+  return salary.period === 'weekly' ? plural(n, 'semana', 'semanas') : plural(n, 'mes', 'meses');
 }
 
 const LOSS_LABEL = { perdida: 'Pérdida', dano: 'Daño', robo: 'Robo' } as const;
@@ -70,10 +78,11 @@ async function loadProfile(sellerId: number): Promise<Profile | null> {
   const today = todayLocalDateString();
 
   if (seller.inventoryMode === 'store') {
-    const [preview, sales, payments] = await Promise.all([
+    const [preview, sales, payments, salaryPayments] = await Promise.all([
       commissionPaymentsRepo.preview(sellerId, today),
       directSalesRepo.list(),
       commissionPaymentsRepo.listForSeller(sellerId),
+      salaryPaymentsRepo.listForSeller(sellerId),
     ]);
     const own = sales.filter((s) => s.sellerId === sellerId);
     const activity: Activity[] = [
@@ -93,6 +102,14 @@ async function loadProfile(sellerId: number): Promise<Profile | null> {
         title: `Pago de comisiones · ${plural(p.saleCount, 'venta', 'ventas')}`,
         value: formatCOP(p.totalCommission),
       })),
+      ...salaryPayments.map((p) => ({
+        key: `salary-${p.id}`,
+        date: p.paidAt,
+        icon: HandCoins,
+        tone: 'purple' as Tone,
+        title: `Sueldo · ${formatSalaryPeriod(p.periodStart, p.period)}`,
+        value: formatCOP(p.amount),
+      })),
     ];
     return {
       seller,
@@ -100,6 +117,7 @@ async function loadProfile(sellerId: number): Promise<Profile | null> {
       amountDue: 0,
       pendingCommission: preview.totalCommission,
       pendingCommissionSales: preview.saleCount,
+      salary: salarySummary(seller, salaryPayments, today),
       totalSold: own.reduce((sum, s) => sum + s.totalAmount, 0),
       activity: activity.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8),
     };
@@ -175,6 +193,7 @@ async function loadProfile(sellerId: number): Promise<Profile | null> {
     amountDue: preview.amountDue,
     pendingCommission: 0,
     pendingCommissionSales: 0,
+    salary: null,
     totalSold: sales.reduce((sum, s) => sum + s.totalAmount, 0),
     activity: activity.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8),
   };
@@ -224,7 +243,7 @@ function SellerProfile({ sellerId }: { sellerId: number }) {
     );
   }
 
-  const { seller } = profile;
+  const { seller, salary } = profile;
   const isStore = seller.inventoryMode === 'store';
   const units = profile.inventory.reduce((sum, l) => sum + l.quantity, 0);
   const hasStock = units > 0;
@@ -259,12 +278,15 @@ function SellerProfile({ sellerId }: { sellerId: number }) {
               <View style={styles.flex}>
                 <ThemedText type="cardTitle">{seller.name}</ThemedText>
                 <ThemedText type="caption" themeColor="textSecondary">
-                  Comisión según el porcentaje de cada producto
+                  {salary
+                    ? `Sueldo fijo ${SALARY_PERIOD_LABEL[salary.period]} de ${formatCOP(salary.amount)}`
+                    : 'Comisión según el porcentaje de cada producto'}
                 </ThemedText>
               </View>
             </View>
             <View style={styles.badges}>
               <Badge label={isStore ? 'Tienda' : 'Consignación'} color={theme.info} />
+              {salary ? <Badge label="Sueldo fijo" color={theme.purple} /> : null}
               {!seller.active ? <Badge label="Inactivo" color={theme.error} /> : null}
               {seller.phone ? <InfoChip icon={Phone} text={seller.phone} /> : null}
               {seller.city ? <InfoChip icon={MapPin} text={seller.city} /> : null}
@@ -272,7 +294,17 @@ function SellerProfile({ sellerId }: { sellerId: number }) {
           </ThemedView>
 
           <View style={styles.tiles}>
-            {isStore ? (
+            {salary ? (
+              <>
+                <Tile
+                  label="Sueldo por pagar"
+                  value={formatCOP(salary.owedAmount)}
+                  caption={salary.owed.length > 0 ? `${periodCount(salary, salary.owed.length)} sin pagar` : 'Al día'}
+                  color={salary.owed.length > 0 ? theme.warning : theme.purple}
+                />
+                <Tile label="Sueldo" value={formatCOP(salary.amount)} caption={SALARY_PERIOD_LABEL[salary.period]} color={theme.purple} />
+              </>
+            ) : isStore ? (
               <Tile
                 label="Comisión por pagar"
                 value={formatCOP(profile.pendingCommission)}
@@ -293,7 +325,15 @@ function SellerProfile({ sellerId }: { sellerId: number }) {
           <View style={styles.section}>
             <ThemedText type="sectionTitle">Acciones</ThemedText>
             <View style={styles.actions}>
-              {isStore ? (
+              {salary ? (
+                <Action
+                  href={`/more/sellers/salary/new?${q}`}
+                  icon={HandCoins}
+                  color={theme.purple}
+                  label="Pagar sueldo"
+                  disabled={salary.unpaid.length === 0}
+                />
+              ) : isStore ? (
                 <Action
                   href={`/more/sellers/commissions/new?${q}`}
                   icon={HandCoins}

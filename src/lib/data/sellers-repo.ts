@@ -1,3 +1,4 @@
+import type { SalaryPeriod, SellerPayType } from "../domain/salary";
 import type { SellerInput, SellerInventoryMode } from "../validations";
 
 export type Seller = {
@@ -8,6 +9,12 @@ export type Seller = {
   phone: string | null;
   city: string | null;
   inventoryMode: SellerInventoryMode;
+  // A 'store' seller's pay (lib/domain/salary.ts). The salary fields are null
+  // unless payType is 'salary'.
+  payType: SellerPayType;
+  salaryAmount: number | null;
+  salaryPeriod: SalaryPeriod | null;
+  salaryStartDate: string | null; // 'YYYY-MM-DD'
   active: boolean;
   notes: string | null;
   createdAt: string;

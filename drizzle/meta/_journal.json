@@ -169,6 +169,13 @@
       "when": 1792038547996,
       "tag": "0023_drop_seller_commission",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792781176783,
+      "tag": "0024_salary_sellers",
+      "breakpoints": true
     }
   ]
 }

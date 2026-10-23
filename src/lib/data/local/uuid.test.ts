@@ -34,7 +34,7 @@ describe("uuid de sincronización", async () => {
   const { localDirectSalesRepo } = await import("./direct-sales-repo");
 
   it("todas las tablas tienen la columna", () => {
-    expect(tables).toHaveLength(23); // 22 of Fase 10 + commission_payments
+    expect(tables).toHaveLength(24); // 22 of Fase 10 + commission_payments + salary_payments
     for (const t of tables) expect(uuidsOf(t), t).toBeDefined();
   });
 

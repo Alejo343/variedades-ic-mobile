@@ -98,7 +98,7 @@ function SellerSellScreen() {
       </ThemedView>
     );
   }
-  if (seller.inventoryMode === 'store') return <DirectSaleScreen sellerId={seller.id} />;
+  if (seller.inventoryMode === 'store') return <DirectSaleScreen sellerId={seller.id} earnsCommission={seller.payType !== 'salary'} />;
   return <SellerSaleForm key={formKey} sellerId={seller.id} onSaved={() => setFormKey((k) => k + 1)} />;
 }
 
@@ -106,7 +106,9 @@ function SellerSellScreen() {
 // the bottom and the checkout (cart, payment method, discount, notes) in a
 // sheet opened from it — so the total is always in view and charging never
 // needs scrolling past the whole catalog.
-function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
+// earnsCommission: a store seller paid by commission sees what they earn; a
+// salaried one (lib/domain/salary.ts) and the owner don't.
+function DirectSaleScreen({ sellerId, earnsCommission = false }: { sellerId?: number; earnsCommission?: boolean }) {
   const theme = useTheme();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -181,7 +183,7 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
   // A store seller's commission: each product's percentage on the line's
   // price after the discount (same lines the sale is saved with).
   const commission =
-    sellerId === undefined
+    !earnsCommission
       ? null
       : calculateCommission(
           applyDiscount(cart, subtotal, grandTotal).map((line, i) => ({ ...line, commissionBps: cart[i].commissionBps })),
@@ -326,7 +328,7 @@ function DirectSaleScreen({ sellerId }: { sellerId?: number }) {
               }
               renderItem={({ item }) => {
                 const stock = stockCaption(item);
-                const caption = sellerId === undefined ? stock.caption : `${stock.caption} · ganas ${formatCommissionPercent(item.commissionBps)}`;
+                const caption = earnsCommission ? `${stock.caption} · ganas ${formatCommissionPercent(item.commissionBps)}` : stock.caption;
                 const tone = stock.tone;
                 const inCart = quantityById.has(item.id);
                 return (

@@ -1,8 +1,16 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import {
+  nextSalaryStartDate,
+  PENDING_COMMISSION_BLOCKS_SALARY,
+  sellerPayConfigError,
+  type SalaryPeriod,
+  type SellerPayType,
+} from "../../domain/salary";
+import { todayLocalDateString } from "../../format";
 import { enqueueOperation } from "../../sync/outbox";
 import type { CreateSellerInput, Seller, SellerInventoryLineWithSeller, SellersRepo, UpdateSellerInput } from "../sellers-repo";
 import { db, type Tx } from "./db";
-import { inventoryMovements, sellers } from "./schema";
+import { directSales, inventoryMovements, sellers } from "./schema";
 
 function toSeller(row: typeof sellers.$inferSelect): Seller {
   return {
@@ -12,6 +20,10 @@ function toSeller(row: typeof sellers.$inferSelect): Seller {
     phone: row.phone,
     city: row.city,
     inventoryMode: row.inventoryMode as Seller["inventoryMode"],
+    payType: row.payType as SellerPayType,
+    salaryAmount: row.salaryAmount,
+    salaryPeriod: row.salaryPeriod as SalaryPeriod | null,
+    salaryStartDate: row.salaryStartDate,
     active: row.active,
     notes: row.notes,
     createdAt: row.createdAt,
@@ -27,6 +39,11 @@ function toUpsertPayload(row: typeof sellers.$inferSelect) {
     phone: row.phone,
     city: row.city,
     inventoryMode: row.inventoryMode,
+    payType: row.payType,
+    salaryAmount: row.salaryAmount,
+    salaryPeriod: row.salaryPeriod,
+    // The phone's own local day, so the server keeps the same first period.
+    salaryStartDate: row.salaryStartDate,
     active: row.active,
     notes: row.notes,
   };
@@ -44,6 +61,38 @@ async function hasConsignedStock(tx: Tx, sellerId: number) {
     .having(sql`SUM(${inventoryMovements.quantityDelta}) <> 0`)
     .limit(1);
   return rows.length > 0;
+}
+
+async function hasPendingCommission(tx: Tx, sellerId: number) {
+  const rows = await tx
+    .select({ id: directSales.id })
+    .from(directSales)
+    .where(and(eq(directSales.sellerId, sellerId), isNull(directSales.commissionPaymentId), gt(directSales.commissionAmount, 0)))
+    .limit(1);
+  return rows.length > 0;
+}
+
+// Same rule as the server (lib/db/queries/seller-pay.ts): the pay columns a
+// save leaves on the seller (current = null for a new one). Absent fields keep
+// the current value, a commission seller carries no salary fields, and the
+// whole configuration is checked with lib/domain/salary.ts.
+async function resolvePay(tx: Tx, current: typeof sellers.$inferSelect | null, data: UpdateSellerInput) {
+  const currentPay = current
+    ? { payType: current.payType as SellerPayType, salaryPeriod: current.salaryPeriod as SalaryPeriod | null, salaryStartDate: current.salaryStartDate }
+    : null;
+  const inventoryMode = data.inventoryMode ?? current?.inventoryMode ?? "consignment";
+  const payType = data.payType ?? currentPay?.payType ?? "commission";
+  const salaried = payType === "salary";
+  const salaryAmount = salaried ? (data.salaryAmount !== undefined ? data.salaryAmount : (current?.salaryAmount ?? null)) : null;
+  const salaryPeriod = salaried ? (data.salaryPeriod !== undefined ? data.salaryPeriod : (currentPay?.salaryPeriod ?? null)) : null;
+
+  const error = sellerPayConfigError({ inventoryMode, payType, salaryAmount, salaryPeriod });
+  if (error) throw new Error(error);
+  if (salaried && current && currentPay?.payType !== "salary" && (await hasPendingCommission(tx, current.id))) {
+    throw new Error(PENDING_COMMISSION_BLOCKS_SALARY);
+  }
+  const salaryStartDate = nextSalaryStartDate(currentPay, { payType, salaryPeriod }, todayLocalDateString());
+  return { payType, salaryAmount, salaryPeriod, salaryStartDate };
 }
 
 export const localSellersRepo: SellersRepo = {
@@ -64,6 +113,7 @@ export const localSellersRepo: SellersRepo = {
 
   async create(data: CreateSellerInput) {
     return db.transaction(async (tx) => {
+      const pay = await resolvePay(tx, null, data);
       const [row] = await tx
         .insert(sellers)
         .values({
@@ -71,6 +121,7 @@ export const localSellersRepo: SellersRepo = {
           phone: data.phone ?? null,
           city: data.city ?? null,
           inventoryMode: data.inventoryMode ?? "consignment",
+          ...pay,
           active: data.active ?? true,
           notes: data.notes ?? null,
         })
@@ -90,9 +141,11 @@ export const localSellersRepo: SellersRepo = {
           );
         }
       }
+      const current = await tx.query.sellers.findFirst({ where: eq(sellers.id, id) });
+      const pay = await resolvePay(tx, current ?? null, data);
       const [row] = await tx
         .update(sellers)
-        .set({ ...data, updatedAt: new Date().toISOString() })
+        .set({ ...data, ...pay, updatedAt: new Date().toISOString() })
         .where(eq(sellers.id, id))
         .returning();
       if (!row) throw new Error("Vendedor no encontrado");

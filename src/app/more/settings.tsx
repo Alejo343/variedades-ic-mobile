@@ -48,6 +48,7 @@ const OPERATION_LABEL: Record<SyncOperationType, string> = {
   createSettlement: 'Liquidación',
   markSettlementSettled: 'Cerrar liquidación',
   createCommissionPayment: 'Pago de comisiones',
+  createSalaryPayment: 'Pago de sueldo',
 };
 
 type Rejection = { id: number; type: string; error: string; createdAt: string };

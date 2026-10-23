@@ -33,6 +33,8 @@ const dataTables = [
   schema.directSaleItems,
   schema.directSales,
   schema.cashMovements,
+  schema.commissionPayments,
+  schema.salaryPayments,
   schema.inventoryMovements,
   schema.sellers,
   schema.cashAccounts,

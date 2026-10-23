@@ -11,13 +11,15 @@ import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useTheme } from '@/hooks/use-theme';
-import { commissionPaymentsRepo, sellersRepo, settlementsRepo, type Seller } from '@/lib/data';
+import { commissionPaymentsRepo, salaryPaymentsRepo, sellersRepo, settlementsRepo, type Seller } from '@/lib/data';
 import { formatCOP, todayLocalDateString } from '@/lib/format';
+import { salarySummary } from '@/lib/salary-summary';
 
 type Filter = 'all' | 'consignment' | 'store' | 'inactive';
 
 // The one number that matters per seller: what a consignment seller holds and
-// would hand over today, or a store seller's unpaid commission.
+// would hand over today, or a store seller's unpaid commission (or salary
+// periods already ended and unpaid, for a salaried one).
 type Metric = { units: number; amount: number };
 
 function plural(n: number, one: string, many: string) {
@@ -41,9 +43,11 @@ export default function SellersScreen() {
         // A few sellers at this scale: one preview each is fine.
         const amounts = await Promise.all(
           rows.map((s) =>
-            s.inventoryMode === 'store'
-              ? commissionPaymentsRepo.preview(s.id, today).then((p) => p.totalCommission)
-              : settlementsRepo.preview(s.id, today).then((p) => p.amountDue),
+            s.inventoryMode !== 'store'
+              ? settlementsRepo.preview(s.id, today).then((p) => p.amountDue)
+              : s.payType === 'salary'
+                ? salaryPaymentsRepo.listForSeller(s.id).then((p) => salarySummary(s, p, today)?.owedAmount ?? 0)
+                : commissionPaymentsRepo.preview(s.id, today).then((p) => p.totalCommission),
           ),
         );
         if (cancelled) return;
@@ -110,6 +114,7 @@ export default function SellersScreen() {
             {visible.map((seller) => {
               const metric = metrics[seller.id] ?? { units: 0, amount: 0 };
               const isStore = seller.inventoryMode === 'store';
+              const salaried = isStore && seller.payType === 'salary';
               return (
                 <Link key={seller.id} href={`/more/sellers/${seller.id}`} asChild>
                   <Pressable>
@@ -126,7 +131,7 @@ export default function SellersScreen() {
                             {seller.name}
                           </ThemedText>
                           <ThemedText type="caption" themeColor="textSecondary" numberOfLines={1}>
-                            {isStore ? 'Tienda' : 'Consignación'}
+                            {salaried ? 'Tienda · sueldo' : isStore ? 'Tienda' : 'Consignación'}
                             {seller.city ? ` · ${seller.city}` : ''}
                           </ThemedText>
                         </View>
@@ -135,7 +140,7 @@ export default function SellersScreen() {
                             {formatCOP(metric.amount)}
                           </ThemedText>
                           <ThemedText type="caption" themeColor="textSecondary">
-                            {isStore ? 'comisión' : plural(metric.units, 'unidad', 'unidades')}
+                            {salaried ? 'sueldo' : isStore ? 'comisión' : plural(metric.units, 'unidad', 'unidades')}
                           </ThemedText>
                         </View>
                         <ChevronRight color={theme.textSecondary} size={18} />

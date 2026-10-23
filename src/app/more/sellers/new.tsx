@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { EMPTY_SELLER_FORM, SellerForm, type SellerFormValues } from '@/components/seller-form';
+import { EMPTY_SELLER_FORM, SellerForm, sellerPayInput, type SellerFormValues } from '@/components/seller-form';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Spacing, withAlpha } from '@/constants/theme';
@@ -26,6 +26,7 @@ export default function NewSellerScreen() {
       phone: values.phone.trim() || undefined,
       city: values.city.trim() || undefined,
       inventoryMode: values.inventoryMode,
+      ...sellerPayInput(values),
       notes: values.notes.trim() || undefined,
     });
     if (!parsed.success) {
