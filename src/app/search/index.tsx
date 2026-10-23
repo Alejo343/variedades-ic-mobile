@@ -338,7 +338,7 @@ function ResultRow({
     <Link href={href as never} asChild>
       <Pressable>
         {/* Link asChild rejects style arrays on its direct child. */}
-        <View style={[styles.row, dim && styles.dim]}>
+        <View style={[styles.row, dim && styles.dim]} collapsable={false}>
           <View style={[styles.iconDot, { backgroundColor: withAlpha(color, 0.12) }]}>
             <Icon color={color} size={18} />
           </View>
@@ -365,7 +365,7 @@ function ProductRow({ product: p, pending }: { product: Product; pending: boolea
   return (
     <Link href={{ pathname: '/more/products/[id]', params: { id: String(p.id) } }} asChild>
       <Pressable>
-        <View style={[styles.row, !p.active && styles.dim]}>
+        <View style={[styles.row, !p.active && styles.dim]} collapsable={false}>
           <ProductThumb uri={p.primaryImageUri} style={styles.thumb} iconSize={18} />
           <View style={styles.flex}>
             <ThemedText type="default" numberOfLines={1}>
