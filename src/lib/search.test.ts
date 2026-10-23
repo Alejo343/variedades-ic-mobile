@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { matchesRecordNumber, normalizeSearch, rankMatches } from './search';
+import { matchesRecordNumber, normalizeSearch, productsInMatchingCategories, rankMatches } from './search';
 
 describe('normalizeSearch', () => {
   it('lowercases, drops accents and trims', () => {
@@ -48,5 +48,38 @@ describe('matchesRecordNumber', () => {
   it('ignores queries that are not a number', () => {
     expect(matchesRecordNumber(7, 'rana')).toBe(false);
     expect(matchesRecordNumber(7, '#')).toBe(false);
+  });
+});
+
+describe('productsInMatchingCategories', () => {
+  const categories = [
+    { id: 1, name: 'Aseo' },
+    { id: 2, name: 'Juguetes' },
+    { id: 3, name: 'Juguetería fina' },
+    { id: 4, name: 'Juegos de mesa' },
+  ];
+  const products = [
+    { id: 10, name: 'Rana', categoryId: 2 },
+    { id: 11, name: 'Carro', categoryId: 2 },
+    { id: 12, name: 'Jabón', categoryId: 1 },
+    { id: 13, name: 'Muñeca de porcelana', categoryId: 3 },
+    { id: 14, name: 'Suelto', categoryId: null },
+  ];
+
+  it('lists the products of each matching category, best category first, products by name', () => {
+    expect(
+      productsInMatchingCategories(categories, products, 'JUGUET').map((g) => [g.category.name, g.products.map((p) => p.name)]),
+    ).toEqual([
+      ['Juguetes', ['Carro', 'Rana']],
+      ['Juguetería fina', ['Muñeca de porcelana']],
+    ]);
+  });
+
+  it('leaves out matching categories that have no products', () => {
+    expect(productsInMatchingCategories(categories, products, 'juegos')).toEqual([]);
+  });
+
+  it('returns nothing for an empty query', () => {
+    expect(productsInMatchingCategories(categories, products, ' ')).toEqual([]);
   });
 });

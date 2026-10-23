@@ -13,12 +13,14 @@ import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useTheme } from '@/hooks/use-theme';
 import {
+  categoriesRepo,
   directSalesRepo,
   distributorsRepo,
   productsRepo,
   purchaseOrdersRepo,
   sellerSalesRepo,
   sellersRepo,
+  type Category,
   type DirectSale,
   type Distributor,
   type Product,
@@ -27,13 +29,14 @@ import {
   type SellerSale,
 } from '@/lib/data';
 import { formatCOP, formatDateTime } from '@/lib/format';
-import { matchesRecordNumber, normalizeSearch, rankMatches } from '@/lib/search';
+import { matchesRecordNumber, normalizeSearch, productsInMatchingCategories, rankMatches } from '@/lib/search';
 import { pendingUuidsForType } from '@/lib/sync/outbox';
 
-type GroupKey = 'products' | 'sales' | 'sellers' | 'distributors' | 'orders';
+type GroupKey = 'products' | 'categories' | 'sales' | 'sellers' | 'distributors' | 'orders';
 
 const GROUP_LABEL: Record<GroupKey, string> = {
   products: 'Productos',
+  categories: 'Por categoría',
   sales: 'Ventas',
   sellers: 'Vendedores',
   distributors: 'Distribuidores',
@@ -44,6 +47,8 @@ const GROUP_LABEL: Record<GroupKey, string> = {
 // shows the whole group, capped so a one-letter search stays fast.
 const PREVIEW_ROWS = 4;
 const MAX_ROWS = 50;
+// "Todo" shows the products of at most this many matching categories.
+const PREVIEW_CATEGORIES = 2;
 
 // Shop sales and consignment sales share one "Ventas" group, newest first.
 type SaleHit =
@@ -52,6 +57,7 @@ type SaleHit =
 
 type Data = {
   products: Product[];
+  categories: Category[];
   sellers: Seller[];
   distributors: Distributor[];
   directSales: DirectSale[];
@@ -62,6 +68,7 @@ type Data = {
 
 const EMPTY_DATA: Data = {
   products: [],
+  categories: [],
   sellers: [],
   distributors: [],
   directSales: [],
@@ -81,14 +88,15 @@ export default function SearchScreen() {
       let cancelled = false;
       Promise.all([
         productsRepo.list(),
+        categoriesRepo.list(),
         sellersRepo.list(),
         distributorsRepo.list(),
         directSalesRepo.list(),
         sellerSalesRepo.list(),
         purchaseOrdersRepo.list(),
         pendingUuidsForType('upsertProduct'),
-      ]).then(([products, sellers, distributors, directSales, sellerSales, orders, pendingProductUuids]) => {
-        if (!cancelled) setData({ products, sellers, distributors, directSales, sellerSales, orders, pendingProductUuids });
+      ]).then(([products, categories, sellers, distributors, directSales, sellerSales, orders, pendingProductUuids]) => {
+        if (!cancelled) setData({ products, categories, sellers, distributors, directSales, sellerSales, orders, pendingProductUuids });
       });
       return () => {
         cancelled = true;
@@ -141,6 +149,7 @@ export default function SearchScreen() {
 
     return {
       products: rankMatches(data.products, q, (p) => [p.name, p.sku, p.distributorCode]),
+      categories: productsInMatchingCategories(data.categories, data.products, q),
       sales,
       sellers: rankMatches(data.sellers, q, (s) => [s.name, s.phone, s.city]),
       distributors: rankMatches(data.distributors, q, (d) => [d.name, d.phone, d.city]),
@@ -150,6 +159,7 @@ export default function SearchScreen() {
 
   const counts: Record<GroupKey, number> = {
     products: results?.products.length ?? 0,
+    categories: results?.categories.reduce((sum, g) => sum + g.products.length, 0) ?? 0,
     sales: results?.sales.length ?? 0,
     sellers: results?.sellers.length ?? 0,
     distributors: results?.distributors.length ?? 0,
@@ -165,6 +175,9 @@ export default function SearchScreen() {
   function renderRows(key: GroupKey): ReactNode[] {
     if (!results) return [];
     switch (key) {
+      // Rendered per category by renderCategoryGroups.
+      case 'categories':
+        return [];
       case 'products':
         return results.products.slice(0, limit).map((p) => <ProductRow key={p.id} product={p} pending={data.pendingProductUuids.has(p.uuid)} />);
       case 'sales':
@@ -233,6 +246,63 @@ export default function SearchScreen() {
     }
   }
 
+  function renderCard(rows: ReactNode[]) {
+    return (
+      <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
+        {rows.map((row, i) => (
+          <View key={i} style={i > 0 ? [styles.divider, { borderTopColor: theme.border }] : undefined}>
+            {row}
+          </View>
+        ))}
+      </ThemedView>
+    );
+  }
+
+  // One section per matching category; "Ver los N" opens Productos filtered
+  // by that category instead of growing the list here.
+  function renderCategoryGroups() {
+    if (!results) return null;
+    const groups = activeFilter === 'all' ? results.categories.slice(0, PREVIEW_CATEGORIES) : results.categories;
+    const hiddenCategories = results.categories.length - groups.length;
+    return (
+      <View key="categories" style={styles.section}>
+        {groups.map(({ category, products }) => (
+          <View key={category.id} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.flex}>
+                <ThemedText type="caption" themeColor="textSecondary">
+                  Categoría
+                </ThemedText>
+                <ThemedText type="sectionTitle" numberOfLines={1}>
+                  {category.name}
+                </ThemedText>
+              </View>
+              {products.length > limit ? (
+                <Link href={{ pathname: '/more/products', params: { categoryId: String(category.id) } }} asChild>
+                  <Pressable hitSlop={8}>
+                    <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                      Ver los {products.length}
+                    </ThemedText>
+                  </Pressable>
+                </Link>
+              ) : null}
+            </View>
+            {renderCard(
+              products.slice(0, limit).map((p) => <ProductRow key={p.id} product={p} pending={data.pendingProductUuids.has(p.uuid)} />),
+            )}
+          </View>
+        ))}
+        {hiddenCategories > 0 ? (
+          <Pressable onPress={() => setFilter('categories')} hitSlop={8}>
+            <ThemedText type="smallBold" style={[styles.center, { color: theme.primary }]}>
+              {hiddenCategories === 1 ? 'Ver 1 categoría más' : `Ver ${hiddenCategories} categorías más`}
+            </ThemedText>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.flex} edges={[]}>
@@ -256,12 +326,13 @@ export default function SearchScreen() {
           {!results ? (
             <EmptyState
               title="Busca en todo el negocio"
-              text="Productos por nombre, SKU o código del proveedor; ventas y pedidos por número (#12) o por producto; vendedores y distribuidores por nombre, ciudad o teléfono."
+              text="Productos por nombre, SKU, código del proveedor o categoría; ventas y pedidos por número (#12) o por producto; vendedores y distribuidores por nombre, ciudad o teléfono."
             />
           ) : total === 0 ? (
             <EmptyState title="Sin resultados" text={`Nada coincide con "${query.trim()}". Prueba con otra palabra o menos letras.`} />
           ) : (
             visibleGroups.map((key) => {
+              if (key === 'categories') return renderCategoryGroups();
               const hidden = counts[key] - Math.min(counts[key], limit);
               return (
                 <View key={key} style={styles.section}>
@@ -277,13 +348,7 @@ export default function SearchScreen() {
                       ) : null}
                     </View>
                   ) : null}
-                  <ThemedView type="backgroundElement" style={[styles.card, Shadow.subtle]}>
-                    {renderRows(key).map((row, i) => (
-                      <View key={i} style={i > 0 ? [styles.divider, { borderTopColor: theme.border }] : undefined}>
-                        {row}
-                      </View>
-                    ))}
-                  </ThemedView>
+                  {renderCard(renderRows(key))}
                   {activeFilter !== 'all' && hidden > 0 ? (
                     <ThemedText type="caption" themeColor="textSecondary" style={styles.center}>
                       Mostrando {MAX_ROWS} de {counts[key]}. Escribe más para afinar la búsqueda.

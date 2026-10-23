@@ -35,3 +35,18 @@ export function matchesRecordNumber(id: number, query: string): boolean {
   const digits = query.trim().replace(/^#/, '');
   return /^\d+$/.test(digits) && Number(digits) === id;
 }
+
+// "juguetes" also lists the products of the category Juguetes: one group per
+// category whose name matches (ranked like rankMatches), with its products
+// sorted by name. Categories without products are left out.
+export function productsInMatchingCategories<
+  C extends { id: number; name: string },
+  P extends { name: string; categoryId: number | null },
+>(categories: C[], products: P[], query: string): { category: C; products: P[] }[] {
+  return rankMatches(categories, query, (c) => [c.name])
+    .map((category) => ({
+      category,
+      products: products.filter((p) => p.categoryId === category.id).sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .filter((g) => g.products.length > 0);
+}
