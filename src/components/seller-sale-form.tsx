@@ -368,7 +368,8 @@ export function SellerSaleForm({
                       styles.submitButton,
                       { backgroundColor: theme.primary },
                       (saving || cart.length === 0) && styles.submitButtonDisabled,
-                    ]}>
+                    ]}
+                    collapsable={false}>
                     <ThemedText type="sectionTitle" style={styles.submitLabel}>
                       {saving ? 'Registrando…' : 'Registrar venta'}
                     </ThemedText>
