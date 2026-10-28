@@ -1,5 +1,6 @@
+import { Link } from 'expo-router';
 import { ReceiptText } from 'lucide-react-native';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -15,6 +16,10 @@ export type SaleListRow = {
   amount: number;
   // Shown under the amount when set.
   commission?: number;
+  // The sale's detail (the owner's Anular / Corregir); absent = not tappable.
+  href?: string;
+  // Voided (lib/domain/sale-void.ts): listed struck through, counted nowhere.
+  voided?: boolean;
 };
 
 // The "Mis ventas" totals card a seller sees above their list.
@@ -71,29 +76,45 @@ export function SaleList({
               </ThemedView>
             ) : null
           }
-          renderItem={({ item }) => (
-            <ThemedView type="backgroundElement" style={[styles.row, Shadow.subtle]}>
-              <View style={[styles.icon, { backgroundColor: withAlpha(theme.success, 0.12) }]}>
-                <ReceiptText color={theme.success} size={18} />
-              </View>
-              <View style={styles.flex}>
-                <ThemedText type="small" numberOfLines={1}>
-                  {item.title}
-                </ThemedText>
-                <ThemedText type="caption" themeColor="textSecondary" numberOfLines={2}>
-                  {item.subtitle}
-                </ThemedText>
-              </View>
-              <View style={styles.right}>
-                <ThemedText type="smallBold">{formatCOP(item.amount)}</ThemedText>
-                {item.commission !== undefined ? (
-                  <ThemedText type="caption" style={{ color: theme.primary }}>
-                    +{formatCOP(item.commission)} com.
+          renderItem={({ item }) => {
+            const tone = item.voided ? theme.textSecondary : theme.success;
+            const row = (
+              <ThemedView type="backgroundElement" style={[styles.row, Shadow.subtle]}>
+                <View style={[styles.icon, { backgroundColor: withAlpha(tone, 0.12) }]}>
+                  <ReceiptText color={tone} size={18} />
+                </View>
+                <View style={styles.flex}>
+                  <ThemedText type="small" numberOfLines={1}>
+                    {item.title}
                   </ThemedText>
-                ) : null}
-              </View>
-            </ThemedView>
-          )}
+                  <ThemedText type="caption" themeColor="textSecondary" numberOfLines={2}>
+                    {item.subtitle}
+                  </ThemedText>
+                </View>
+                <View style={styles.right}>
+                  <ThemedText type="smallBold" style={item.voided ? [styles.struck, { color: theme.textSecondary }] : undefined}>
+                    {formatCOP(item.amount)}
+                  </ThemedText>
+                  {item.voided ? (
+                    <ThemedText type="caption" style={{ color: theme.error }}>
+                      Anulada
+                    </ThemedText>
+                  ) : item.commission !== undefined ? (
+                    <ThemedText type="caption" style={{ color: theme.primary }}>
+                      +{formatCOP(item.commission)} com.
+                    </ThemedText>
+                  ) : null}
+                </View>
+              </ThemedView>
+            );
+            return item.href ? (
+              <Link href={item.href as never} asChild>
+                <Pressable>{row}</Pressable>
+              </Link>
+            ) : (
+              row
+            );
+          }}
         />
       </SafeAreaView>
     </ThemedView>
@@ -112,4 +133,5 @@ const styles = StyleSheet.create({
   emptyIcon: { width: 56, height: 56, borderRadius: 28 },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, padding: Spacing.three, borderRadius: Radii.card },
   right: { alignItems: 'flex-end', gap: 2 },
+  struck: { textDecorationLine: 'line-through' },
 });

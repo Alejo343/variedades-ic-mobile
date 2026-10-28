@@ -5,6 +5,7 @@ export default function SellLayout() {
     <Stack>
       <Stack.Screen name="index" options={{ title: 'Vender' }} />
       <Stack.Screen name="history" options={{ title: 'Historial de ventas' }} />
+      <Stack.Screen name="sale/[id]" options={{ title: 'Venta' }} />
     </Stack>
   );
 }

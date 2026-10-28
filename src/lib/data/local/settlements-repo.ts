@@ -32,7 +32,13 @@ function toSettlement(row: typeof settlements.$inferSelect): Settlement {
 // settlementId marks keep anything from being charged twice — same rule as
 // the web's lib/db/queries/settlements.ts (CLAUDE.md, "Fase 10").
 const pendingSales = (sellerId: number, periodDate: string) =>
-  and(eq(sellerSales.sellerId, sellerId), lt(sellerSales.saleDate, endOfLocalDayUtc(periodDate)), isNull(sellerSales.settlementId));
+  and(
+    eq(sellerSales.sellerId, sellerId),
+    lt(sellerSales.saleDate, endOfLocalDayUtc(periodDate)),
+    isNull(sellerSales.settlementId),
+    // A voided sale (lib/domain/sale-void.ts) is never charged nor marked.
+    isNull(sellerSales.voidedAt),
+  );
 const pendingLosses = (sellerId: number, periodDate: string) =>
   and(eq(sellerLosses.sellerId, sellerId), lt(sellerLosses.lossDate, endOfLocalDayUtc(periodDate)), isNull(sellerLosses.settlementId));
 

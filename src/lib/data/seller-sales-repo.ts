@@ -15,6 +15,11 @@ export type SellerSale = {
   saleDate: string;
   totalAmount: number;
   commissionAmount: number;
+  // The settlement that included it (null = still pending).
+  settlementId: number | null;
+  // Same as DirectSale.voidedAt / voidReason.
+  voidedAt: string | null;
+  voidReason: string | null;
   notes: string | null;
   createdAt: string;
   items: SellerSaleItem[];
@@ -33,6 +38,9 @@ export interface SellerSalesRepo {
   list(): Promise<SellerSale[]>;
   listForSeller(sellerId: number): Promise<SellerSale[]>;
   create(data: SellerSaleInput): Promise<SellerSale>;
+  // Owner only. Units back into the seller's inventory, the sale kept and
+  // marked. Throws saleVoidBlocker's reason when it can't (e.g. settled).
+  voidSale(id: number, reason?: string | null): Promise<void>;
   // Every sale made by each seller: consignment sales plus a store seller's
   // in-store sales (direct_sales tagged with them).
   getSummaryBySeller(): Promise<SellerSalesSummaryLine[]>;

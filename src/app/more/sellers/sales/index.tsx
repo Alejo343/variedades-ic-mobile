@@ -5,6 +5,7 @@ import { SaleList, type SaleListRow, type SaleListSummary } from '@/components/s
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useMySeller } from '@/hooks/use-my-seller';
 import { sellersRepo, sellerSalesRepo } from '@/lib/data';
+import { countedSales } from '@/lib/domain/sale-void';
 import { formatDateTime } from '@/lib/format';
 
 function plural(n: number, one: string, many: string) {
@@ -46,16 +47,20 @@ export default function SellerSalesScreen() {
               subtitle: onlySellerId === null ? `${units} · ${formatDateTime(sale.saleDate)}` : formatDateTime(sale.saleDate),
               amount: sale.totalAmount,
               commission: sale.commissionAmount,
+              voided: sale.voidedAt !== null,
+              // Only the owner opens a sale (to void or correct it).
+              href: isSeller ? undefined : `/more/sellers/sales/${sale.id}`,
             };
           }),
         );
+        const counted = countedSales(visible);
         setSummary(
           onlySellerId === null
             ? undefined
             : {
-                total: visible.reduce((sum, s) => sum + s.totalAmount, 0),
-                count: visible.length,
-                commission: visible.reduce((sum, s) => sum + s.commissionAmount, 0),
+                total: counted.reduce((sum, s) => sum + s.totalAmount, 0),
+                count: counted.length,
+                commission: counted.reduce((sum, s) => sum + s.commissionAmount, 0),
               },
         );
         setLoading(false);

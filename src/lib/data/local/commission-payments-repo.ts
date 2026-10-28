@@ -15,6 +15,8 @@ const pendingSales = (sellerId: number, periodDate: string) =>
     eq(directSales.sellerId, sellerId),
     lt(directSales.saleDate, endOfLocalDayUtc(periodDate)),
     isNull(directSales.commissionPaymentId),
+    // A voided sale (lib/domain/sale-void.ts) is never paid.
+    isNull(directSales.voidedAt),
   );
 
 async function pending(dbOrTx: typeof db | Tx, sellerId: number, periodDate: string) {

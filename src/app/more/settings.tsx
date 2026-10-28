@@ -49,6 +49,8 @@ const OPERATION_LABEL: Record<SyncOperationType, string> = {
   markSettlementSettled: 'Cerrar liquidación',
   createCommissionPayment: 'Pago de comisiones',
   createSalaryPayment: 'Pago de sueldo',
+  voidDirectSale: 'Anulación de venta en local',
+  voidSellerSale: 'Anulación de venta de vendedor',
 };
 
 type Rejection = { id: number; type: string; error: string; createdAt: string };

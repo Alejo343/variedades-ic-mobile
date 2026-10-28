@@ -24,6 +24,8 @@ export const SYNC_OPERATION_TYPES = [
   'markSettlementSettled',
   'createCommissionPayment',
   'createSalaryPayment',
+  'voidDirectSale',
+  'voidSellerSale',
 ] as const;
 
 export type SyncOperationType = (typeof SYNC_OPERATION_TYPES)[number];

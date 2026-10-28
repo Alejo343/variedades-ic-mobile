@@ -44,6 +44,7 @@ import { isBusinessCashMovement } from '@/lib/domain/cash';
 import { formatCOP, formatRelativeTime, isOnLocalDay, shiftLocalDate, todayLocalDateString } from '@/lib/format';
 import { changeVsPrevious, dailySalesTotals, topSoldProducts, type DailyTotal } from '@/lib/home-summary';
 import { listRejections } from '@/lib/sync/push-engine';
+import { countedSales } from '@/lib/domain/sale-void';
 
 type ActivityKind = 'sale' | 'sellerSale' | 'purchase' | 'adjustment' | 'settlement';
 
@@ -119,8 +120,9 @@ async function loadHome(): Promise<HomeData> {
     inventoryRepo.getOutOfStock(),
     inventoryRepo.getRecentMovements(10),
     purchasePaymentsRepo.getAccountsPayableSummary(),
-    directSalesRepo.list(),
-    sellerSalesRepo.list(),
+    // Voided sales count nowhere on Inicio.
+    directSalesRepo.list().then(countedSales),
+    sellerSalesRepo.list().then(countedSales),
     purchaseOrdersRepo.list(),
     settlementsRepo.list(),
     productsRepo.list(),

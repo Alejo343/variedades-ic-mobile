@@ -1,12 +1,14 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { calculateCommission, type CommissionLine } from "../../domain/commission";
+import { normalizeVoidReason, saleVoidBlocker } from "../../domain/sale-void";
+import { toSqliteUtcTimestamp } from "../../format";
 import { enqueueOperation } from "../../sync/outbox";
 import type { DirectSaleInput } from "../../validations";
 import type { DirectSale, DirectSaleItem, DirectSalesRepo } from "../direct-sales-repo";
 import { recordCashMovementTx } from "./cash-repo";
 import { db } from "./db";
 import { productCommissionBps } from "./product-commission";
-import { cashAccounts, directSaleItems, directSales, sellers } from "./schema";
+import { cashAccounts, cashMovements, directSaleItems, directSales, sellers } from "./schema";
 import { recordProductMovement } from "./stock-movements";
 
 function toItem(row: typeof directSaleItems.$inferSelect): DirectSaleItem {
@@ -34,6 +36,8 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         sellerId: sale.sellerId,
         commissionAmount: sale.commissionAmount,
         commissionPaymentId: sale.commissionPaymentId,
+        voidedAt: sale.voidedAt,
+        voidReason: sale.voidReason,
         notes: sale.notes,
         createdAt: sale.createdAt,
         items: items.map(toItem),
@@ -135,10 +139,45 @@ export const localDirectSalesRepo: DirectSalesRepo = {
         sellerId: updated.sellerId,
         commissionAmount: updated.commissionAmount,
         commissionPaymentId: updated.commissionPaymentId,
+        voidedAt: updated.voidedAt,
+        voidReason: updated.voidReason,
         notes: updated.notes,
         createdAt: updated.createdAt,
         items,
       };
+    });
+  },
+
+  async voidSale(id: number, reason?: string | null) {
+    await db.transaction(async (tx) => {
+      const sale = await tx.query.directSales.findFirst({ where: eq(directSales.id, id) });
+      if (!sale) throw new Error("Venta no encontrada");
+      const blocker = saleVoidBlocker(sale);
+      if (blocker) throw new Error(blocker);
+
+      // Units back into the principal stock, one 'anulacion' movement per
+      // item — the server writes the same rows with these uuids.
+      const items = await tx.select().from(directSaleItems).where(eq(directSaleItems.saleId, id));
+      const outboxItems: { itemUuid: string; movementUuid: string }[] = [];
+      for (const item of items) {
+        const { movementUuid } = await recordProductMovement(tx, {
+          productId: item.productId,
+          quantityDelta: item.quantity,
+          type: "anulacion",
+          sourceType: "direct_sale",
+        });
+        outboxItems.push({ itemUuid: item.uuid, movementUuid });
+      }
+
+      // The income goes away (the server deletes it too): balances and every
+      // cash flow drop it with no special case.
+      await tx.delete(cashMovements).where(and(eq(cashMovements.sourceType, "direct_sale"), eq(cashMovements.sourceId, id)));
+
+      // toSqliteUtcTimestamp: it travels in the payload (CLAUDE.md, "Fechas").
+      const voidedAt = toSqliteUtcTimestamp(new Date());
+      const voidReason = normalizeVoidReason(reason);
+      await tx.update(directSales).set({ voidedAt, voidReason }).where(eq(directSales.id, id));
+      await enqueueOperation(tx, "voidDirectSale", { saleUuid: sale.uuid, voidedAt, reason: voidReason, items: outboxItems });
     });
   },
 };

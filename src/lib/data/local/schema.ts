@@ -210,6 +210,10 @@ export const directSales = sqliteTable("direct_sales", {
   commissionAmount: integer("commission_amount").notNull().default(0),
   // The commission payment that paid this sale's commission (null = pending).
   commissionPaymentId: integer("commission_payment_id").references((): AnySQLiteColumn => commissionPayments.id),
+  // Set when the owner voided it (lib/domain/sale-void.ts): kept for history,
+  // left out of every total.
+  voidedAt: text("voided_at"),
+  voidReason: text("void_reason"),
   notes: text("notes"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   syncStatus: text("sync_status").notNull().default("local"),
@@ -487,6 +491,9 @@ export const sellerSales = sqliteTable("seller_sales", {
   totalAmount: integer("total_amount").notNull().default(0),
   commissionAmount: integer("commission_amount").notNull().default(0),
   settlementId: integer("settlement_id").references(() => settlements.id),
+  // Same as direct_sales.voided_at / void_reason.
+  voidedAt: text("voided_at"),
+  voidReason: text("void_reason"),
   notes: text("notes"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   syncStatus: text("sync_status").notNull().default("local"),

@@ -19,6 +19,10 @@ export type DirectSale = {
   commissionAmount: number;
   // Set once a commission payment covered this sale (null = still pending).
   commissionPaymentId: number | null;
+  // Set when the owner voided it (lib/domain/sale-void.ts): shown marked in
+  // lists, left out of every total.
+  voidedAt: string | null;
+  voidReason: string | null;
   notes: string | null;
   createdAt: string;
   items: DirectSaleItem[];
@@ -27,4 +31,7 @@ export type DirectSale = {
 export interface DirectSalesRepo {
   list(): Promise<DirectSale[]>;
   create(data: DirectSaleInput): Promise<DirectSale>;
+  // Owner only. Units back into the principal stock, the cash income removed,
+  // the sale kept and marked. Throws saleVoidBlocker's reason when it can't.
+  voidSale(id: number, reason?: string | null): Promise<void>;
 }

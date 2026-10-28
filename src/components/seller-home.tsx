@@ -23,6 +23,7 @@ import {
 import { SALARY_PERIOD_LABEL } from '@/lib/domain/salary';
 import { formatCOP, isOnLocalDay, todayLocalDateString } from '@/lib/format';
 import { salarySummary } from '@/lib/salary-summary';
+import { countedSales } from '@/lib/domain/sale-void';
 
 type Summary = {
   // Hero number: what they owe at the next settlement (consignment), the
@@ -47,7 +48,7 @@ async function loadSummary(seller: Seller): Promise<Summary> {
   const today = todayLocalDateString();
 
   if (seller.inventoryMode === 'store' && seller.payType === 'salary') {
-    const [payments, sales] = await Promise.all([salaryPaymentsRepo.listForSeller(seller.id), directSalesRepo.list()]);
+    const [payments, sales] = await Promise.all([salaryPaymentsRepo.listForSeller(seller.id), directSalesRepo.list().then(countedSales)]);
     const todays = sales.filter((s) => s.sellerId === seller.id && isOnLocalDay(s.saleDate, today));
     const salary = salarySummary(seller, payments, today);
     const owed = salary?.owed.length ?? 0;
@@ -65,7 +66,7 @@ async function loadSummary(seller: Seller): Promise<Summary> {
   }
 
   if (seller.inventoryMode === 'store') {
-    const [pending, sales] = await Promise.all([commissionPaymentsRepo.preview(seller.id, today), directSalesRepo.list()]);
+    const [pending, sales] = await Promise.all([commissionPaymentsRepo.preview(seller.id, today), directSalesRepo.list().then(countedSales)]);
     const todays = sales.filter((s) => s.sellerId === seller.id && isOnLocalDay(s.saleDate, today));
     const todayCommission = todays.reduce((sum, s) => sum + s.commissionAmount, 0);
     return {
@@ -82,7 +83,7 @@ async function loadSummary(seller: Seller): Promise<Summary> {
 
   const [preview, sales, inventory] = await Promise.all([
     settlementsRepo.preview(seller.id, today),
-    sellerSalesRepo.listForSeller(seller.id),
+    sellerSalesRepo.listForSeller(seller.id).then(countedSales),
     sellersRepo.getInventory(seller.id),
   ]);
   const todays = sales.filter((s) => isOnLocalDay(s.saleDate, today));

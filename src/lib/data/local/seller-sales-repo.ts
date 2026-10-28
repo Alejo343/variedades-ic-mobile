@@ -1,5 +1,7 @@
-import { desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { calculateCommission, type CommissionLine } from "../../domain/commission";
+import { normalizeVoidReason, saleVoidBlocker } from "../../domain/sale-void";
+import { toSqliteUtcTimestamp } from "../../format";
 import { enqueueOperation } from "../../sync/outbox";
 import type { SellerSaleInput } from "../../validations";
 import type { SellerSale, SellerSaleItem, SellerSalesRepo } from "../seller-sales-repo";
@@ -15,6 +17,9 @@ function toSale(row: typeof sellerSales.$inferSelect): Omit<SellerSale, "items">
     saleDate: row.saleDate,
     totalAmount: row.totalAmount,
     commissionAmount: row.commissionAmount,
+    settlementId: row.settlementId,
+    voidedAt: row.voidedAt,
+    voidReason: row.voidReason,
     notes: row.notes,
     createdAt: row.createdAt,
   };
@@ -117,6 +122,35 @@ export const localSellerSalesRepo: SellerSalesRepo = {
     });
   },
 
+  async voidSale(id: number, reason?: string | null) {
+    await db.transaction(async (tx) => {
+      const sale = await tx.query.sellerSales.findFirst({ where: eq(sellerSales.id, id) });
+      if (!sale) throw new Error("Venta no encontrada");
+      const blocker = saleVoidBlocker(sale);
+      if (blocker) throw new Error(blocker);
+
+      // Units back into the seller's inventory; no cash to undo (the money
+      // only reaches the shop when the seller settles).
+      const items = await tx.select().from(sellerSaleItems).where(eq(sellerSaleItems.saleId, id));
+      const outboxItems: { itemUuid: string; movementUuid: string }[] = [];
+      for (const item of items) {
+        const { movementUuid } = await recordSellerMovement(tx, {
+          sellerId: sale.sellerId,
+          productId: item.productId,
+          quantityDelta: item.quantity,
+          type: "anulacion",
+          sourceType: "seller_sale",
+        });
+        outboxItems.push({ itemUuid: item.uuid, movementUuid });
+      }
+
+      const voidedAt = toSqliteUtcTimestamp(new Date());
+      const voidReason = normalizeVoidReason(reason);
+      await tx.update(sellerSales).set({ voidedAt, voidReason }).where(eq(sellerSales.id, id));
+      await enqueueOperation(tx, "voidSellerSale", { saleUuid: sale.uuid, voidedAt, reason: voidReason, items: outboxItems });
+    });
+  },
+
   async getSummaryBySeller() {
     const [consignment, store] = await Promise.all([
       db
@@ -127,6 +161,7 @@ export const localSellerSalesRepo: SellerSalesRepo = {
           totalCommission: sql<number>`COALESCE(SUM(${sellerSales.commissionAmount}), 0)`,
         })
         .from(sellerSales)
+        .where(isNull(sellerSales.voidedAt))
         .groupBy(sellerSales.sellerId),
       db
         .select({
@@ -136,7 +171,7 @@ export const localSellerSalesRepo: SellerSalesRepo = {
           totalCommission: sql<number>`COALESCE(SUM(${directSales.commissionAmount}), 0)`,
         })
         .from(directSales)
-        .where(isNotNull(directSales.sellerId))
+        .where(and(isNotNull(directSales.sellerId), isNull(directSales.voidedAt)))
         .groupBy(directSales.sellerId),
     ]);
 

@@ -147,6 +147,20 @@ describe("applyPullPage: aplica un lote completo del servidor", async () => {
     expect(one("SELECT name, description FROM categories WHERE uuid = 'cat-1'")).toEqual({ name: "Tecnología y hogar", description: "actualizada" });
   });
 
+  it("una venta que el servidor anuló llega marcada, y un servidor viejo sin el campo no la desmarca", async () => {
+    const voidedSale = { ...page.changes.direct_sales[0], voidedAt: "2026-09-27 10:00:00", voidReason: "Me equivoqué" };
+    await proxy.transaction((tx) => applyPullPage(tx as unknown as AnyTx, {
+      changes: { direct_sales: [voidedSale], seller_sales: [{ ...page.changes.seller_sales[0], voidedAt: "2026-09-27 10:00:00", voidReason: null }] },
+      tombstones: [{ table: "cash_movements", uuid: "cash-1" }],
+    }));
+    expect(one("SELECT voided_at, void_reason FROM direct_sales WHERE uuid = 'sale-1'")).toEqual({ voided_at: "2026-09-27 10:00:00", void_reason: "Me equivoqué" });
+    expect(one("SELECT voided_at FROM seller_sales WHERE uuid = 'ssale-1'")).toEqual({ voided_at: "2026-09-27 10:00:00" });
+    expect(raw.prepare("SELECT count(*) AS n FROM cash_movements WHERE uuid = 'cash-1'").get()).toEqual({ n: 0 });
+
+    await proxy.transaction((tx) => applyPullPage(tx as unknown as AnyTx, { changes: { direct_sales: [page.changes.direct_sales[0]] }, tombstones: [] }));
+    expect(one("SELECT voided_at FROM direct_sales WHERE uuid = 'sale-1'")).toEqual({ voided_at: "2026-09-27 10:00:00" });
+  });
+
   it("una referencia a un uuid que este dispositivo no tiene rechaza la página completa", async () => {
     await expect(
       proxy.transaction((tx) => applyPullPage(tx as unknown as AnyTx, {

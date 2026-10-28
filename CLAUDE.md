@@ -121,6 +121,20 @@ con agregaciones sobre los ledgers, nunca se guardan.
   `unitPrice` de las líneas (no hay columna de descuento).
 - Venta de vendedor de consignación (`seller_sales`): descuenta solo su
   inventario, calcula comisión, **no toca caja** (entra al liquidar).
+- **Anular / corregir una venta** (decisión del usuario, 2026-10-28): solo el
+  dueño. La venta no se borra: queda con `voided_at`/`void_reason` y **no
+  cuenta en ningún total** (`lib/domain/sale-void.ts#countedSales`, copia
+  idéntica de la web; en SQL, `isNull(voidedAt)`). Al anular, las unidades
+  vuelven con un movimiento `anulacion` (a la tienda o al vendedor) y el
+  ingreso de caja de una venta en local se **borra** (el servidor también; su
+  lápida llega a los demás celulares). No se anula si ya está en una
+  liquidación o si su comisión ya se pagó (`saleVoidBlocker`). "Corregir" =
+  anular + abrir el POS (`/sell?corregir=<id>`) o la venta de consignación
+  (`sales/new?corregir=<id>`) con los mismos productos al precio cobrado; la
+  venta de un vendedor de tienda solo se anula. Detalle de venta en
+  `components/sale-detail.tsx` (`/sell/sale/[id]`, `/more/sellers/sales/[id]`).
+  Operaciones `voidDirectSale`/`voidSellerSale` con un `movementUuid` por
+  ítem. Toda consulta nueva que sume ventas debe excluir las anuladas.
 
 **Comisión** (decisión del usuario, 2026-10-14): es **por producto**, un
 porcentaje del precio de venta en `products.commission_bps` (puntos base,

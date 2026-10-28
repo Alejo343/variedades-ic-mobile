@@ -1,5 +1,6 @@
+import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronRight, PackageSearch, Plus, ShoppingCart, Tag, Trash2, X } from 'lucide-react-native';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, FadeOutLeft, LinearTransition } from 'react-native-reanimated';
@@ -172,6 +173,49 @@ function DirectSaleScreen({ sellerId, earnsCommission = false }: { sellerId?: nu
       return p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q);
     });
   }, [products, search, categoryId]);
+
+  // Corregir (components/sale-detail.tsx): the owner voided a sale and lands
+  // here with `?corregir=<id>` — its products go into the cart at the price
+  // that was charged (any discount already folded in), with its account and
+  // notes, to register it again the right way. Read once, then cleared.
+  const { corregir } = useLocalSearchParams<{ corregir?: string }>();
+  useEffect(() => {
+    if (!corregir || sellerId !== undefined || !loaded || accounts.length === 0) return;
+    let cancelled = false;
+    directSalesRepo.list().then((sales) => {
+      if (cancelled) return;
+      router.setParams({ corregir: undefined });
+      const sale = sales.find((s) => s.id === Number(corregir));
+      if (!sale?.voidedAt) return;
+      const byId = new Map(products.map((p) => [p.id, p]));
+      setCart(
+        sale.items.flatMap((item) => {
+          const product = byId.get(item.productId);
+          if (!product) return [];
+          return [
+            {
+              productId: product.id,
+              name: product.name,
+              sku: product.sku,
+              imageUri: product.primaryImageUri,
+              stock: product.stock,
+              quantity: String(item.quantity),
+              unitPrice: String(item.unitPrice),
+              commissionBps: product.commissionBps,
+            },
+          ];
+        }),
+      );
+      if (accounts.some((a) => a.id === sale.accountId)) setAccountId(sale.accountId);
+      setNotes(sale.notes ?? '');
+      setShowDiscount(false);
+      setDiscount('');
+      setError(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [corregir, sellerId, loaded, accounts, products]);
 
   const cardWidth = gridCardWidth(gridWidth - Layout.screenPadding * 2);
   const quantityById = useMemo(() => new Map(cart.map((item) => [item.productId, Number(item.quantity) || 0])), [cart]);

@@ -42,6 +42,7 @@ import {
 import { formatSalaryPeriod, SALARY_PERIOD_LABEL } from '@/lib/domain/salary';
 import { formatCOP, formatDateTime, todayLocalDateString } from '@/lib/format';
 import { salarySummary, type SalarySummary } from '@/lib/salary-summary';
+import { countedSales } from '@/lib/domain/sale-void';
 
 type Tone = 'primary' | 'info' | 'warning' | 'error' | 'purple';
 
@@ -80,7 +81,7 @@ async function loadProfile(sellerId: number): Promise<Profile | null> {
   if (seller.inventoryMode === 'store') {
     const [preview, sales, payments, salaryPayments] = await Promise.all([
       commissionPaymentsRepo.preview(sellerId, today),
-      directSalesRepo.list(),
+      directSalesRepo.list().then(countedSales),
       commissionPaymentsRepo.listForSeller(sellerId),
       salaryPaymentsRepo.listForSeller(sellerId),
     ]);
@@ -127,7 +128,7 @@ async function loadProfile(sellerId: number): Promise<Profile | null> {
     sellersRepo.getInventory(sellerId),
     productsRepo.list(),
     settlementsRepo.preview(sellerId, today),
-    sellerSalesRepo.listForSeller(sellerId),
+    sellerSalesRepo.listForSeller(sellerId).then(countedSales),
     sellerDeliveriesRepo.listForSeller(sellerId),
     sellerReturnsRepo.listForSeller(sellerId),
     sellerLossesRepo.listForSeller(sellerId),

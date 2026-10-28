@@ -1,5 +1,6 @@
 import { Link } from 'expo-router';
 import {
+  Ban,
   CircleCheck,
   PackageMinus,
   PackageX,
@@ -36,6 +37,7 @@ const MOVEMENT_STYLE: Record<MovementType, { label: string; icon: ComponentType<
   perdida: { label: 'Pérdida', icon: PackageMinus, tone: 'error' },
   dano: { label: 'Daño', icon: PackageMinus, tone: 'error' },
   robo: { label: 'Robo', icon: PackageMinus, tone: 'error' },
+  anulacion: { label: 'Venta anulada', icon: Ban, tone: 'warning' },
 };
 
 export default function InventoryScreen() {

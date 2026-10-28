@@ -11,6 +11,7 @@ export default function SellersLayout() {
       <Stack.Screen name="deliveries/new" options={{ title: 'Nueva entrega', presentation: 'modal' }} />
       <Stack.Screen name="sales/index" options={{ title: 'Ventas de vendedores' }} />
       <Stack.Screen name="sales/new" options={{ title: 'Nueva venta', presentation: 'modal' }} />
+      <Stack.Screen name="sales/[id]" options={{ title: 'Venta' }} />
       <Stack.Screen name="returns/index" options={{ title: 'Devoluciones de vendedores' }} />
       <Stack.Screen name="returns/new" options={{ title: 'Nueva devolución', presentation: 'modal' }} />
       <Stack.Screen name="losses/index" options={{ title: 'Pérdidas de vendedores' }} />

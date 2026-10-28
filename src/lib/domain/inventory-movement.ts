@@ -8,7 +8,9 @@ export type MovementType =
   | "ajuste"
   | "perdida"
   | "dano"
-  | "robo";
+  | "robo"
+  // Units back from a voided sale (lib/domain/sale-void.ts).
+  | "anulacion";
 
 export type OwnerType = "principal" | "seller";
 

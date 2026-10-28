@@ -1,4 +1,4 @@
-import { and, eq, ne, sql, type AnyColumn, type SQL } from "drizzle-orm";
+import { and, eq, isNull, ne, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type {
   InventorySummary,
   ProfitReport,
@@ -56,8 +56,9 @@ export const localReportsRepo: ReportsRepo = {
   },
 
   async getSalesReport(from?: string, to?: string): Promise<SalesReport> {
-    const localCond = dateRangeCondition(directSales.saleDate, from, to);
-    const sellerCond = dateRangeCondition(sellerSales.saleDate, from, to);
+    // Voided sales (lib/domain/sale-void.ts) count nowhere.
+    const localCond = and(isNull(directSales.voidedAt), dateRangeCondition(directSales.saleDate, from, to));
+    const sellerCond = and(isNull(sellerSales.voidedAt), dateRangeCondition(sellerSales.saleDate, from, to));
 
     const [[local], [seller], localByAccount] = await Promise.all([
       db
@@ -98,8 +99,9 @@ export const localReportsRepo: ReportsRepo = {
   },
 
   async getProfitReport(from?: string, to?: string): Promise<ProfitReport> {
-    const localCond = dateRangeCondition(directSales.saleDate, from, to);
-    const sellerCond = dateRangeCondition(sellerSales.saleDate, from, to);
+    // Voided sales (lib/domain/sale-void.ts) count nowhere.
+    const localCond = and(isNull(directSales.voidedAt), dateRangeCondition(directSales.saleDate, from, to));
+    const sellerCond = and(isNull(sellerSales.voidedAt), dateRangeCondition(sellerSales.saleDate, from, to));
 
     const [sales, [localRow], [sellerRow]] = await Promise.all([
       localReportsRepo.getSalesReport(from, to),

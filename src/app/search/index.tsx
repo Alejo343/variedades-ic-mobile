@@ -197,19 +197,16 @@ export default function SearchScreen() {
             .slice(0, 2)
             .map((i) => `${i.quantity}× ${names.product.get(i.productId) ?? 'Producto'}`)
             .join(', ');
-          const href =
-            hit.kind === 'seller'
-              ? `/more/sellers/sales?sellerId=${hit.sale.sellerId}`
-              : sellerId !== null
-                ? `/sell/history?sellerId=${sellerId}`
-                : '/sell/history';
+          // The sale's own detail (where the owner voids or corrects it).
+          const href = hit.kind === 'seller' ? `/more/sellers/sales/${hit.sale.id}` : `/sell/sale/${hit.sale.id}`;
+          const voided = hit.sale.voidedAt !== null;
           return (
             <ResultRow
               key={`${hit.kind}-${hit.sale.id}`}
               href={href}
               icon={ReceiptText}
-              color={hit.kind === 'seller' ? theme.purple : theme.success}
-              title={`Venta #${hit.sale.id}${sellerName ? ` · ${sellerName}` : ' · en local'}`}
+              color={voided ? theme.textSecondary : hit.kind === 'seller' ? theme.purple : theme.success}
+              title={`Venta #${hit.sale.id}${sellerName ? ` · ${sellerName}` : ' · en local'}${voided ? ' · anulada' : ''}`}
               subtitle={`${formatDateTime(hit.sale.saleDate)} · ${firstNames}${items.length > 2 ? ` y ${items.length - 2} más` : ''}`}
               right={<ThemedText type="smallBold">{formatCOP(hit.sale.totalAmount)}</ThemedText>}
             />

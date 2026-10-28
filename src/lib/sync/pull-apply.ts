@@ -149,6 +149,8 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       await upsert(tx, directSales, uuid, {
         saleDate: row.saleDate, totalAmount: row.totalAmount, accountId, sellerId,
         commissionAmount: row.commissionAmount, commissionPaymentId, notes: row.notes,
+        // Undefined (a server older than sale voids) leaves them as they are.
+        voidedAt: row.voidedAt, voidReason: row.voidReason,
       });
       return;
     }
@@ -225,7 +227,7 @@ async function applyRow(tx: Tx, table: string, row: Row): Promise<void> {
       const settlementId = await localIdNullable(tx, settlements, row.settlementUuid as string | null);
       await upsert(tx, sellerSales, uuid, {
         sellerId, saleDate: row.saleDate, totalAmount: row.totalAmount, commissionAmount: row.commissionAmount,
-        settlementId, notes: row.notes,
+        settlementId, notes: row.notes, voidedAt: row.voidedAt, voidReason: row.voidReason,
       });
       return;
     }

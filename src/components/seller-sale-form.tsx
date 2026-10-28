@@ -44,7 +44,17 @@ const PAGE_SIZE = 6;
 // reset the form for the next sale). Same look as the shop POS
 // (sell/index.tsx), but the catalog is only what this seller holds and the
 // unit price stays editable, as it always was for consignment sales.
-export function SellerSaleForm({ sellerId, onSaved }: { sellerId: number; onSaved: () => void }) {
+export function SellerSaleForm({
+  sellerId,
+  onSaved,
+  initialLines,
+}: {
+  sellerId: number;
+  onSaved: () => void;
+  // Corregir (components/sale-detail.tsx): the voided sale's lines, put in the
+  // cart once the seller's inventory (with those units back) has loaded.
+  initialLines?: { productId: number; quantity: number; unitPrice: number }[];
+}) {
   const theme = useTheme();
   const { isSeller } = useMySeller();
 
@@ -58,6 +68,7 @@ export function SellerSaleForm({ sellerId, onSaved }: { sellerId: number; onSave
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const submitButtonRef = useRef<View>(null);
+  const initialApplied = useRef(false);
 
   // Reloads on focus: the Vender tab stays mounted, so a sync that changed the
   // seller's inventory while another tab was open must show up on return.
@@ -81,12 +92,33 @@ export function SellerSaleForm({ sellerId, onSaved }: { sellerId: number; onSave
             commissionBps: productById[line.productId]?.commissionBps ?? 0,
           })),
         );
+        if (initialLines && !initialApplied.current) {
+          initialApplied.current = true;
+          setCart(
+            initialLines.flatMap((initial) => {
+              const line = lines.find((l) => l.productId === initial.productId);
+              const product = productById[initial.productId];
+              if (!line || !product) return [];
+              return [
+                {
+                  productId: initial.productId,
+                  name: product.name,
+                  imageUri: product.primaryImageUri,
+                  available: line.quantity,
+                  quantity: Math.min(initial.quantity, line.quantity),
+                  unitPrice: String(initial.unitPrice),
+                  commissionBps: product.commissionBps,
+                },
+              ];
+            }),
+          );
+        }
         setLoaded(true);
       });
       return () => {
         cancelled = true;
       };
-    }, [sellerId]),
+    }, [sellerId, initialLines]),
   );
 
   const catalog = useMemo(() => {
