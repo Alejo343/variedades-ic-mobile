@@ -1,7 +1,7 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronRight, PackageSearch, Plus, ShoppingCart, Tag, Trash2, X } from 'lucide-react-native';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { ChevronRight, PackageSearch, PencilLine, Plus, ShoppingCart, Tag, Trash2, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { BackHandler, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, FadeOutLeft, LinearTransition } from 'react-native-reanimated';
 
@@ -16,6 +16,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { cashAccountsRepo, categoriesRepo, directSalesRepo, productsRepo, type CashAccount, type Category, type Product } from '@/lib/data';
 import { calculateCommission, formatCommissionPercent } from '@/lib/domain/commission';
 import { formatCOP } from '@/lib/format';
+import { confirmLeaveCorrection, remindPendingCorrection } from '@/lib/sale-correction';
 import { triggerSaleSuccessOverlay } from '@/lib/success-overlay';
 import { directSaleSchema } from '@/lib/validations';
 
@@ -179,6 +180,17 @@ function DirectSaleScreen({ sellerId, earnsCommission = false }: { sellerId?: nu
   // that was charged (any discount already folded in), with its account and
   // notes, to register it again the right way. Read once, then cleared.
   const { corregir } = useLocalSearchParams<{ corregir?: string }>();
+  // The voided sale being registered again (null = a normal sale). Until it's
+  // charged, leaving warns that the sale stays voided with nothing in its place.
+  const [correctingSaleId, setCorrectingSaleId] = useState<number | null>(null);
+  // Same value, read by the tab-blur listener: dropping the correction and
+  // navigating away happen in one tick, before the state re-renders.
+  const correctingRef = useRef<number | null>(null);
+  const setCorrecting = useCallback((id: number | null) => {
+    correctingRef.current = id;
+    setCorrectingSaleId(id);
+  }, []);
+  const navigation = useNavigation();
   useEffect(() => {
     if (!corregir || sellerId !== undefined || !loaded || accounts.length === 0) return;
     let cancelled = false;
@@ -208,6 +220,7 @@ function DirectSaleScreen({ sellerId, earnsCommission = false }: { sellerId?: nu
       );
       if (accounts.some((a) => a.id === sale.accountId)) setAccountId(sale.accountId);
       setNotes(sale.notes ?? '');
+      setCorrecting(sale.id);
       setShowDiscount(false);
       setDiscount('');
       setError(null);
@@ -215,7 +228,42 @@ function DirectSaleScreen({ sellerId, earnsCommission = false }: { sellerId?: nu
     return () => {
       cancelled = true;
     };
-  }, [corregir, sellerId, loaded, accounts, products]);
+  }, [corregir, sellerId, loaded, accounts, products, setCorrecting]);
+
+  const dropCorrection = useCallback(() => {
+    setCart([]);
+    setCheckoutOpen(false);
+    setNotes('');
+    setCorrecting(null);
+  }, [setCorrecting]);
+
+  // Android's back button while correcting asks first. (With the checkout
+  // sheet open, the Modal takes the back press and just closes the sheet.)
+  useFocusEffect(
+    useCallback(() => {
+      if (correctingSaleId === null) return;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        confirmLeaveCorrection(correctingSaleId, () => {
+          dropCorrection();
+          router.navigate('/home');
+        });
+        return true;
+      });
+      return () => sub.remove();
+    }, [correctingSaleId, dropCorrection]),
+  );
+
+  // A tab change can't be stopped (native tabs), so leaving the Vender tab
+  // mid-correction reminds right after, with a way back to finish it.
+  useEffect(() => {
+    if (correctingSaleId === null) return;
+    const tab = navigation.getParent();
+    if (!tab) return;
+    return tab.addListener('blur', () => {
+      if (correctingRef.current === null) return;
+      remindPendingCorrection(correctingSaleId, () => router.navigate('/sell'), dropCorrection);
+    });
+  }, [navigation, correctingSaleId, dropCorrection]);
 
   const cardWidth = gridCardWidth(gridWidth - Layout.screenPadding * 2);
   const quantityById = useMemo(() => new Map(cart.map((item) => [item.productId, Number(item.quantity) || 0])), [cart]);
@@ -279,6 +327,10 @@ function DirectSaleScreen({ sellerId, earnsCommission = false }: { sellerId?: nu
   }
 
   function clearCart() {
+    if (correctingSaleId !== null) {
+      confirmLeaveCorrection(correctingSaleId, dropCorrection);
+      return;
+    }
     setCart([]);
     setCheckoutOpen(false);
   }
@@ -314,6 +366,7 @@ function DirectSaleScreen({ sellerId, earnsCommission = false }: { sellerId?: nu
       setCategoryId(null);
       setShowDiscount(false);
       setDiscount('');
+      setCorrecting(null);
       // Let the sheet slide away first: the overlay lives in the main window
       // and would otherwise grow underneath the modal.
       const origin = successOrigin.current;
@@ -329,6 +382,19 @@ function DirectSaleScreen({ sellerId, earnsCommission = false }: { sellerId?: nu
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.flex} edges={[]}>
         <View style={styles.header}>
+          {correctingSaleId !== null ? (
+            <View style={[styles.correction, { backgroundColor: withAlpha(theme.warning, 0.12) }]}>
+              <PencilLine color={theme.warning} size={18} />
+              <ThemedText type="small" style={styles.flex}>
+                Corrigiendo la venta #{correctingSaleId}, que ya está anulada. Cobra para registrarla de nuevo.
+              </ThemedText>
+              <Pressable hitSlop={8} onPress={() => confirmLeaveCorrection(correctingSaleId, dropCorrection)}>
+                <ThemedText type="smallBold" style={{ color: theme.warning }}>
+                  Descartar
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : null}
           <PosSearchBar value={search} onChangeText={setSearch} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
             <CategoryChip label="Todos" selected={categoryId === null} onPress={() => setCategoryId(null)} />
@@ -705,6 +771,14 @@ const styles = StyleSheet.create({
   waitingCard: { borderRadius: Radii.card, padding: Spacing.four, gap: Spacing.one },
 
   header: { paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.three },
+  correction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    borderRadius: Radii.card,
+    padding: Spacing.three,
+    marginBottom: Spacing.three,
+  },
   categoryRow: { gap: Spacing.two, paddingBottom: Spacing.three },
   chip: { borderWidth: 1, borderRadius: Radii.chip, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
 

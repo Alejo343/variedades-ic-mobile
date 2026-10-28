@@ -135,6 +135,12 @@ con agregaciones sobre los ledgers, nunca se guardan.
   `components/sale-detail.tsx` (`/sell/sale/[id]`, `/more/sellers/sales/[id]`):
   el desglose (productos, cantidad × precio, comisión) lo abre cualquiera
   desde las listas de ventas; los vendedores lo ven sin Anular/Corregir.
+  Como Corregir anula **antes** de abrir el formulario, salir sin guardar
+  avisa (`lib/sale-correction.ts`): el modal de consignación frena la salida
+  con `beforeRemove`; el POS muestra un aviso "Corrigiendo la venta #N" con
+  Descartar, confirma al vaciar el carrito o con el botón atrás de Android,
+  y como las pestañas nativas no dejan frenar un cambio de pestaña, avisa
+  justo después (el carrito se conserva).
   Operaciones `voidDirectSale`/`voidSellerSale` con un `movementUuid` por
   ítem. Toda consulta nueva que sume ventas debe excluir las anuladas.
 
