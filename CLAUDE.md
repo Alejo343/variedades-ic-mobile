@@ -132,7 +132,9 @@ con agregaciones sobre los ledgers, nunca se guardan.
   anular + abrir el POS (`/sell?corregir=<id>`) o la venta de consignación
   (`sales/new?corregir=<id>`) con los mismos productos al precio cobrado; la
   venta de un vendedor de tienda solo se anula. Detalle de venta en
-  `components/sale-detail.tsx` (`/sell/sale/[id]`, `/more/sellers/sales/[id]`).
+  `components/sale-detail.tsx` (`/sell/sale/[id]`, `/more/sellers/sales/[id]`):
+  el desglose (productos, cantidad × precio, comisión) lo abre cualquiera
+  desde las listas de ventas; los vendedores lo ven sin Anular/Corregir.
   Operaciones `voidDirectSale`/`voidSellerSale` con un `movementUuid` por
   ítem. Toda consulta nueva que sume ventas debe excluir las anuladas.
 

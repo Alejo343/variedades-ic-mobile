@@ -56,7 +56,9 @@ async function loadDetail(kind: SaleKind, saleId: number): Promise<Detail | null
   return { ...sale, sellerName: sellerName(sale.sellerId), accountName: null, blocker: saleVoidBlocker(sale), items: items(sale.items) };
 }
 
-// One sale, with Anular / Corregir for the owner (lib/domain/sale-void.ts).
+// One sale's breakdown (products, quantities, prices, commission), opened
+// from any sales list — a seller sees their own, read-only — with Anular /
+// Corregir for the owner (lib/domain/sale-void.ts).
 // Corregir voids it and opens the matching form preloaded with its products,
 // to register it again the right way: the POS for the owner's in-store sale,
 // the consignment sale form for a seller's. A store seller's in-store sale is
@@ -172,7 +174,7 @@ export function SaleDetail({ kind, saleId }: { kind: SaleKind; saleId: number })
                   <View style={[styles.divider, { backgroundColor: theme.border }]} />
                   <View style={styles.line}>
                     <ThemedText type="small" themeColor="textSecondary">
-                      Comisión del vendedor
+                      {isSeller ? 'Tu comisión' : 'Comisión del vendedor'}
                     </ThemedText>
                     <ThemedText type="small" style={{ color: theme.primary }}>
                       {formatCOP(detail.commissionAmount)}

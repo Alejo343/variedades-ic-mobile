@@ -48,8 +48,8 @@ export default function SellerSalesScreen() {
               amount: sale.totalAmount,
               commission: sale.commissionAmount,
               voided: sale.voidedAt !== null,
-              // Only the owner opens a sale (to void or correct it).
-              href: isSeller ? undefined : `/more/sellers/sales/${sale.id}`,
+              // Its breakdown; only the owner gets Anular / Corregir there.
+              href: `/more/sellers/sales/${sale.id}`,
             };
           }),
         );

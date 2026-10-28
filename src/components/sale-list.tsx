@@ -16,7 +16,8 @@ export type SaleListRow = {
   amount: number;
   // Shown under the amount when set.
   commission?: number;
-  // The sale's detail (the owner's Anular / Corregir); absent = not tappable.
+  // The sale's detail (its products; the owner also voids or corrects it
+  // there); absent = not tappable.
   href?: string;
   // Voided (lib/domain/sale-void.ts): listed struck through, counted nowhere.
   voided?: boolean;

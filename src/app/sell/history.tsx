@@ -45,8 +45,8 @@ export default function SalesHistoryScreen() {
               amount: sale.totalAmount,
               commission: sale.sellerId !== null ? sale.commissionAmount : undefined,
               voided: sale.voidedAt !== null,
-              // Only the owner opens a sale (to void or correct it).
-              href: isSeller ? undefined : `/sell/sale/${sale.id}`,
+              // Its breakdown; only the owner gets Anular / Corregir there.
+              href: `/sell/sale/${sale.id}`,
             };
           }),
         );
