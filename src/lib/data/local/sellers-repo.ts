@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import {
   nextSalaryStartDate,
   PENDING_COMMISSION_BLOCKS_SALARY,
@@ -188,5 +188,27 @@ export const localSellersRepo: SellersRepo = {
       .where(eq(inventoryMovements.ownerType, "seller"))
       .groupBy(inventoryMovements.sellerId, inventoryMovements.productId);
     return rows.filter((row) => row.sellerId !== null && row.quantity > 0) as SellerInventoryLineWithSeller[];
+  },
+
+  async getHoldingsOfProduct(productId: number) {
+    const quantity = sql<number>`SUM(${inventoryMovements.quantityDelta})`;
+    const rows = await db
+      .select({ sellerId: inventoryMovements.sellerId, productId: inventoryMovements.productId, quantity })
+      .from(inventoryMovements)
+      .where(and(eq(inventoryMovements.ownerType, "seller"), eq(inventoryMovements.productId, productId)))
+      .groupBy(inventoryMovements.sellerId, inventoryMovements.productId)
+      .having(sql`${quantity} <> 0`)
+      .orderBy(desc(quantity));
+    return rows.filter((row) => row.sellerId !== null) as SellerInventoryLineWithSeller[];
+  },
+
+  async getHeldTotalsByProduct() {
+    const quantity = sql<number>`SUM(${inventoryMovements.quantityDelta})`;
+    return db
+      .select({ productId: inventoryMovements.productId, quantity })
+      .from(inventoryMovements)
+      .where(eq(inventoryMovements.ownerType, "seller"))
+      .groupBy(inventoryMovements.productId)
+      .having(sql`${quantity} <> 0`);
   },
 };

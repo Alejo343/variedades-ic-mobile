@@ -1,5 +1,5 @@
 import { Link, router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Boxes, PackageX, Power, TrendingDown, TrendingUp, TriangleAlert, type LucideProps } from 'lucide-react-native';
+import { Boxes, ChevronRight, PackageX, Power, TrendingDown, TrendingUp, TriangleAlert, Users, type LucideProps } from 'lucide-react-native';
 import { useCallback, useMemo, useRef, useState, type ComponentType } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { categoriesRepo, productsRepo, type Category, type Product } from '@/lib/data';
+import { categoriesRepo, productsRepo, sellersRepo, type Category, type Product } from '@/lib/data';
 import { parseCommissionPercent } from '@/lib/domain/commission';
 import type { ImageDraft } from '@/lib/domain/product-images';
 import { formatCOP } from '@/lib/format';
@@ -63,6 +63,8 @@ export default function EditProductScreen() {
   const [active, setActive] = useState(true);
   // Read-only here: stock only changes through a movement (Ajustar stock).
   const [stock, setStock] = useState(0);
+  // What each seller holds of it (their own ledger, not products.stock).
+  const [holdings, setHoldings] = useState<{ sellerId: number; name: string; quantity: number }[]>([]);
   const [values, setValues] = useState<FormValues | null>(null);
   const [saved, setSaved] = useState<FormValues | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,11 @@ export default function EditProductScreen() {
       let cancelled = false;
       categoriesRepo.list().then((rows) => {
         if (!cancelled) setCategories(rows.filter((c) => c.active));
+      });
+      Promise.all([sellersRepo.getHoldingsOfProduct(productId), sellersRepo.list()]).then(([lines, sellers]) => {
+        if (cancelled) return;
+        const names = new Map(sellers.map((s) => [s.id, s.name]));
+        setHoldings(lines.map((l) => ({ sellerId: l.sellerId, name: names.get(l.sellerId) ?? `Vendedor #${l.sellerId}`, quantity: l.quantity })));
       });
       Promise.all([productsRepo.getById(productId), pendingUuidsForType('upsertProduct')]).then(([product, pending]) => {
         if (cancelled) return;
@@ -190,6 +197,8 @@ export default function EditProductScreen() {
   const stockColor = stockState === 'out' ? theme.error : stockState === 'low' ? theme.warning : theme.info;
   const StockIcon = stockState === 'out' ? PackageX : stockState === 'low' ? TriangleAlert : Boxes;
 
+  const heldBySellers = holdings.reduce((sum, h) => sum + h.quantity, 0);
+
   const price = Number(values.price) || 0;
   const cost = Number(values.purchasePrice) || 0;
   const gain = price - cost;
@@ -210,7 +219,7 @@ export default function EditProductScreen() {
 
             <View style={styles.tiles}>
               <ThemedView type="backgroundElement" style={[styles.tile, Shadow.subtle]}>
-                <TileHeader icon={StockIcon} color={stockColor} label="Stock" />
+                <TileHeader icon={StockIcon} color={stockColor} label="Stock en tienda" />
                 <ThemedText type="cardTitle" style={stockState !== 'ok' ? { color: stockColor } : undefined}>
                   {stock} {stock === 1 ? 'unidad' : 'unidades'}
                 </ThemedText>
@@ -232,6 +241,38 @@ export default function EditProductScreen() {
                 </ThemedText>
               </ThemedView>
             </View>
+
+            {holdings.length > 0 ? (
+              <View style={styles.holdings}>
+                <ThemedText type="sectionTitle">Con vendedores</ThemedText>
+                <ThemedView type="backgroundElement" style={[styles.holdingsCard, Shadow.subtle]}>
+                  {holdings.map((h, i) => (
+                    <Link key={h.sellerId} href={`/more/sellers/${h.sellerId}`} asChild>
+                      <Pressable>
+                        <View style={[styles.holdingRow, i > 0 && { borderTopWidth: 1, borderTopColor: theme.border }]}>
+                          <View style={[styles.tileIcon, { backgroundColor: withAlpha(theme.purple, 0.12) }]}>
+                            <Users color={theme.purple} size={16} />
+                          </View>
+                          <ThemedText type="default" numberOfLines={1} style={styles.flex}>
+                            {h.name}
+                          </ThemedText>
+                          <ThemedText type="smallBold" style={h.quantity < 0 ? { color: theme.error } : undefined}>
+                            {h.quantity < 0 ? `${h.quantity}, revisar` : `${h.quantity} ${h.quantity === 1 ? 'unidad' : 'unidades'}`}
+                          </ThemedText>
+                          <ChevronRight color={theme.textSecondary} size={18} />
+                        </View>
+                      </Pressable>
+                    </Link>
+                  ))}
+                  <View style={[styles.holdingRow, { borderTopWidth: 1, borderTopColor: theme.border }]}>
+                    <ThemedText type="secondary" themeColor="textSecondary" style={styles.flex}>
+                      Total en el negocio (tienda + vendedores)
+                    </ThemedText>
+                    <ThemedText type="smallBold">{stock + heldBySellers}</ThemedText>
+                  </View>
+                </ThemedView>
+              </View>
+            ) : null}
 
             <FormSection title="Fotos">
               <ProductImageGallery images={values.images} onChange={(images) => set('images', images)} onError={setError} savedUrls={savedUrls} />
@@ -292,7 +333,7 @@ export default function EditProductScreen() {
                 </FormField>
               </FormRow>
               <ThemedText type="caption" themeColor="textSecondary">
-                Con el stock en el mínimo o menos, el producto aparece como &quot;stock bajo&quot; en las alertas. El stock se cambia con
+                Con el stock de la tienda en el mínimo o menos, el producto aparece como &quot;stock bajo&quot; en las alertas. El stock se cambia con
                 &quot;Ajustar stock&quot;, arriba.
               </ThemedText>
             </FormSection>
@@ -394,6 +435,9 @@ const styles = StyleSheet.create({
   tileHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginBottom: Spacing.one },
   tileIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   chips: { gap: Spacing.two },
+  holdings: { gap: Spacing.two },
+  holdingsCard: { borderRadius: Radii.card, paddingHorizontal: Spacing.three },
+  holdingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingVertical: Spacing.three },
   errorBox: { borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.two },
   stateButton: {
     flexDirection: 'row',

@@ -47,4 +47,12 @@ export interface SellersRepo {
   deactivate(id: number): Promise<void>;
   getInventory(sellerId: number): Promise<SellerInventoryLine[]>;
   getAllInventory(): Promise<SellerInventoryLineWithSeller[]>;
+  // What each seller holds of one product, for the owner's product screen.
+  // Unlike getInventory/getAllInventory, keeps negative balances (offline
+  // sales from out-of-sync devices) so they show up to be checked; drops
+  // only zeros. Sorted by quantity, largest first.
+  getHoldingsOfProduct(productId: number): Promise<SellerInventoryLineWithSeller[]>;
+  // Net units held by all sellers together, one line per product with a
+  // non-zero total — the "con vendedores" note in product lists.
+  getHeldTotalsByProduct(): Promise<SellerInventoryLine[]>;
 }

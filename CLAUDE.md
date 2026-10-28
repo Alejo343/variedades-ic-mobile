@@ -97,6 +97,13 @@ con agregaciones sobre los ledgers, nunca se guardan.
   en local (−principal), venta de vendedor (−vendedor).
 - El stock puede quedar **negativo** por ventas sincronizadas sin conexión
   (decisión del usuario: la venta ya ocurrió). Agotados = `stock <= 0`.
+- Lo que tienen los vendedores se muestra **al lado** del stock de la tienda,
+  nunca sumado (decisión del usuario, 2026-10-27): agotados y stock bajo
+  siguen siendo solo del principal. Ficha del producto = sección "Con
+  vendedores" por vendedor + total del negocio
+  (`sellersRepo.getHoldingsOfProduct`); Productos, Buscar e Inventario = nota
+  "N con vendedores" (`getHeldTotalsByProduct`). Ambas conservan saldos
+  negativos (se muestran en rojo); `getInventory`/`getAllInventory` no.
 
 **Caja**
 - `cash_movements` (ingreso/gasto) siempre con `accountId` de `cash_accounts`

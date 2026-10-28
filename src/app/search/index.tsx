@@ -64,6 +64,8 @@ type Data = {
   sellerSales: SellerSale[];
   orders: PurchaseOrder[];
   pendingProductUuids: Set<string>;
+  // Units sellers hold, by product — noted beside the shop's stock.
+  heldBySellers: Map<number, number>;
 };
 
 const EMPTY_DATA: Data = {
@@ -75,6 +77,7 @@ const EMPTY_DATA: Data = {
   sellerSales: [],
   orders: [],
   pendingProductUuids: new Set(),
+  heldBySellers: new Map(),
 };
 
 export default function SearchScreen() {
@@ -95,8 +98,11 @@ export default function SearchScreen() {
         sellerSalesRepo.list(),
         purchaseOrdersRepo.list(),
         pendingUuidsForType('upsertProduct'),
-      ]).then(([products, categories, sellers, distributors, directSales, sellerSales, orders, pendingProductUuids]) => {
-        if (!cancelled) setData({ products, categories, sellers, distributors, directSales, sellerSales, orders, pendingProductUuids });
+        sellersRepo.getHeldTotalsByProduct(),
+      ]).then(([products, categories, sellers, distributors, directSales, sellerSales, orders, pendingProductUuids, held]) => {
+        if (cancelled) return;
+        const heldBySellers = new Map(held.map((h) => [h.productId, h.quantity]));
+        setData({ products, categories, sellers, distributors, directSales, sellerSales, orders, pendingProductUuids, heldBySellers });
       });
       return () => {
         cancelled = true;
@@ -179,7 +185,9 @@ export default function SearchScreen() {
       case 'categories':
         return [];
       case 'products':
-        return results.products.slice(0, limit).map((p) => <ProductRow key={p.id} product={p} pending={data.pendingProductUuids.has(p.uuid)} />);
+        return results.products
+          .slice(0, limit)
+          .map((p) => <ProductRow key={p.id} product={p} pending={data.pendingProductUuids.has(p.uuid)} held={data.heldBySellers.get(p.id) ?? 0} />);
       case 'sales':
         return results.sales.slice(0, limit).map((hit) => {
           const sellerId = hit.sale.sellerId;
@@ -288,7 +296,9 @@ export default function SearchScreen() {
               ) : null}
             </View>
             {renderCard(
-              products.slice(0, limit).map((p) => <ProductRow key={p.id} product={p} pending={data.pendingProductUuids.has(p.uuid)} />),
+              products
+                .slice(0, limit)
+                .map((p) => <ProductRow key={p.id} product={p} pending={data.pendingProductUuids.has(p.uuid)} held={data.heldBySellers.get(p.id) ?? 0} />),
             )}
           </View>
         ))}
@@ -422,7 +432,7 @@ function ResultRow({
   );
 }
 
-function ProductRow({ product: p, pending }: { product: Product; pending: boolean }) {
+function ProductRow({ product: p, pending, held }: { product: Product; pending: boolean; held: number }) {
   const theme = useTheme();
   const out = p.stock <= 0;
   const low = !out && p.minStock > 0 && p.stock <= p.minStock;
@@ -439,6 +449,11 @@ function ProductRow({ product: p, pending }: { product: Product; pending: boolea
             <ThemedText type="caption" themeColor="textSecondary" numberOfLines={1}>
               {p.sku}
               {pending ? ' (pendiente)' : ''} · {formatCOP(p.price)}
+              {held !== 0 ? (
+                <ThemedText type="caption" style={{ color: held < 0 ? theme.error : theme.purple }}>
+                  {` · ${held} con vendedores`}
+                </ThemedText>
+              ) : null}
             </ThemedText>
           </View>
           <View style={[styles.stockBadge, { backgroundColor: withAlpha(color, 0.12) }]}>

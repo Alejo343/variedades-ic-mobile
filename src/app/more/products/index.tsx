@@ -11,7 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useTheme } from '@/hooks/use-theme';
-import { categoriesRepo, productsRepo, type Product } from '@/lib/data';
+import { categoriesRepo, productsRepo, sellersRepo, type Product } from '@/lib/data';
 import { formatCOP } from '@/lib/format';
 import { pendingUuidsForType } from '@/lib/sync/outbox';
 
@@ -37,6 +37,9 @@ export default function ProductsScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categoryNames, setCategoryNames] = useState<Record<number, string>>({});
   const [pendingUuids, setPendingUuids] = useState<Set<string>>(new Set());
+  // Units sellers hold, by product — shown beside the shop's stock, never
+  // mixed into it (agotado / stock bajo stay about the shop).
+  const [heldBySellers, setHeldBySellers] = useState<Map<number, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -47,14 +50,15 @@ export default function ProductsScreen() {
   useDataFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      Promise.all([productsRepo.list(), categoriesRepo.list(), pendingUuidsForType('upsertProduct')]).then(
-        ([rows, categories, pending]) => {
+      Promise.all([productsRepo.list(), categoriesRepo.list(), pendingUuidsForType('upsertProduct'), sellersRepo.getHeldTotalsByProduct()]).then(
+        ([rows, categories, pending, held]) => {
           if (cancelled) return;
           setProducts(
             rows.filter((p) => onlyCategoryId === null || p.categoryId === onlyCategoryId).sort((a, b) => a.name.localeCompare(b.name)),
           );
           setCategoryNames(Object.fromEntries(categories.map((c) => [c.id, c.name])));
           setPendingUuids(pending);
+          setHeldBySellers(new Map(held.map((h) => [h.productId, h.quantity])));
           setLoading(false);
         },
       );
@@ -147,6 +151,7 @@ export default function ProductsScreen() {
             const stockColor = state === 'out' ? theme.error : state === 'low' ? theme.warning : theme.primary;
             const details = [item.sku + (pendingUuids.has(item.uuid) ? ' (pendiente)' : '')];
             if (item.categoryId !== null && categoryNames[item.categoryId]) details.push(categoryNames[item.categoryId]);
+            const held = heldBySellers.get(item.id) ?? 0;
             return (
               <Link href={{ pathname: '/more/products/[id]', params: { id: String(item.id) } }} asChild>
                 <Pressable>
@@ -161,7 +166,15 @@ export default function ProductsScreen() {
                         <ThemedText type="caption" themeColor="textSecondary" numberOfLines={1}>
                           {details.join(' · ')}
                         </ThemedText>
-                        <ThemedText type="smallBold">{formatCOP(item.price)}</ThemedText>
+                        <ThemedText type="smallBold" numberOfLines={1}>
+                          {formatCOP(item.price)}
+                          {held !== 0 ? (
+                            <ThemedText type="caption" style={{ color: held < 0 ? theme.error : theme.purple }}>
+                              {'  ·  '}
+                              {held} con vendedores
+                            </ThemedText>
+                          ) : null}
+                        </ThemedText>
                       </View>
                       <View style={[styles.stockBadge, { backgroundColor: withAlpha(item.active ? stockColor : theme.textSecondary, 0.12) }]}>
                         <ThemedText type="smallBold" style={{ color: item.active ? stockColor : theme.textSecondary }}>

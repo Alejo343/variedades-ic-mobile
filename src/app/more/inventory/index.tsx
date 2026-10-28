@@ -21,7 +21,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Layout, Radii, Shadow, Spacing, withAlpha } from '@/constants/theme';
 import { useDataFocusEffect } from '@/hooks/use-data-focus-effect';
 import { useTheme } from '@/hooks/use-theme';
-import { inventoryRepo, productsRepo, reportsRepo, type InventoryMovement, type InventorySummary, type Product } from '@/lib/data';
+import { inventoryRepo, productsRepo, reportsRepo, sellersRepo, type InventoryMovement, type InventorySummary, type Product } from '@/lib/data';
 import type { MovementType } from '@/lib/domain/inventory-movement';
 import { formatCOP, formatRelativeTime } from '@/lib/format';
 
@@ -46,6 +46,9 @@ export default function InventoryScreen() {
   const [outOfStock, setOutOfStock] = useState<Product[]>([]);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [productNames, setProductNames] = useState<Record<number, string>>({});
+  // Agotado / stock bajo are about the shop's own stock; what sellers hold
+  // is only noted beside it.
+  const [heldBySellers, setHeldBySellers] = useState<Map<number, number>>(new Map());
   const [loading, setLoading] = useState(true);
 
   useDataFocusEffect(
@@ -57,13 +60,15 @@ export default function InventoryScreen() {
         inventoryRepo.getOutOfStock(),
         inventoryRepo.getRecentMovements(20),
         productsRepo.list(),
-      ]).then(([inventory, low, out, recent, products]) => {
+        sellersRepo.getHeldTotalsByProduct(),
+      ]).then(([inventory, low, out, recent, products, held]) => {
         if (cancelled) return;
         setSummary(inventory);
         setLowStock([...low].sort((a, b) => a.stock / a.minStock - b.stock / b.minStock));
         setOutOfStock([...out].sort((a, b) => a.stock - b.stock));
         setMovements(recent);
         setProductNames(Object.fromEntries(products.map((p) => [p.id, p.name])));
+        setHeldBySellers(new Map(held.map((h) => [h.productId, h.quantity])));
         setLoading(false);
       });
       return () => {
@@ -80,6 +85,7 @@ export default function InventoryScreen() {
     error: theme.error,
   };
   const toRestock = [...outOfStock, ...lowStock];
+  const unitsWithSellers = [...heldBySellers.values()].reduce((sum, q) => sum + q, 0);
 
   return (
     <ThemedView style={styles.container}>
@@ -95,6 +101,11 @@ export default function InventoryScreen() {
             <ThemedText type="secondary" themeColor="textSecondary">
               {summary ? `${summary.totalUnits} unidades · ${summary.activeProducts} productos activos` : 'Cargando…'}
             </ThemedText>
+            {unitsWithSellers !== 0 ? (
+              <ThemedText type="caption" style={{ color: theme.purple }}>
+                Además, {unitsWithSellers} {unitsWithSellers === 1 ? 'unidad' : 'unidades'} en manos de vendedores
+              </ThemedText>
+            ) : null}
           </ThemedView>
 
           <View style={styles.tiles}>
@@ -117,6 +128,7 @@ export default function InventoryScreen() {
                   const out = product.stock <= 0;
                   const color = out ? theme.error : theme.warning;
                   const ratio = out || product.minStock <= 0 ? 0 : Math.min(1, product.stock / product.minStock);
+                  const held = heldBySellers.get(product.id) ?? 0;
                   return (
                     <Link key={product.id} href={{ pathname: '/more/products/[id]', params: { id: String(product.id) } }} asChild>
                       <Pressable>
@@ -135,6 +147,11 @@ export default function InventoryScreen() {
                                   ? `Agotado (${product.stock}, revisar)`
                                   : 'Agotado'
                                 : `Quedan ${product.stock} de un mínimo de ${product.minStock}`}
+                              {held !== 0 ? (
+                                <ThemedText type="caption" style={{ color: held < 0 ? theme.error : theme.purple }}>
+                                  {` · ${held} con vendedores`}
+                                </ThemedText>
+                              ) : null}
                             </ThemedText>
                           </View>
                         </View>
